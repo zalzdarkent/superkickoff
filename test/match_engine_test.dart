@@ -1,0 +1,198 @@
+import 'dart:math';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:superkickoff/data/models/models.dart';
+import 'package:superkickoff/game/match_engine.dart';
+
+/// Builds a balanced 16-man squad (1 GK, 5 DEF, 6 MID, 4 ATT).
+List<Player> buildSquad(int seed) {
+  final List<int> positions = <int>[
+    1,
+    2, 2, 2, 2, 3,
+    7, 7, 7, 7, 8, 8,
+    10, 10, 10, 11,
+  ];
+  return List<Player>.generate(positions.length, (int i) {
+    final int position = positions[i];
+    return Player(
+      playerId: seed * 100 + i,
+      name: 'Player $seed-$i',
+      age: 24,
+      positionId: position,
+      power: 55 + (i % 20),
+      potential: 70,
+      fitness: 95,
+      value: 1000000,
+      salary: 10000,
+      countryId: 141,
+      squadStatus: 1,
+      marketStatus: 1,
+      statusId: 1,
+      isCaptain: i == 0,
+      shirtNumber: i + 1,
+      stars: 3,
+      skillA: 50,
+      skillB: 50,
+      height: 180,
+      championships: null,
+    );
+  });
+}
+
+void main() {
+  group('Lineup', () {
+    test('picks eleven players in a valid 4-4-2 shape', () {
+      final Lineup lineup = Lineup.best(buildSquad(1));
+      expect(lineup.starters.length, 11);
+      expect(lineup.substitutes.length, greaterThan(0));
+
+      int group(int id) => Lineup.groupOf(
+          lineup.starters.firstWhere((Player p) => p.playerId == id));
+      final Map<int, int> counts = <int, int>{};
+      for (final Player p in lineup.starters) {
+        final int g = group(p.playerId);
+        counts[g] = (counts[g] ?? 0) + 1;
+      }
+      expect(counts[1], 1, reason: 'exactly one keeper');
+      expect(counts[2], 4);
+      expect(counts[3], 4);
+      expect(counts[4], 2);
+    });
+
+    test('excludes injured and suspended players', () {
+      final List<Player> squad = buildSquad(2);
+      final Player keeper = squad.first;
+      final Player banned = squad[1];
+      final List<Player> tweaked = <Player>[
+        for (final Player p in squad)
+          if (p.playerId == keeper.playerId)
+            Player(
+              playerId: p.playerId,
+              name: p.name,
+              age: p.age,
+              positionId: p.positionId,
+              power: p.power,
+              potential: p.potential,
+              fitness: 5,
+              value: p.value,
+              salary: p.salary,
+              countryId: p.countryId,
+              squadStatus: p.squadStatus,
+              marketStatus: p.marketStatus,
+              statusId: p.statusId,
+              isCaptain: p.isCaptain,
+              shirtNumber: p.shirtNumber,
+              stars: p.stars,
+              skillA: p.skillA,
+              skillB: p.skillB,
+              height: p.height,
+              championships: p.championships,
+            )
+          else
+            p,
+      ];
+      final Lineup lineup =
+          Lineup.best(tweaked, bannedIds: <int>{banned.playerId});
+      expect(lineup.unavailableIds.contains(banned.playerId), isTrue);
+      expect(
+        lineup.starters.any((Player p) => p.playerId == banned.playerId),
+        isFalse,
+      );
+      // Injured keeper is still selectable: nobody else can keep goal.
+      expect(
+        lineup.starters.any((Player p) => p.playerId == keeper.playerId),
+        isTrue,
+      );
+    });
+  });
+
+  group('MatchEngine', () {
+    test('produces a complete, deterministic result', () {
+      MatchInput input() => MatchInput(
+            homeSquad: buildSquad(3),
+            awaySquad: buildSquad(4),
+            capacityGeneral: 20000,
+            capacityStand: 8000,
+            capacityTerrace: 4000,
+            capacityBoxes: 500,
+            homePower: 70,
+            refereeTemper: 3,
+          );
+
+      final MatchResult first = MatchEngine(random: Random(42)).simulate(input());
+      final MatchResult second = MatchEngine(random: Random(42)).simulate(input());
+
+      expect(first.homeGoals, second.homeGoals);
+      expect(first.awayGoals, second.awayGoals);
+      expect(first.homeGoals, inInclusiveRange(0, 12));
+      expect(first.awayGoals, inInclusiveRange(0, 12));
+
+      // Every starter appears in the per-player table.
+      expect(first.playerRows.length, greaterThanOrEqualTo(22));
+      final int minutes = first.playerRows
+          .map((MatchPlayerRow row) => row.minutes)
+          .fold(0, (int a, int b) => a + b);
+      expect(minutes, greaterThanOrEqualTo(22 * 60));
+
+      // Attendance is bounded by the stadium tiers.
+      final int attendance = first.attendanceGeneral +
+          first.attendanceStand +
+          first.attendanceTerrace +
+          first.attendanceBoxes;
+      expect(attendance, lessThanOrEqualTo(32500));
+      expect(first.revenue, greaterThanOrEqualTo(0));
+    });
+
+    test('records goal events consistent with the score', () {
+      final MatchResult result = MatchEngine(random: Random(7)).simulate(
+        MatchInput(
+          homeSquad: buildSquad(5),
+          awaySquad: buildSquad(6),
+          capacityGeneral: 30000,
+          capacityStand: 10000,
+          capacityTerrace: 5000,
+          capacityBoxes: 800,
+          homePower: 80,
+          refereeTemper: 2,
+        ),
+        recordEvents: true,
+      );
+      bool scoring(MatchEvent e) =>
+          e.type == MatchEvent.goal ||
+          e.type == MatchEvent.penaltyScored ||
+          e.type == MatchEvent.ownGoal;
+
+      // Own goals credit the opposite side, so flip their event side.
+      bool creditsHome(MatchEvent e) =>
+          e.type == MatchEvent.ownGoal ? !e.isHome : e.isHome;
+
+      final int homeScored = result.events
+          .where((MatchEvent e) => scoring(e) && creditsHome(e))
+          .length;
+      final int awayScored = result.events
+          .where((MatchEvent e) => scoring(e) && !creditsHome(e))
+          .length;
+      expect(homeScored, result.homeGoals);
+      expect(awayScored, result.awayGoals);
+      for (final MatchEvent event in result.events) {
+        expect(event.minute, inInclusiveRange(1, 90));
+      }
+    });
+
+    test('does not emit events when recording is disabled', () {
+      final MatchResult result = MatchEngine(random: Random(9)).simulate(
+        MatchInput(
+          homeSquad: buildSquad(7),
+          awaySquad: buildSquad(8),
+          capacityGeneral: 1000,
+          capacityStand: 500,
+          capacityTerrace: 200,
+          capacityBoxes: 50,
+          homePower: 50,
+        ),
+        recordEvents: false,
+      );
+      expect(result.events, isEmpty);
+    });
+  });
+}
