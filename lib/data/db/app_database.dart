@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import '../repositories/squad_repository.dart';
 import 'schema.dart' as t;
 
 /// Single access point for the SQLite game database.
@@ -18,6 +19,8 @@ class AppDatabase {
   AppDatabase._();
 
   static const String dbName = 'superkickoff_2025.db';
+  static const int assetRevision = 3;
+  static String get localDbName => 'superkickoff_2025_v$assetRevision.db';
   static Database? _db;
   static String? _path;
   static String? _sessionPath;
@@ -31,7 +34,7 @@ class AppDatabase {
       databaseFactory = databaseFactoryFfi;
     }
     final Directory docs = await getApplicationDocumentsDirectory();
-    final String target = p.join(docs.path, dbName);
+    final String target = p.join(docs.path, localDbName);
     final File file = File(target);
     if (!file.existsSync()) {
       final ByteData asset = await rootBundle.load('assets/data/$dbName');
@@ -46,6 +49,7 @@ class AppDatabase {
       options: OpenDatabaseOptions(version: 1, readOnly: false),
     );
     await ensureLocalTables(_db!);
+    await SquadRepository(_db!).refreshAllTeamPowers();
     return _db!;
   }
 
@@ -371,6 +375,7 @@ class AppDatabase {
       options: OpenDatabaseOptions(version: 1, readOnly: false),
     );
     await ensureLocalTables(_db!);
+    await SquadRepository(_db!).refreshAllTeamPowers();
     return _db!;
   }
 
@@ -402,7 +407,7 @@ class AppDatabase {
   /// Starts a genuinely fresh local career without mutating the bundled DB.
   static Future<void> reset() async {
     final Directory docs = await getApplicationDocumentsDirectory();
-    final String target = p.join(docs.path, dbName);
+    final String target = p.join(docs.path, localDbName);
     await _db?.close();
     _db = null;
     final File snapshot = File('$target.session');

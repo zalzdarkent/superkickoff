@@ -42,6 +42,34 @@ class SquadRepository {
     return newPower;
   }
 
+  /// Recalculates every club's power from its top 11 active players.
+  Future<void> refreshAllTeamPowers([Transaction? txn]) async {
+    final DatabaseExecutor executor = txn ?? db;
+    await executor.rawUpdate(
+      '''
+      UPDATE teams
+      SET power = (
+        SELECT CAST(ROUND(AVG(top_players.power)) AS INTEGER)
+        FROM (
+          SELECT p.power
+          FROM players p
+          JOIN team_players tp ON tp.player_id = p.player_id
+          WHERE tp.team_id = teams.team_id AND p.status_id = ?
+          ORDER BY p.power DESC
+          LIMIT 11
+        ) AS top_players
+      )
+      WHERE EXISTS (
+        SELECT 1
+        FROM players p
+        JOIN team_players tp ON tp.player_id = p.player_id
+        WHERE tp.team_id = teams.team_id AND p.status_id = ?
+      )
+      ''',
+      <Object?>[t.statusActive, t.statusActive],
+    );
+  }
+
   /// Returns an MV derived from the player's existing value, so a higher
   /// overall can never reset a valuable player to a lower price tier.
   static int valueAfterOverallChange({
@@ -1038,7 +1066,9 @@ class SquadRepository {
   }) async {
     final YouthAcademyState academy = await youthAcademyState(teamId);
     final DateTime currentDate = DateTime.tryParse(date) ?? DateTime.now();
-    final DateTime? previousDate = DateTime.tryParse(academy.lastGraduatedDate ?? '');
+    final DateTime? previousDate = DateTime.tryParse(
+      academy.lastGraduatedDate ?? '',
+    );
     if (previousDate == null) {
       await db.update(
         t.teamYouthAcademy,
@@ -1048,7 +1078,8 @@ class SquadRepository {
       );
       return <YouthProspect>[];
     }
-    if (currentDate.difference(previousDate).inDays < 90) return <YouthProspect>[];
+    if (currentDate.difference(previousDate).inDays < 90)
+      return <YouthProspect>[];
     final List<Map<String, Object?>> teams = await db.query(
       t.teams,
       where: 'team_id = ?',
@@ -1088,20 +1119,23 @@ class SquadRepository {
         final int height = 168 + random.nextInt(23);
         final int stars = academy.level >= 7 ? 1 : 0;
         final String profile = random.nextBool() ? 'D' : 'I';
-        final int prospectId = await txn.insert(t.academyProspects, <String, Object?>{
-          'team_id': teamId,
-          'name': name,
-          'age': 17,
-          'position_id': positionId,
-          'power': prospectPower,
-          'potential': prospectPotential,
-          'stars': stars,
-          'profile': profile,
-          'height': height,
-          'country_id': countryId,
-          'created_date': date,
-          'signed': 0,
-        });
+        final int prospectId = await txn.insert(
+          t.academyProspects,
+          <String, Object?>{
+            'team_id': teamId,
+            'name': name,
+            'age': 17,
+            'position_id': positionId,
+            'power': prospectPower,
+            'potential': prospectPotential,
+            'stars': stars,
+            'profile': profile,
+            'height': height,
+            'country_id': countryId,
+            'created_date': date,
+            'signed': 0,
+          },
+        );
         prospects.add(
           YouthProspect(
             prospectId: prospectId,
