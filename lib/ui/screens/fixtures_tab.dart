@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../data/models/models.dart';
 import '../../state/career_provider.dart';
 import '../theme.dart';
+import 'knockout_bracket_sheet.dart';
 
 /// Season calendar grouped by match week with results and upcoming games.
 class FixturesTab extends StatefulWidget {
@@ -15,7 +16,9 @@ class FixturesTab extends StatefulWidget {
 
 class _FixturesTabState extends State<FixturesTab> {
   List<FixtureMatch>? fixtures;
-  int? cupTournamentId;
+  Map<int, String> tournamentNames = <int, String>{};
+  final GlobalKey _currentWeekKey = GlobalKey();
+  String? _scrolledToDate;
 
   @override
   void didChangeDependencies() {
@@ -30,7 +33,9 @@ class _FixturesTabState extends State<FixturesTab> {
     if (!mounted) return;
     setState(() {
       fixtures = list;
-      cupTournamentId = game.cup?.tournamentId;
+      tournamentNames = <int, String>{
+        for (final Tournament tour in game.cups) tour.tournamentId: tour.name,
+      };
     });
   }
 
@@ -41,120 +46,287 @@ class _FixturesTabState extends State<FixturesTab> {
     if (list.isEmpty) {
       return const Center(child: Text('No fixtures yet'));
     }
-    // Group by tournament + round.
-    final Map<String, List<FixtureMatch>> groups = <String, List<FixtureMatch>>{};
-    for (final FixtureMatch m in list) {
-      final bool isCup = m.tournamentId == cupTournamentId;
-      final String key = isCup
-          ? 'Cup · ${_phaseName(m.phase)}'
-          : 'League · Round ${m.round}';
-      groups.putIfAbsent(key, () => <FixtureMatch>[]).add(m);
+    final int leagueId = game.league?.tournamentId ?? 0;
+    final Map<int, List<FixtureMatch>> knockoutMatches =
+        <int, List<FixtureMatch>>{};
+    for (final FixtureMatch match in list) {
+      if (match.tournamentId == leagueId || match.groupId != null) continue;
+      knockoutMatches
+          .putIfAbsent(match.tournamentId, () => <FixtureMatch>[])
+          .add(match);
+    }
+    final Map<int, int> totalRounds = <int, int>{
+      for (final MapEntry<int, List<FixtureMatch>> entry
+          in knockoutMatches.entries)
+        entry.key: knockoutTotalRounds(entry.value),
+    };
+
+    // Group by tournament + round. Knockout legs are merged into one tie so
+    // a two-legged round reads as one card instead of two scattered matches.
+    final Map<String, List<KnockoutTie>> groups = <String, List<KnockoutTie>>{};
+    // League / group / friendly games stay single; leg 2 there is just the
+    // reverse fixture of the season.
+    bool isCupTie(FixtureMatch m) =>
+        m.tournamentId != leagueId &&
+        m.groupId == null &&
+        m.tournamentId != 9999;
+    final List<KnockoutTie> allTies = <KnockoutTie>[
+      for (final FixtureMatch m in list)
+        if (!isCupTie(m)) KnockoutTie(m),
+      ...groupTies(list.where(isCupTie).toList()),
+    ]..sort((KnockoutTie a, KnockoutTie b) =>
+        (a.first.date ?? '').compareTo(b.first.date ?? ''));
+
+    for (final KnockoutTie tie in allTies) {
+      final FixtureMatch m = tie.first;
+      final bool isLeague = m.tournamentId == leagueId;
+      final String stage = m.groupId != null
+          ? 'Group ${String.fromCharCode(64 + m.groupId!)} · '
+                'Matchday ${m.round}'
+          : knockoutRoundName(m.phase, totalRounds[m.tournamentId] ?? 1);
+      final String key = m.tournamentId == 9999
+          ? 'Pre-Season Friendly · Match ${m.round}'
+          : isLeague
+          ? '${game.league?.name ?? 'League'} · Round ${m.round}'
+          : '${tournamentNames[m.tournamentId] ?? 'Cup'} · $stage';
+      groups.putIfAbsent(key, () => <KnockoutTie>[]).add(tie);
     }
     final List<String> keys = groups.keys.toList();
+    final String? currentKey = game.nextDate == null
+        ? null
+        : keys.cast<String?>().firstWhere(
+            (String? key) => groups[key]!.any(
+              (KnockoutTie tie) =>
+                  tie.first.date == game.nextDate ||
+                  tie.second?.date == game.nextDate,
+            ),
+            orElse: () => null,
+          );
+    if (currentKey != null && _scrolledToDate != game.nextDate) {
+      _scrolledToDate = game.nextDate;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final BuildContext? target = _currentWeekKey.currentContext;
+        if (target != null && mounted) {
+          Scrollable.ensureVisible(
+            target,
+            duration: const Duration(milliseconds: 250),
+            alignment: 0.08,
+          );
+        }
+      });
+    }
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView.builder(
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.only(bottom: 20),
-        itemCount: keys.length,
-        itemBuilder: (BuildContext context, int index) {
-          final String key = keys[index];
-          final List<FixtureMatch> group = groups[key]!
-            ..sort((FixtureMatch a, FixtureMatch b) =>
-                (a.date ?? '').compareTo(b.date ?? ''));
-          final DateTime? date = DateTime.tryParse(group.first.date ?? '');
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            for (final String key in keys)
+              _groupColumn(
+                key,
+                groups[key]!,
+                key == currentKey,
+                leagueId,
+                game,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _groupColumn(
+    String key,
+    List<KnockoutTie> ties,
+    bool isCurrent,
+    int leagueId,
+    CareerProvider game,
+  ) {
+    final List<KnockoutTie> group = List<KnockoutTie>.of(ties)
+      ..sort(
+        (KnockoutTie a, KnockoutTie b) =>
+            (a.first.date ?? '').compareTo(b.first.date ?? ''),
+      );
+    final DateTime? date = DateTime.tryParse(
+      group.first.first.date ?? '',
+    );
+    return Column(
+      key: isCurrent ? _currentWeekKey : null,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 13, 12, 4),
+          child: Row(
             children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 13, 16, 4),
+              Expanded(
                 child: Text(
                   '$key  ·  ${date == null ? '' : _formatDate(date)}',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
-                    color: key.startsWith('League')
+                    color: group.first.first.tournamentId == leagueId
                         ? AppTheme.accent
                         : AppTheme.warn,
                   ),
                 ),
               ),
-              for (final FixtureMatch m in group) _fixtureRow(game, m),
             ],
-          );
-        },
-      ),
+          ),
+        ),
+        for (final KnockoutTie tie in group) _fixtureRow(game, tie),
+      ],
     );
   }
 
-  Widget _fixtureRow(CareerProvider game, FixtureMatch m) {
-    final Team? home = game.teamCache[m.homeTeamId];
-    final Team? away = game.teamCache[m.awayTeamId];
+  Widget _fixtureRow(CareerProvider game, KnockoutTie tie) {
+    final FixtureMatch m = tie.first;
+    final FixtureMatch? second = tie.second;
     final bool involvesUser =
         m.homeTeamId == game.userTeamId || m.awayTeamId == game.userTeamId;
-    final bool played = m.isPlayed;
+    final (int, int)? pens = tie.penalties;
+    final bool showAgg = second != null && tie.complete;
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: involvesUser ? AppTheme.accentDim.withAlpha(70) : AppTheme.surfaceCard,
+        color: involvesUser
+            ? AppTheme.accentDim.withAlpha(70)
+            : AppTheme.surfaceCard,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Expanded(
-            child: Text(
-              home?.name ?? '?',
-              textAlign: TextAlign.right,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: involvesUser ? FontWeight.w700 : FontWeight.w400,
-              ),
+          Text(
+            game.competitionLabel(m).toUpperCase(),
+            style: const TextStyle(
+              fontSize: 9,
+              letterSpacing: .6,
+              color: AppTheme.textDim,
+              fontWeight: FontWeight.bold,
             ),
           ),
-          Container(
-            width: 62,
-            alignment: Alignment.center,
-            margin: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              played ? '${m.homeGoals ?? 0} - ${m.awayGoals ?? 0}' : 'vs',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: played ? 14 : 11,
-                color: played ? Colors.white : AppTheme.textDim,
+          const SizedBox(height: 3),
+          _legRow(
+            game,
+            m,
+            involvesUser,
+            legLabel: second == null ? null : 'Leg 1',
+          ),
+          if (second != null) ...<Widget>[
+            const SizedBox(height: 4),
+            _legRow(game, second, involvesUser, legLabel: 'Leg 2'),
+          ],
+          if (showAgg)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Center(
+                child: Text(
+                  'Aggregate ${game.teamCache[m.homeTeamId]?.abbreviation ?? ''} '
+                  '${tie.homeAgg}-${tie.awayAgg} '
+                  '${game.teamCache[m.awayTeamId]?.abbreviation ?? ''}'
+                  '${pens == null ? '' : '  ·  pens ${pens.$1}-${pens.$2}'}',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.accent,
+                  ),
+                ),
+              ),
+            )
+          else if (second == null && pens != null)
+            Center(
+              child: Text(
+                'pens ${pens.$1}-${pens.$2}',
+                style: const TextStyle(fontSize: 9, color: AppTheme.warn),
               ),
             ),
-          ),
-          Expanded(
-            child: Text(
-              away?.name ?? '?',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: involvesUser ? FontWeight.w700 : FontWeight.w400,
-              ),
-            ),
-          ),
         ],
       ),
     );
   }
 
+  Widget _legRow(
+    CareerProvider game,
+    FixtureMatch m,
+    bool involvesUser, {
+    String? legLabel,
+  }) {
+    final Team? home = game.teamCache[m.homeTeamId];
+    final Team? away = game.teamCache[m.awayTeamId];
+    final DateTime? date = DateTime.tryParse(m.date ?? '');
+    final bool played = m.isPlayed;
+    final TextStyle nameStyle = TextStyle(
+      fontSize: 12,
+      fontWeight: involvesUser ? FontWeight.w700 : FontWeight.w400,
+    );
+    return Row(
+      children: <Widget>[
+        if (legLabel != null)
+          SizedBox(
+            width: 38,
+            child: Text(
+              '$legLabel${date == null ? '' : '\n${_formatDate(date)}'}',
+              style: const TextStyle(
+                fontSize: 8,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.warn,
+              ),
+            ),
+          ),
+        Expanded(
+          child: Text(
+            home?.name ?? '?',
+            textAlign: TextAlign.right,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: nameStyle,
+          ),
+        ),
+        Container(
+          width: 56,
+          alignment: Alignment.center,
+          margin: const EdgeInsets.symmetric(horizontal: 8),
+          child: Text(
+            played ? '${m.homeGoals ?? 0} - ${m.awayGoals ?? 0}' : 'vs',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: played ? 14 : 11,
+              color: played ? Colors.white : AppTheme.textDim,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            away?.name ?? '?',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: nameStyle,
+          ),
+        ),
+        if (legLabel != null) const SizedBox(width: 38),
+      ],
+    );
+  }
+
   static String _formatDate(DateTime d) {
     const List<String> months = <String>[
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     return '${d.day} ${months[d.month - 1]}';
   }
-
-  static String _phaseName(int phase) => switch (phase) {
-        1 => 'Round of 32',
-        2 => 'Round of 16',
-        3 => 'Quarter-finals',
-        4 => 'Semi-finals',
-        _ => 'Final',
-      };
 }

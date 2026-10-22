@@ -31,9 +31,7 @@ class AppTheme {
         color: surfaceCard,
         elevation: 0,
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: surface,

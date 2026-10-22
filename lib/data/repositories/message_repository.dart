@@ -9,7 +9,7 @@ class MessageRepository {
 
   final Database db;
 
-  Future<void> insert({
+  Future<int> insert({
     required String title,
     required String body,
     String? sender,
@@ -17,6 +17,7 @@ class MessageRepository {
     String? date,
     int? playerId,
     int? teamId,
+    int? transferOfferId,
   }) {
     return db.insert(t.messages, <String, Object?>{
       'title': title,
@@ -27,6 +28,7 @@ class MessageRepository {
       'type': type,
       'player_id': playerId,
       'team_id': teamId,
+      'transfer_offer_id': transferOfferId,
     });
   }
 
@@ -42,18 +44,16 @@ class MessageRepository {
   }
 
   Future<void> markRead(int messageId) => db.update(
-        t.messages,
-        <String, Object?>{'is_read': 1},
-        where: 'message_id = ?',
-        whereArgs: <Object?>[messageId],
-      );
+    t.messages,
+    <String, Object?>{'is_read': 1},
+    where: 'message_id = ?',
+    whereArgs: <Object?>[messageId],
+  );
 
   Future<int> unreadCount() async {
-    final int? c = Sqflite.firstIntValue(await db.query(
-      t.messages,
-      columns: ['COUNT(*)'],
-      where: 'is_read = 0',
-    ));
+    final int? c = Sqflite.firstIntValue(
+      await db.query(t.messages, columns: ['COUNT(*)'], where: 'is_read = 0'),
+    );
     return c ?? 0;
   }
 

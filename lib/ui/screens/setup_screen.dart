@@ -7,7 +7,9 @@ import '../../state/career_provider.dart';
 import '../theme.dart';
 import 'home_screen.dart';
 
-/// Career setup wizard: country -> league -> club -> generate season.
+typedef _Row = Map<String, Object?>;
+
+/// Career setup wizard: profile -> league country -> division -> club.
 class SetupScreen extends StatefulWidget {
   const SetupScreen({super.key});
 
@@ -16,18 +18,30 @@ class SetupScreen extends StatefulWidget {
 }
 
 class _SetupScreenState extends State<SetupScreen> {
+  static const List<String> _stepTitles = <String>[
+    'Profile',
+    'League',
+    'Division',
+    'Club',
+  ];
+
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
   int step = 0;
-  Map<String, Object?>? selectedCountry;
-  Map<String, Object?>? selectedLeague;
-  Map<String, Object?>? selectedTeam;
-  List<Map<String, Object?>> countryOptions = <Map<String, Object?>>[];
-  List<Map<String, Object?>> leagueOptions = <Map<String, Object?>>[];
-  List<Map<String, Object?>> teamOptions = <Map<String, Object?>>[];
+  _Row? nationality;
+  _Row? selectedCountry;
+  _Row? selectedLeague;
+  _Row? selectedTeam;
+  List<_Row> allCountries = <_Row>[];
+  List<_Row> leagueCountries = <_Row>[];
+  List<_Row> leagueOptions = <_Row>[];
+  List<_Row> teamOptions = <_Row>[];
   bool loadingOptions = false;
   bool generating = false;
-  double generationProgress = 0;
   String generationStatus = '';
   String? error;
+
+  CareerProvider get game => context.read<CareerProvider>();
 
   @override
   void initState() {
@@ -35,66 +49,103 @@ class _SetupScreenState extends State<SetupScreen> {
     _loadCountries();
   }
 
-  CareerProvider get game => context.read<CareerProvider>();
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
 
   Future<void> _loadCountries() async {
     setState(() => loadingOptions = true);
-    final List<Map<String, Object?>> countries = await game.playableCountries();
+    final List<_Row> all = await game.allCountries();
+    final List<_Row> playable = await game.playableCountries();
     if (!mounted) return;
     setState(() {
-      countryOptions = countries;
+      allCountries = all;
+      leagueCountries = playable;
       loadingOptions = false;
     });
   }
 
-  Future<void> _selectCountry(Map<String, Object?> country) async {
+  void _goTo(int next) => setState(() {
+    step = next;
+    error = null;
+    _searchController.clear();
+  });
+
+  Future<void> _toLeagueStep() async {
+    if (_nameController.text.trim().isEmpty) {
+      setState(() => error = 'Enter your manager name first.');
+      return;
+    }
+    if (nationality == null) {
+      setState(() => error = 'Pick your nationality.');
+      return;
+    }
+    // Put the manager's own country first: the most likely league to manage.
+    final int home = nationality!['country_id'] as int;
+    leagueCountries = List<_Row>.of(leagueCountries)..sort((_Row a, _Row b) {
+      final int ra = a['country_id'] == home ? 0 : 1;
+      final int rb = b['country_id'] == home ? 0 : 1;
+      return ra != rb
+          ? ra - rb
+          : a['name'].toString().compareTo(b['name'].toString());
+    });
+    _goTo(1);
+  }
+
+  Future<void> _selectCountry(_Row country) async {
     setState(() {
       selectedCountry = country;
       loadingOptions = true;
     });
-    final List<Map<String, Object?>> leagues =
-        await game.leaguesForCountry(country['country_id'] as int);
+    final List<_Row> leagues = await game.leaguesForCountry(
+      country['country_id'] as int,
+    );
     if (!mounted) return;
-    setState(() {
-      leagueOptions = leagues;
-      step = 1;
-      loadingOptions = false;
-    });
+    setState(() => loadingOptions = false);
+    _goTo(2);
+    setState(() => leagueOptions = leagues);
   }
 
-  Future<void> _selectLeague(Map<String, Object?> league) async {
+  Future<void> _selectLeague(_Row league) async {
     setState(() {
       selectedLeague = league;
+      selectedTeam = null;
       loadingOptions = true;
     });
-    final List<Map<String, Object?>> teams = await game.teamsForLeague(
+    final List<_Row> teams = await game.teamsForLeague(
       selectedCountry!['country_id'] as int,
       league['division_id'] as int,
     );
+    teams.sort(
+      (_Row a, _Row b) =>
+          ((b['power'] as int?) ?? 0).compareTo((a['power'] as int?) ?? 0),
+    );
     if (!mounted) return;
-    setState(() {
-      teamOptions = teams;
-      step = 2;
-      loadingOptions = false;
-    });
+    setState(() => loadingOptions = false);
+    _goTo(3);
+    setState(() => teamOptions = teams);
   }
 
   Future<void> _startCareer() async {
     setState(() {
       generating = true;
-      generationProgress = 0;
+      error = null;
     });
-    final Tournament leagueTournament = await _tournamentById(
-        selectedLeague!['tournament_id'] as int);
     try {
+      final Tournament? league = await game.tournamentById(
+        selectedLeague!['tournament_id'] as int,
+      );
+      if (league == null) throw StateError('League missing');
       await game.startCareer(
+        managerName: _nameController.text.trim(),
+        nationalityId: nationality!['country_id'] as int,
         countryId: selectedCountry!['country_id'] as int,
-        leagueTournament: leagueTournament,
+        leagueTournament: league,
         teamId: selectedTeam!['team_id'] as int,
-        onProgress: (String s) => setState(() {
-          generationStatus = s;
-          generationProgress = (generationProgress + 0.2).clamp(0.0, 1.0);
-        }),
+        onProgress: (String s) => setState(() => generationStatus = s),
       );
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
@@ -110,187 +161,456 @@ class _SetupScreenState extends State<SetupScreen> {
     }
   }
 
-  Future<Tournament> _tournamentById(int id) async {
-    final CareerProvider provider = context.read<CareerProvider>();
-    // Reference repo access through a tiny public helper.
-    final Tournament? t = await provider.tournamentById(id);
-    if (t == null) throw StateError('Tournament $id missing');
-    return t;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('New Career'),
-        backgroundColor: AppTheme.surface,
-      ),
-      body: generating ? _generatingBody() : _stepsBody(),
+  /// ISO-3166 alpha-2 -> flag emoji.
+  String _flag(Object? iso2) {
+    final String code = '${iso2 ?? ''}'.toUpperCase();
+    if (code.length != 2) return '🏳️';
+    return String.fromCharCodes(
+      code.codeUnits.map((int c) => 0x1F1E6 + c - 0x41),
     );
   }
 
-  Widget _generatingBody() => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            CircularProgressIndicator(value: generationProgress > 0.05 ? generationProgress : null),
-            const SizedBox(height: 18),
-            Text(generationStatus.isEmpty
-                ? 'Preparing world...'
-                : generationStatus),
-            const SizedBox(height: 8),
-            const Text(
-              'This bundles fixtures for every club in the season.',
-              style: TextStyle(fontSize: 11, color: AppTheme.textDim),
-            ),
-            if (error != null) ...<Widget>[
-              const SizedBox(height: 18),
-              Text(error!, style: const TextStyle(color: AppTheme.danger)),
-            ],
-          ],
-        ),
-      );
+  // ---------------------------------------------------------------- build
 
-  Widget _stepsBody() {
-    switch (step) {
-      case 0:
-        return _countryStep();
-      case 1:
-        return _leagueStep();
-      default:
-        return _teamStep();
-    }
-  }
-
-  // ---------------------------------------------------------------- steps
-
-  Widget _countryStep() => _optionList(
-        title: 'Choose a country',
-        subtitle: 'Sorted alphabetically by country',
-        options: countryOptions,
-        headline: (Map<String, Object?> o) => o['name'].toString(),
-        subline: (Map<String, Object?> o) =>
-            '${o['team_count']} clubs • ${o['league_count']} leagues • power ${(o['power'] as int?) ?? 0}',
-        trailing: (Map<String, Object?> o) =>
-            Text((o['iso2'] ?? '') as String, style: const TextStyle(color: AppTheme.textDim)),
-        onPick: _selectCountry,
-        emptyHint: 'No countries loaded',
-      );
-
-  Widget _leagueStep() => _optionList(
-        title: 'Choose a league',
-        subtitle: 'Only free leagues can be selected (see PRD quotas)',
-        options: leagueOptions,
-        headline: (Map<String, Object?> o) => o['name'].toString(),
-        subline: (Map<String, Object?> o) => '${o['team_count']} clubs',
-        onPick: _selectLeague,
-        emptyHint: 'No leagues for this country',
-      );
-
-  Widget _teamStep() {
-    return Column(
-      children: <Widget>[
-        Expanded(
-          child: _optionList(
-            title: 'Choose your club',
-            subtitle: 'Higher power means stronger squad and budget',
-            options: teamOptions,
-            headline: (Map<String, Object?> o) => o['name'].toString(),
-            subline: (Map<String, Object?> o) =>
-                'power ${(o['power'] as int?) ?? 0} • value ${money((o['value'] as int?) ?? 0)} '
-                '• budget ${money((o['budget'] as int?) ?? 0)}',
-            onPick: (Map<String, Object?> o) => setState(() {
-              selectedTeam = o;
-              step = 3;
-            }),
-            emptyHint: 'No clubs found',
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: step == 0 || generating,
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        if (!didPop) _goTo(step - 1);
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('New Career'),
+          leading: BackButton(
+            onPressed: () =>
+                step == 0 || generating ? Navigator.pop(context) : _goTo(step - 1),
           ),
         ),
-        if (selectedTeam != null)
-          Container(
-            margin: const EdgeInsets.all(12),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTheme.surfaceCard,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Column(
-              children: <Widget>[
-                Row(
+        body: SafeArea(
+          child: generating
+              ? _generatingBody()
+              : Column(
                   children: <Widget>[
-                    const Icon(Icons.flag, size: 14),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '${selectedCountry!['name']} • '
-                        '${selectedLeague!['name']}'
-                        ' • ${selectedTeam!['name']}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
+                    _stepper(),
+                    Expanded(child: _stepBody()),
                   ],
                 ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: _startCareer,
-                    child: const Text('Start Career — Generate Season'),
+        ),
+      ),
+    );
+  }
+
+  Widget _stepper() => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+    child: Row(
+      children: <Widget>[
+        for (int i = 0; i < _stepTitles.length; i++) ...<Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Container(
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: i <= step ? AppTheme.accent : AppTheme.surfaceCard,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _stepTitles[i],
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: i == step ? FontWeight.bold : FontWeight.w400,
+                    color: i == step ? Colors.white : AppTheme.textDim,
                   ),
                 ),
               ],
             ),
           ),
+          if (i < _stepTitles.length - 1) const SizedBox(width: 6),
+        ],
+      ],
+    ),
+  );
+
+  Widget _generatingBody() => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const CircularProgressIndicator(),
+          const SizedBox(height: 18),
+          Text(
+            generationStatus.isEmpty ? 'Preparing world...' : generationStatus,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Building fixtures for every club in the season.',
+            style: TextStyle(fontSize: 11, color: AppTheme.textDim),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _stepBody() {
+    switch (step) {
+      case 0:
+        return _profileStep();
+      case 1:
+        return _leagueCountryStep();
+      case 2:
+        return _divisionStep();
+      default:
+        return _clubStep();
+    }
+  }
+
+  Widget _header(String title, String subtitle) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          subtitle,
+          style: const TextStyle(fontSize: 12, color: AppTheme.textDim),
+        ),
+      ],
+    ),
+  );
+
+  Widget _bottomBar({required String label, VoidCallback? onPressed, Widget? summary}) =>
+      Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+        decoration: const BoxDecoration(
+          color: AppTheme.surfaceCard,
+          border: Border(top: BorderSide(color: Colors.white10)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  error!,
+                  style: const TextStyle(color: AppTheme.danger, fontSize: 12),
+                ),
+              ),
+            ?summary,
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(onPressed: onPressed, child: Text(label)),
+            ),
+          ],
+        ),
+      );
+
+  // ---------------------------------------------------------------- steps
+
+  Widget _profileStep() => Column(
+    children: <Widget>[
+      Expanded(
+        child: ListView(
+          padding: const EdgeInsets.only(bottom: 16),
+          children: <Widget>[
+            _header('Who are you?', 'Create your manager profile.'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: TextField(
+                controller: _nameController,
+                textCapitalization: TextCapitalization.words,
+                maxLength: 40,
+                onChanged: (_) {
+                  if (error != null) setState(() => error = null);
+                },
+                decoration: const InputDecoration(
+                  labelText: 'Manager name',
+                  hintText: 'e.g. Budi Santoso',
+                  prefixIcon: Icon(Icons.person_outline),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(4),
+                onTap: _pickNationality,
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Nationality',
+                    border: OutlineInputBorder(),
+                    suffixIcon: Icon(Icons.arrow_drop_down),
+                  ),
+                  child: Text(
+                    nationality == null
+                        ? 'Select country'
+                        : '${_flag(nationality!['iso2'])}  ${nationality!['name']}',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: nationality == null ? AppTheme.textDim : null,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      _bottomBar(label: 'Continue', onPressed: _toLeagueStep),
+    ],
+  );
+
+  Future<void> _pickNationality() async {
+    final _Row? picked = await showModalBottomSheet<_Row>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.surface,
+      builder: (BuildContext ctx) => _CountrySheet(
+        countries: allCountries,
+        flag: _flag,
+      ),
+    );
+    if (picked != null) setState(() => nationality = picked);
+  }
+
+  Widget _searchBox(String hint) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+    child: TextField(
+      controller: _searchController,
+      onChanged: (_) => setState(() {}),
+      decoration: InputDecoration(
+        hintText: hint,
+        prefixIcon: const Icon(Icons.search),
+        isDense: true,
+        filled: true,
+        fillColor: AppTheme.surfaceCard,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    ),
+  );
+
+  Widget _leagueCountryStep() {
+    final String q = _searchController.text.trim().toLowerCase();
+    final List<_Row> shown = leagueCountries
+        .where((_Row c) => c['name'].toString().toLowerCase().contains(q))
+        .toList();
+    final int? home = nationality?['country_id'] as int?;
+    return Column(
+      children: <Widget>[
+        _header(
+          'Where do you want to manage?',
+          'Pick the country whose league you will play in.',
+        ),
+        _searchBox('Search country'),
+        Expanded(
+          child: loadingOptions
+              ? const Center(child: CircularProgressIndicator())
+              : ListView.builder(
+                  itemCount: shown.length,
+                  itemBuilder: (BuildContext context, int i) {
+                    final _Row c = shown[i];
+                    return _tile(
+                      leading: _flag(c['iso2']),
+                      title: c['name'].toString(),
+                      subtitle:
+                          '${c['team_count']} clubs • ${c['league_count']} divisions',
+                      badge: c['country_id'] == home ? 'Your country' : null,
+                      onTap: () => _selectCountry(c),
+                    );
+                  },
+                ),
+        ),
       ],
     );
   }
 
-  Widget _optionList({
-    required String title,
-    required String subtitle,
-    required List<Map<String, Object?>> options,
-    required String Function(Map<String, Object?>) headline,
-    required String Function(Map<String, Object?>) subline,
-    Widget Function(Map<String, Object?>)? trailing,
-    required ValueChanged<Map<String, Object?>> onPick,
-    required String emptyHint,
-  }) {
+  Widget _divisionStep() => Column(
+    children: <Widget>[
+      _header(
+        '${selectedCountry!['name']}',
+        'Choose a division.',
+      ),
+      Expanded(
+        child: loadingOptions
+            ? const Center(child: CircularProgressIndicator())
+            : leagueOptions.isEmpty
+            ? const Center(child: Text('No leagues for this country'))
+            : ListView.builder(
+                itemCount: leagueOptions.length,
+                itemBuilder: (BuildContext context, int i) {
+                  final _Row l = leagueOptions[i];
+                  return _tile(
+                    leading: '${l['division_id']}',
+                    title: l['name'].toString(),
+                    subtitle: '${l['team_count']} clubs',
+                    onTap: () => _selectLeague(l),
+                  );
+                },
+              ),
+      ),
+    ],
+  );
+
+  Widget _clubStep() {
+    final String q = _searchController.text.trim().toLowerCase();
+    final List<_Row> shown = teamOptions
+        .where((_Row t) => t['name'].toString().toLowerCase().contains(q))
+        .toList();
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        _header('${selectedLeague!['name']}', 'Choose your club.'),
+        _searchBox('Search club'),
+        Expanded(
+          child: loadingOptions
+              ? const Center(child: CircularProgressIndicator())
+              : ListView.builder(
+                  itemCount: shown.length,
+                  itemBuilder: (BuildContext context, int i) {
+                    final _Row t = shown[i];
+                    final bool picked =
+                        selectedTeam?['team_id'] == t['team_id'];
+                    return _tile(
+                      leading: '${(t['power'] as int?) ?? 0}',
+                      title: t['name'].toString(),
+                      subtitle:
+                          'Value ${money((t['value'] as int?) ?? 0)} • Budget ${money((t['budget'] as int?) ?? 0)}',
+                      selected: picked,
+                      onTap: () => setState(() => selectedTeam = t),
+                    );
+                  },
+                ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Text(subtitle, style: const TextStyle(fontSize: 12, color: AppTheme.textDim)),
-        ),
-        if (loadingOptions)
-          const Expanded(child: Center(child: CircularProgressIndicator()))
-        else if (options.isEmpty)
-          Expanded(child: Center(child: Text(emptyHint)))
-        else
-          Expanded(
-            child: ListView.builder(
-              itemCount: options.length,
-              itemBuilder: (BuildContext context, int index) {
-                final Map<String, Object?> option = options[index];
-                return Card(
-                  child: ListTile(
-                    title: Text(
-                      headline(option),
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+        if (selectedTeam != null)
+          _bottomBar(
+            label: 'Start Career',
+            onPressed: _startCareer,
+            summary: Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: <Widget>[
+                  const Icon(Icons.flag, size: 14, color: AppTheme.accent),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${_nameController.text.trim()} • ${selectedTeam!['name']}',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    subtitle: Text(subline(option)),
-                    trailing: trailing?.call(option),
-                    onTap: () => onPick(option),
                   ),
-                );
-              },
+                ],
+              ),
             ),
           ),
       ],
+    );
+  }
+
+  /// Shared list row: [leading] is an emoji flag or a short number badge.
+  Widget _tile({
+    required String leading,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    String? badge,
+    bool selected = false,
+  }) => Card(
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(14),
+      side: BorderSide(
+        color: selected ? AppTheme.accent : Colors.transparent,
+        width: 1.5,
+      ),
+    ),
+    child: ListTile(
+      onTap: onTap,
+      leading: CircleAvatar(
+        backgroundColor: AppTheme.surface,
+        child: Text(leading, style: const TextStyle(fontSize: 18)),
+      ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      trailing: badge != null
+          ? Chip(
+              label: Text(badge),
+              backgroundColor: AppTheme.accentDim,
+              side: BorderSide.none,
+              visualDensity: VisualDensity.compact,
+            )
+          : Icon(
+              selected ? Icons.check_circle : Icons.chevron_right,
+              color: selected ? AppTheme.accent : AppTheme.textDim,
+            ),
+    ),
+  );
+}
+
+/// Searchable country list shown as a bottom sheet.
+class _CountrySheet extends StatefulWidget {
+  const _CountrySheet({required this.countries, required this.flag});
+
+  final List<_Row> countries;
+  final String Function(Object?) flag;
+
+  @override
+  State<_CountrySheet> createState() => _CountrySheetState();
+}
+
+class _CountrySheetState extends State<_CountrySheet> {
+  String q = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final List<_Row> shown = widget.countries
+        .where((_Row c) => c['name'].toString().toLowerCase().contains(q))
+        .toList();
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.8,
+        child: Column(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: TextField(
+                autofocus: true,
+                onChanged: (String v) => setState(() => q = v.toLowerCase()),
+                decoration: const InputDecoration(
+                  hintText: 'Search nationality',
+                  prefixIcon: Icon(Icons.search),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: shown.length,
+                itemBuilder: (BuildContext context, int i) => ListTile(
+                  leading: Text(
+                    widget.flag(shown[i]['iso2']),
+                    style: const TextStyle(fontSize: 22),
+                  ),
+                  title: Text(shown[i]['name'].toString()),
+                  onTap: () => Navigator.pop(context, shown[i]),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

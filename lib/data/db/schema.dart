@@ -10,6 +10,15 @@ const String teams = 'teams';
 const String coaches = 'coaches';
 const String stadiums = 'stadiums';
 const String teamPlayers = 'team_players';
+const String teamTactics = 'team_tactics';
+const String teamLineups = 'team_lineups';
+const String teamTraining = 'team_training';
+const String teamYouthAcademy = 'team_youth_academy';
+const String academyProspects = 'academy_prospects';
+const String competitionPrizeRules = 'competition_prize_rules';
+const String competitionPrizeAwards = 'competition_prize_awards';
+const String scouts = 'scouts';
+const String scoutReports = 'scout_reports';
 const String teamLoans = 'team_loans';
 const String countryCoaches = 'country_coaches';
 const String countryCallups = 'country_callups';
@@ -45,8 +54,11 @@ const String coachTransfers = 'coach_transfers';
 const String sponsors = 'sponsors';
 const String sponsorships = 'sponsorships';
 const String messages = 'messages';
+const String news = 'news';
+const String transferOffers = 'transfer_offers';
 const String worldRankingHistory = 'world_ranking_history';
 const String careerHistory = 'career_history';
+const String managerProfile = 'manager_profile';
 
 // ------------------------------------------------------- match statuses
 const int matchScheduled = 1;
@@ -57,6 +69,7 @@ const int matchCancelled = 3;
 const int orgLeague = 1;
 const int orgInternational = 2;
 const int orgNationalCup = 3;
+const int orgFriendly = 4;
 
 // ------------------------------------------------ season tournament state
 const int seasonTournamentActive = 1;
@@ -76,3 +89,18 @@ const int marketOnLoan = 3;
 const int statusActive = 1;
 const int statusRetired = 2;
 const int statusDead = 3;
+
+// ---------------------------------------------- player_awards.type values
+const int awardTopScorer = 1;
+const int awardMvp = 2;
+const int awardYoungPlayer = 3;
+
+// -------------------------------------------- transfer_offers.status values
+const int offerPending = 1;
+const int offerAccepted = 2;
+const int offerRejected = 3;
+const int offerCountered = 4;
+const int offerContractNegotiation = 5;
+const int offerPlayerAccepted = 6;
+const int offerPlayerRejected = 7;
+const int offerCompleted = 8;

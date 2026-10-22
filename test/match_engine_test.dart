@@ -2,15 +2,28 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:superkickoff/data/models/models.dart';
+import 'package:superkickoff/game/formation.dart';
 import 'package:superkickoff/game/match_engine.dart';
 
 /// Builds a balanced 16-man squad (1 GK, 5 DEF, 6 MID, 4 ATT).
 List<Player> buildSquad(int seed) {
   final List<int> positions = <int>[
     1,
-    2, 2, 2, 2, 3,
-    7, 7, 7, 7, 8, 8,
-    10, 10, 10, 11,
+    2,
+    2,
+    2,
+    2,
+    3,
+    7,
+    7,
+    7,
+    7,
+    8,
+    8,
+    10,
+    10,
+    10,
+    11,
   ];
   return List<Player>.generate(positions.length, (int i) {
     final int position = positions[i];
@@ -47,7 +60,8 @@ void main() {
       expect(lineup.substitutes.length, greaterThan(0));
 
       int group(int id) => Lineup.groupOf(
-          lineup.starters.firstWhere((Player p) => p.playerId == id));
+        lineup.starters.firstWhere((Player p) => p.playerId == id),
+      );
       final Map<int, int> counts = <int, int>{};
       for (final Player p in lineup.starters) {
         final int g = group(p.playerId);
@@ -57,6 +71,40 @@ void main() {
       expect(counts[2], 4);
       expect(counts[3], 4);
       expect(counts[4], 2);
+    });
+
+    test('honours the selected formation', () {
+      final Lineup lineup = Lineup.best(
+        buildSquad(4),
+        formation: Formation.f433,
+      );
+      final Map<int, int> counts = <int, int>{};
+      for (final Player p in lineup.starters) {
+        final int g = Lineup.groupOf(p);
+        counts[g] = (counts[g] ?? 0) + 1;
+      }
+      expect(counts[1], 1);
+      expect(counts[2], 4);
+      expect(counts[3], 3);
+      expect(counts[4], 3);
+    });
+
+    test('starts the players picked by the manager', () {
+      final List<Player> squad = buildSquad(10);
+      final List<int> picked = squad
+          .take(11)
+          .map((Player p) => p.playerId)
+          .toList();
+      final Lineup lineup = Lineup.best(squad, preferredIds: picked);
+      expect(lineup.starters.length, 11);
+      for (final int id in picked) {
+        expect(
+          lineup.starters.any((Player p) => p.playerId == id),
+          isTrue,
+          reason: 'picked player $id must start',
+        );
+      }
+      expect(lineup.starters.where((Player p) => p.positionId == 1).length, 1);
     });
 
     test('excludes injured and suspended players', () {
@@ -91,8 +139,10 @@ void main() {
           else
             p,
       ];
-      final Lineup lineup =
-          Lineup.best(tweaked, bannedIds: <int>{banned.playerId});
+      final Lineup lineup = Lineup.best(
+        tweaked,
+        bannedIds: <int>{banned.playerId},
+      );
       expect(lineup.unavailableIds.contains(banned.playerId), isTrue);
       expect(
         lineup.starters.any((Player p) => p.playerId == banned.playerId),
@@ -109,18 +159,20 @@ void main() {
   group('MatchEngine', () {
     test('produces a complete, deterministic result', () {
       MatchInput input() => MatchInput(
-            homeSquad: buildSquad(3),
-            awaySquad: buildSquad(4),
-            capacityGeneral: 20000,
-            capacityStand: 8000,
-            capacityTerrace: 4000,
-            capacityBoxes: 500,
-            homePower: 70,
-            refereeTemper: 3,
-          );
+        homeSquad: buildSquad(3),
+        awaySquad: buildSquad(4),
+        capacityGeneral: 20000,
+        capacityStand: 8000,
+        capacityTerrace: 4000,
+        capacityBoxes: 500,
+        homePower: 70,
+        refereeTemper: 3,
+      );
 
-      final MatchResult first = MatchEngine(random: Random(42)).simulate(input());
-      final MatchResult second = MatchEngine(random: Random(42)).simulate(input());
+      final MatchResult first = MatchEngine(random: Random(42))
+          .simulate(input());
+      final MatchResult second = MatchEngine(random: Random(42))
+          .simulate(input());
 
       expect(first.homeGoals, second.homeGoals);
       expect(first.awayGoals, second.awayGoals);
@@ -134,8 +186,22 @@ void main() {
           .fold(0, (int a, int b) => a + b);
       expect(minutes, greaterThanOrEqualTo(22 * 60));
 
+      // Match statistics are internally consistent.
+      expect(first.homeShots, greaterThanOrEqualTo(first.homeShotsOnTarget));
+      expect(first.awayShots, greaterThanOrEqualTo(first.awayShotsOnTarget));
+      expect(first.homeShotsOnTarget, greaterThanOrEqualTo(first.homeGoals));
+      expect(first.awayShotsOnTarget, greaterThanOrEqualTo(first.awayGoals));
+      expect(first.homePossession, inInclusiveRange(25, 75));
+      expect(
+        first.playerRows.every(
+          (MatchPlayerRow row) => row.playerName.isNotEmpty,
+        ),
+        isTrue,
+      );
+
       // Attendance is bounded by the stadium tiers.
-      final int attendance = first.attendanceGeneral +
+      final int attendance =
+          first.attendanceGeneral +
           first.attendanceStand +
           first.attendanceTerrace +
           first.attendanceBoxes;
@@ -193,6 +259,73 @@ void main() {
         recordEvents: false,
       );
       expect(result.events, isEmpty);
+    });
+
+    test('shootout always produces a winner with alternating kicks', () {
+      for (int seed = 1; seed <= 25; seed++) {
+        final MatchPenaltyShootout shootout = MatchEngine(random: Random(seed))
+            .penaltyShootout(
+              MatchInput(
+                homeSquad: buildSquad(3),
+                awaySquad: buildSquad(4),
+                capacityGeneral: 1000,
+                capacityStand: 500,
+                capacityTerrace: 200,
+                capacityBoxes: 50,
+                homePower: 70,
+              ),
+            );
+        expect(
+          shootout.homeScore == shootout.awayScore,
+          isFalse,
+          reason: 'a shootout can never end level',
+        );
+        expect(shootout.events.length, greaterThanOrEqualTo(6));
+        expect(
+          shootout.events.every(
+            (MatchEvent e) =>
+                e.type == MatchEvent.shootout &&
+                (e.detail == null ||
+                    e.detail!.startsWith('scored') ||
+                    e.detail!.startsWith('missed')),
+          ),
+          isTrue,
+        );
+        // Kicks alternate home, away, home, away... unless the best-of-five
+        // ends early, which always stops right after an away kick.
+        final int fullRounds = shootout.events.length >= 10
+            ? shootout.events.length - (shootout.events.length % 2)
+            : shootout.events.length;
+        for (int i = 0; i < fullRounds; i++) {
+          expect(shootout.events[i].isHome, i.isEven);
+        }
+      }
+    });
+
+    test('shootout score matches the kick events', () {
+      for (int seed = 1; seed <= 10; seed++) {
+        final MatchPenaltyShootout shootout = MatchEngine(random: Random(seed))
+            .penaltyShootout(
+              MatchInput(
+                homeSquad: buildSquad(11),
+                awaySquad: buildSquad(12),
+                capacityGeneral: 0,
+                capacityStand: 0,
+                capacityTerrace: 0,
+                capacityBoxes: 0,
+                homePower: 60,
+              ),
+            );
+        int scored(bool home) => shootout.events
+            .where(
+              (MatchEvent e) =>
+                  e.isHome == home &&
+                  e.detail == 'scored ${e.detail!.split(' ').last}',
+            )
+            .length;
+        expect(scored(true), shootout.homeScore);
+        expect(scored(false), shootout.awayScore);
+      }
     });
   });
 }

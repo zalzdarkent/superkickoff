@@ -71,15 +71,30 @@ class Stars extends StatelessWidget {
 
 /// Position badge with color by position type.
 class PositionBadge extends StatelessWidget {
-  const PositionBadge({super.key, required this.positionId});
+  const PositionBadge({super.key, required this.positionId, this.profile});
 
   final int positionId;
 
-  static const Map<int, String> labels = <int, String>{
-    1: 'GK', 2: 'CB', 3: 'CB', 4: 'FB',
-    5: 'DM', 6: 'AM', 7: 'CM', 8: 'WM',
-    9: 'W', 10: 'ST', 11: 'SS',
-  };
+  /// Preferred foot from the database ('D' right, 'I' left). Used to tell
+  /// full-backs and wingers apart.
+  final String? profile;
+
+  /// Compact label shown in the UI.
+  static String labelFor(int positionId, {String? profile}) {
+    final bool left = (profile ?? 'D').toUpperCase() == 'I';
+    return switch (positionId) {
+      1 => 'GK',
+      2 || 3 => 'CB',
+      4 => left ? 'LB' : 'RB',
+      5 => 'CDM',
+      6 => 'CAM',
+      7 => 'CM',
+      8 || 9 => left ? 'LW' : 'RW',
+      10 => 'ST',
+      11 => 'CF',
+      _ => '?',
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -100,7 +115,7 @@ class PositionBadge extends StatelessWidget {
         border: Border.all(color: color.withValues(alpha: 0.5)),
       ),
       child: Text(
-        labels[positionId] ?? '?',
+        labelFor(positionId, profile: profile),
         style: TextStyle(
           color: color.withAlpha(255),
           fontSize: 10,
@@ -123,8 +138,8 @@ class FitnessBar extends StatelessWidget {
     final Color color = value > 70
         ? Colors.green
         : value > 40
-            ? Colors.orange
-            : Colors.red;
+        ? Colors.orange
+        : Colors.red;
     return SizedBox(
       width: width,
       child: TweenAnimationBuilder<double>(
@@ -233,6 +248,9 @@ Column statChip(String label, String value, {IconData? icon, Color? color}) =>
             ),
           ],
         ),
-        Text(label, style: TextStyle(fontSize: 10, color: Colors.grey.shade400)),
+        Text(
+          label,
+          style: TextStyle(fontSize: 10, color: Colors.grey.shade400),
+        ),
       ],
     );

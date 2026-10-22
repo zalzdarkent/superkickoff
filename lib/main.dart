@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'state/career_provider.dart';
-import 'ui/screens/home_screen.dart';
 import 'ui/screens/start_screen.dart';
 import 'ui/theme.dart';
 
@@ -56,6 +55,7 @@ class _BootGate extends StatelessWidget {
         ),
       );
     }
-    return game.hasCareer ? const HomeScreen() : const StartScreen();
+    // A saved career always goes through Continue / New Career first.
+    return const StartScreen();
   }
 }

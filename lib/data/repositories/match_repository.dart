@@ -27,6 +27,8 @@ class MatchRepository {
     required int homeGoals,
     required int awayGoals,
     required int? winnerId,
+    int? penaltyHomeGoals,
+    int? penaltyAwayGoals,
     required int attendanceGeneral,
     required int attendanceStand,
     required int attendanceTerrace,
@@ -45,6 +47,8 @@ class MatchRepository {
           'home_goals': homeGoals,
           'away_goals': awayGoals,
           'winner_id': winnerId,
+          'penalty_home_goals': penaltyHomeGoals,
+          'penalty_away_goals': penaltyAwayGoals,
           'attendance_general': attendanceGeneral,
           'attendance_stand': attendanceStand,
           'attendance_terrace': attendanceTerrace,
@@ -92,10 +96,12 @@ class MatchRepository {
       }
       // 5. Injuries marginally reduce fitness for the next weeks.
       for (final int playerId in injuredPlayerIds) {
-        await txn.update(t.players,
-            <String, Object?>{'fitness': 40},
-            where: 'player_id = ?',
-            whereArgs: <Object?>[playerId]);
+        await txn.update(
+          t.players,
+          <String, Object?>{'fitness': 40},
+          where: 'player_id = ?',
+          whereArgs: <Object?>[playerId],
+        );
       }
     });
   }
@@ -109,42 +115,52 @@ class MatchRepository {
       final int id = r['suspension_id'] as int;
       final int remaining = ((r['matches_remaining'] as int?) ?? 1) - 1;
       if (remaining > 0) {
-        await db.update(t.suspensions, <String, Object?>{'matches_remaining': remaining},
-            where: 'suspension_id = ?', whereArgs: <Object?>[id]);
+        await db.update(
+          t.suspensions,
+          <String, Object?>{'matches_remaining': remaining},
+          where: 'suspension_id = ?',
+          whereArgs: <Object?>[id],
+        );
         stillOut.add(r['player_id'] as int);
       } else {
-        await db.delete(t.suspensions,
-            where: 'suspension_id = ?', whereArgs: <Object?>[id]);
+        await db.delete(
+          t.suspensions,
+          where: 'suspension_id = ?',
+          whereArgs: <Object?>[id],
+        );
       }
     }
     return stillOut;
   }
 
   Future<List<Map<String, Object?>>> incidents(int matchId) => db.query(
-        t.matchIncidents,
-        where: 'match_id = ?',
-        whereArgs: <Object?>[matchId],
-        limit: 1,
-      );
+    t.matchIncidents,
+    where: 'match_id = ?',
+    whereArgs: <Object?>[matchId],
+    limit: 1,
+  );
 
-  Future<List<Map<String, Object?>>> matchPlayers(int matchId) =>
-      db.query(
-        t.matchPlayers,
-        where: 'match_id = ?',
-        whereArgs: <Object?>[matchId],
-        orderBy: 'starter DESC, minutes DESC',
-      );
+  Future<List<Map<String, Object?>>> matchPlayers(int matchId) => db.query(
+    t.matchPlayers,
+    where: 'match_id = ?',
+    whereArgs: <Object?>[matchId],
+    orderBy: 'starter DESC, minutes DESC',
+  );
 
   /// Adds [amount] to a team's budget (e.g. gate receipts, sponsor money).
   Future<void> adjustBudget(int teamId, int amount) async {
-    await db.execute('''
+    await db.execute(
+      '''
       UPDATE teams SET budget = budget + ? WHERE team_id = ?
-    ''', <Object?>[amount, teamId]);
+    ''',
+      <Object?>[amount, teamId],
+    );
   }
 
   /// Deducts one week of salaries for the teams in a season.
   Future<void> paySalaries(int seasonId) async {
-    await db.execute('''
+    await db.execute(
+      '''
       UPDATE teams SET budget = budget - (
         SELECT COALESCE(SUM(p.salary), 0)
         FROM team_players tp
@@ -152,6 +168,8 @@ class MatchRepository {
         WHERE tp.team_id = teams.team_id AND p.status_id = ?
       ) / 4
       WHERE team_id IN (SELECT team_id FROM season_teams WHERE season_id = ?)
-    ''', <Object?>[t.statusActive, seasonId]);
+    ''',
+      <Object?>[t.statusActive, seasonId],
+    );
   }
 }
