@@ -3,6 +3,7 @@
 library;
 
 import '../db/schema.dart' as t;
+import '../../core/country_names.dart';
 
 class Country {
   Country({
@@ -21,7 +22,11 @@ class Country {
 
   factory Country.fromMap(Map<String, Object?> m) => Country(
     countryId: m['country_id'] as int,
-    name: m['name'] as String? ?? '',
+    name: displayCountryName(
+      m['name'] as String? ?? '',
+      m['iso2'] as String? ?? '',
+      countryId: m['country_id'] as int?,
+    ),
     iso2: m['iso2'] as String? ?? '',
     power: (m['power'] as int?) ?? 0,
     confederation: (m['confederation'] as int?) ?? 0,
@@ -765,6 +770,31 @@ class ClubOverview {
   int get expansionCost => upgradeSeats * 1200;
 
   int get netTransfers => transferIncome - transferSpend;
+}
+
+class FinanceSummary {
+  const FinanceSummary({
+    required this.ticketIncome,
+    required this.sponsorIncome,
+    required this.playerSaleIncome,
+    required this.prizeIncome,
+    required this.salaryExpense,
+    required this.playerPurchaseExpense,
+    required this.otherExpense,
+  });
+
+  final int ticketIncome;
+  final int sponsorIncome;
+  final int playerSaleIncome;
+  final int prizeIncome;
+  final int salaryExpense;
+  final int playerPurchaseExpense;
+  final int otherExpense;
+
+  int get totalIncome =>
+      ticketIncome + sponsorIncome + playerSaleIncome + prizeIncome;
+  int get totalExpense => salaryExpense + playerPurchaseExpense + otherExpense;
+  int get net => totalIncome - totalExpense;
 }
 
 /// Weekly training availability and eligible-player counts per focus.

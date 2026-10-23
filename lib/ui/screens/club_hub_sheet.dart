@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import 'dart:math' as math;
+
 import 'package:provider/provider.dart';
 
 import '../../core/format.dart';
@@ -6,6 +9,7 @@ import '../../data/models/models.dart';
 import '../../state/career_provider.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'player_detail_sheet.dart';
 
 /// Opens the club hub: overview, finances and stadium in three tabs.
 Future<void> showClubHub(BuildContext context) {
@@ -25,18 +29,27 @@ class ClubHubSheet extends StatefulWidget {
   State<ClubHubSheet> createState() => _ClubHubSheetState();
 }
 
-class _ClubHubSheetState extends State<ClubHubSheet> {
+class _ClubHubSheetState extends State<ClubHubSheet>
+    with SingleTickerProviderStateMixin {
   late Future<ClubOverview?> _future;
   late Future<List<ClubTrophy>> _trophies;
   late Future<YouthAcademyState> _academy;
+  late final TabController _tabController;
   bool _busy = false;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 5, vsync: this);
     _future = context.read<CareerProvider>().clubOverview();
     _trophies = context.read<CareerProvider>().clubTrophies();
     _academy = context.read<CareerProvider>().youthAcademyState();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   void _reload() {
@@ -68,7 +81,9 @@ class _ClubHubSheetState extends State<ClubHubSheet> {
   Future<void> _upgradeAcademy() async {
     if (_busy) return;
     setState(() => _busy = true);
-    final String? error = await context.read<CareerProvider>().upgradeYouthAcademy();
+    final String? error = await context
+        .read<CareerProvider>()
+        .upgradeYouthAcademy();
     if (!mounted) return;
     setState(() => _busy = false);
     if (error != null) {
@@ -104,101 +119,100 @@ class _ClubHubSheetState extends State<ClubHubSheet> {
   }
 
   Widget _content(ClubOverview club) {
-    return DefaultTabController(
-      length: 5,
-      child: Column(
-        children: <Widget>[
-          const SizedBox(height: 8),
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade700,
-              borderRadius: BorderRadius.circular(2),
-            ),
+    return Column(
+      children: <Widget>[
+        const SizedBox(height: 8),
+        Container(
+          width: 40,
+          height: 4,
+          decoration: BoxDecoration(
+            color: Colors.grey.shade700,
+            borderRadius: BorderRadius.circular(2),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: Row(
-              children: <Widget>[
-                CrestAvatar(team: club.team, radius: 24),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        club.team.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        '${club.countryName} \u00b7 Division ${club.team.division}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.textDim,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Column(
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+          child: Row(
+            children: <Widget>[
+              CrestAvatar(team: club.team, radius: 24),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      '${club.team.power}',
+                      club.team.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 26,
-                        height: 1,
-                        fontWeight: FontWeight.w900,
-                        color: AppTheme.accent,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const Text(
-                      'POWER',
-                      style: TextStyle(
-                        fontSize: 9,
-                        letterSpacing: 1,
+                    const SizedBox(height: 3),
+                    Text(
+                      '${club.countryName} \u00b7 Division ${club.team.division}',
+                      style: const TextStyle(
+                        fontSize: 12,
                         color: AppTheme.textDim,
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-          const TabBar(
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            labelColor: AppTheme.accent,
-            unselectedLabelColor: AppTheme.textDim,
-            indicatorColor: AppTheme.accent,
-            dividerColor: Colors.white10,
-            tabs: <Widget>[
-              Tab(text: 'Overview'),
-              Tab(text: 'Finances'),
-              Tab(text: 'Stadium'),
-              Tab(text: 'Academy'),
-              Tab(text: 'Honours'),
+              ),
+              Column(
+                children: <Widget>[
+                  Text(
+                    '${club.team.power}',
+                    style: const TextStyle(
+                      fontSize: 26,
+                      height: 1,
+                      fontWeight: FontWeight.w900,
+                      color: AppTheme.accent,
+                    ),
+                  ),
+                  const Text(
+                    'POWER',
+                    style: TextStyle(
+                      fontSize: 9,
+                      letterSpacing: 1,
+                      color: AppTheme.textDim,
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
-          Expanded(
-            child: TabBarView(
-              children: <Widget>[
-                _overviewTab(club),
-                _financesTab(club),
-                _stadiumTab(club),
-                _academyTab(),
-                _honoursTab(),
-              ],
-            ),
+        ),
+        TabBar(
+          controller: _tabController,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          labelColor: AppTheme.accent,
+          unselectedLabelColor: AppTheme.textDim,
+          indicatorColor: AppTheme.accent,
+          dividerColor: Colors.white10,
+          tabs: <Widget>[
+            Tab(text: 'Overview'),
+            Tab(text: 'Finances'),
+            Tab(text: 'Stadium'),
+            Tab(text: 'Academy'),
+            Tab(text: 'Honours'),
+          ],
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: <Widget>[
+              _overviewTab(club),
+              _financesTab(club),
+              _stadiumTab(club),
+              _academyTab(),
+              _honoursTab(),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -267,7 +281,8 @@ class _ClubHubSheetState extends State<ClubHubSheet> {
     return FutureBuilder<YouthAcademyState>(
       future: _academy,
       builder: (BuildContext context, AsyncSnapshot<YouthAcademyState> snap) {
-        if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+        if (!snap.hasData)
+          return const Center(child: CircularProgressIndicator());
         final YouthAcademyState academy = snap.data!;
         final int minOverall = 42 + academy.level * 2;
         final int maxOverall = minOverall + 3;
@@ -280,7 +295,10 @@ class _ClubHubSheetState extends State<ClubHubSheet> {
               const SizedBox(height: 12),
               Text(
                 'Youth Academy · Level ${academy.level}/10',
-                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 8),
               const Text(
@@ -300,71 +318,94 @@ class _ClubHubSheetState extends State<ClubHubSheet> {
               const SizedBox(height: 20),
               FutureBuilder<List<YouthProspect>>(
                 future: context.read<CareerProvider>().pendingProspects(),
-                builder: (BuildContext context, AsyncSnapshot<List<YouthProspect>> snap) {
-                  final List<YouthProspect> pending = snap.data ?? <YouthProspect>[];
-                  if (pending.isEmpty) {
-                    return Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppTheme.surfaceCard,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Row(
-                        children: <Widget>[
-                          Icon(Icons.hourglass_empty, size: 16, color: AppTheme.textDim),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'No pending intake prospects. Next batch arrives in ~3 months.',
-                              style: TextStyle(fontSize: 11, color: AppTheme.textDim),
-                            ),
+                builder:
+                    (
+                      BuildContext context,
+                      AsyncSnapshot<List<YouthProspect>> snap,
+                    ) {
+                      final List<YouthProspect> pending =
+                          snap.data ?? <YouthProspect>[];
+                      if (pending.isEmpty) {
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surfaceCard,
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                        ],
-                      ),
-                    );
-                  }
-                  return Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.accent.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3)),
-                    ),
-                    child: Row(
-                      children: <Widget>[
-                        const Icon(Icons.stars, color: AppTheme.accent, size: 20),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            '${pending.length} prospects awaiting review!',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
+                          child: const Row(
+                            children: <Widget>[
+                              Icon(
+                                Icons.hourglass_empty,
+                                size: 16,
+                                color: AppTheme.textDim,
+                              ),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'No pending intake prospects. Next batch arrives in ~3 months.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppTheme.textDim,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                      return Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accent.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: AppTheme.accent.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Row(
+                          children: <Widget>[
+                            const Icon(
+                              Icons.stars,
                               color: AppTheme.accent,
+                              size: 20,
                             ),
-                          ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                '${pending.length} prospects awaiting review!',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.accent,
+                                ),
+                              ),
+                            ),
+                            FilledButton.tonal(
+                              onPressed: () =>
+                                  _showAcademyProspectsSheet(context),
+                              style: FilledButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              child: const Text('Review'),
+                            ),
+                          ],
                         ),
-                        FilledButton.tonal(
-                          onPressed: () => _showAcademyProspectsSheet(context),
-                          style: FilledButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          child: const Text('Review'),
-                        ),
-                      ],
-                    ),
-                  );
-                },
+                      );
+                    },
               ),
               const Spacer(),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: _busy || academy.isMaxLevel ? null : _upgradeAcademy,
+                  onPressed: _busy || academy.isMaxLevel
+                      ? null
+                      : _upgradeAcademy,
                   icon: const Icon(Icons.upgrade),
-                  label: Text(academy.isMaxLevel
-                      ? 'Academy Maxed'
-                      : 'Upgrade to Level ${academy.level + 1} · ${money(academy.upgradeCost)}'),
+                  label: Text(
+                    academy.isMaxLevel
+                        ? 'Academy Maxed'
+                        : 'Upgrade to Level ${academy.level + 1} · ${money(academy.upgradeCost)}',
+                  ),
                 ),
               ),
             ],
@@ -417,65 +458,90 @@ class _ClubHubSheetState extends State<ClubHubSheet> {
                   Expanded(
                     child: FutureBuilder<List<YouthProspect>>(
                       future: game.pendingProspects(),
-                      builder: (BuildContext _, AsyncSnapshot<List<YouthProspect>> snap) {
-                        if (!snap.hasData) {
-                          return const Center(child: CircularProgressIndicator());
-                        }
-                        final List<YouthProspect> list = snap.data!;
-                        if (list.isEmpty) {
-                          return const Center(
-                            child: Text(
-                              'All prospects have been signed or reviewed.',
-                              style: TextStyle(color: AppTheme.textDim),
-                            ),
-                          );
-                        }
-                        return ListView.builder(
-                          itemCount: list.length,
-                          itemBuilder: (BuildContext _, int i) {
-                            final YouthProspect p = list[i];
-                            return Card(
-                              child: ListTile(
-                                leading: PositionBadge(
-                                  positionId: p.positionId,
-                                  profile: p.profile,
+                      builder:
+                          (
+                            BuildContext _,
+                            AsyncSnapshot<List<YouthProspect>> snap,
+                          ) {
+                            if (!snap.hasData) {
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
+                            }
+                            final List<YouthProspect> list = snap.data!;
+                            if (list.isEmpty) {
+                              return const Center(
+                                child: Text(
+                                  'All prospects have been signed or reviewed.',
+                                  style: TextStyle(color: AppTheme.textDim),
                                 ),
-                                title: Text(
-                                  '${p.name}  ${p.power}',
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  '17y · POT ${p.potential} · Foot ${p.profile == 'I' ? 'L' : 'R'}',
-                                  style: const TextStyle(fontSize: 11),
-                                ),
-                                trailing: FilledButton(
-                                  style: FilledButton.styleFrom(
-                                    visualDensity: VisualDensity.compact,
-                                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                                  ),
-                                  onPressed: () async {
-                                    final Player? signed =
-                                        await game.signYouthProspect(p.prospectId);
-                                    if (signed != null && context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('${signed.name} joined your squad!'),
+                              );
+                            }
+                            return ListView.builder(
+                              itemCount: list.length,
+                              itemBuilder: (BuildContext _, int i) {
+                                final YouthProspect p = list[i];
+                                return Card(
+                                  child: ListTile(
+                                    onTap: () => showProspectDetail(
+                                      context,
+                                      name: p.name,
+                                      age: p.age,
+                                      positionId: p.positionId,
+                                      power: p.power,
+                                      potential: p.potential,
+                                      value: 0,
+                                      countryId: p.countryId,
+                                      profile: p.profile,
+                                      height: p.height,
+                                      source: 'Youth Academy',
+                                    ),
+                                    leading: PositionBadge(
+                                      positionId: p.positionId,
+                                      profile: p.profile,
+                                    ),
+                                    title: Text(
+                                      '${p.name}  ${p.power}',
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      '17y · POT ${p.potential} · Foot ${p.profile == 'I' ? 'L' : 'R'}',
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                    trailing: FilledButton(
+                                      style: FilledButton.styleFrom(
+                                        visualDensity: VisualDensity.compact,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
                                         ),
-                                      );
-                                      setSheetState(() {});
-                                      setState(() {});
-                                    }
-                                  },
-                                  child: const Text('Sign'),
-                                ),
-                              ),
+                                      ),
+                                      onPressed: () async {
+                                        final Player? signed = await game
+                                            .signYouthProspect(p.prospectId);
+                                        if (signed != null && context.mounted) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                '${signed.name} joined your squad!',
+                                              ),
+                                            ),
+                                          );
+                                          setSheetState(() {});
+                                          setState(() {});
+                                        }
+                                      },
+                                      child: const Text('Sign'),
+                                    ),
+                                  ),
+                                );
+                              },
                             );
                           },
-                        );
-                      },
                     ),
                   ),
                 ],
@@ -667,6 +733,17 @@ class _ClubHubSheetState extends State<ClubHubSheet> {
             ),
           ),
           const SizedBox(height: 16),
+          FutureBuilder<FinanceSummary>(
+            future: context.read<CareerProvider>().financeSummary(),
+            builder:
+                (BuildContext context, AsyncSnapshot<FinanceSummary> snap) {
+                  if (!snap.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  return _SeasonFinancePanel(finance: snap.data!);
+                },
+          ),
+          const SizedBox(height: 18),
           _moneyRow('Squad value', club.squadValue),
           _moneyRow('Wage bill', club.wageBill),
           _moneyRow('Transfer spend', club.transferSpend),
@@ -703,41 +780,238 @@ class _ClubHubSheetState extends State<ClubHubSheet> {
           const SizedBox(height: 6),
           FutureBuilder<List<ClubSponsorship>>(
             future: context.read<CareerProvider>().activeSponsorships(),
-            builder: (BuildContext context, AsyncSnapshot<List<ClubSponsorship>> snap) {
-              final List<ClubSponsorship> sponsors = snap.data ?? <ClubSponsorship>[];
-              if (sponsors.isEmpty) {
-                return Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surfaceCard,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Text(
-                    'No active sponsors. Tap "Manage Deals" to sign corporate sponsors for extra revenue!',
-                    style: TextStyle(fontSize: 11, color: AppTheme.textDim),
-                  ),
-                );
-              }
-              return Column(
-                children: <Widget>[
-                  for (final ClubSponsorship s in sponsors)
-                    Card(
-                      margin: const EdgeInsets.only(bottom: 6),
-                      child: ListTile(
-                        dense: true,
-                        leading: const Icon(Icons.verified, color: AppTheme.accent, size: 20),
-                        title: Text(s.sponsorName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                        subtitle: Text('${s.typeLabel} · Target: Top ${s.target}', style: const TextStyle(fontSize: 11)),
-                        trailing: Text(
-                          '+${money(s.weeklyReward)}/w',
-                          style: const TextStyle(color: AppTheme.accent, fontWeight: FontWeight.bold, fontSize: 12),
-                        ),
+            builder:
+                (
+                  BuildContext context,
+                  AsyncSnapshot<List<ClubSponsorship>> snap,
+                ) {
+                  final List<ClubSponsorship> sponsors =
+                      snap.data ?? <ClubSponsorship>[];
+                  if (sponsors.isEmpty) {
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceCard,
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                    ),
-                ],
-              );
-            },
+                      child: const Text(
+                        'No active sponsors. Tap "Manage Deals" to sign corporate sponsors for extra revenue!',
+                        style: TextStyle(fontSize: 11, color: AppTheme.textDim),
+                      ),
+                    );
+                  }
+
+                  /*
+                  Widget _seasonFinance(FinanceSummary finance) {
+                    final List<_FinanceSlice> income = <_FinanceSlice>[
+                      _FinanceSlice(
+                        'Tickets',
+                        finance.ticketIncome,
+                        const Color(0xff4dd0e1),
+                      ),
+                      _FinanceSlice(
+                        'Sponsors',
+                        finance.sponsorIncome,
+                        const Color(0xffffca28),
+                      ),
+                      _FinanceSlice(
+                        'Player sales',
+                        finance.playerSaleIncome,
+                        const Color(0xff81c784),
+                      ),
+                      _FinanceSlice(
+                        'Prizes',
+                        finance.prizeIncome,
+                        const Color(0xffba68c8),
+                      ),
+                    ];
+                    final List<_FinanceSlice> expenses = <_FinanceSlice>[
+                      _FinanceSlice(
+                        'Salaries',
+                        finance.salaryExpense,
+                        const Color(0xffef5350),
+                      ),
+                      _FinanceSlice(
+                        'Player purchases',
+                        finance.playerPurchaseExpense,
+                        const Color(0xffff8a65),
+                      ),
+                      _FinanceSlice(
+                        'Other',
+                        finance.otherExpense,
+                        const Color(0xff90a4ae),
+                      ),
+                    ];
+                    }
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const Text(
+                          'CURRENT SEASON',
+                          style: TextStyle(
+                            fontSize: 10,
+                            letterSpacing: 1,
+                            color: AppTheme.textDim,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: _financeCard(
+                                'Income',
+                                finance.totalIncome,
+                                income,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _financeCard(
+                                'Expenses',
+                                finance.totalExpense,
+                                expenses,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        _moneyRow('Season balance', finance.net, signed: true),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Income and expenses recorded for the active season. Salaries are estimated from the current weekly wage bill and completed weeks.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.textDim,
+                          ),
+                        ),
+                      ],
+                    );
+                  }
+
+                  Widget _financeCard(
+                    String title,
+                    int total,
+                    List<_FinanceSlice> slices,
+                  ) {
+                    return Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceCard,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white10),
+                      ),
+                      child: Column(
+                        children: <Widget>[
+                          Text(
+                            title,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            height: 116,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: <Widget>[
+                                CustomPaint(
+                                  size: const Size.square(104),
+                                  painter: _DonutPainter(slices),
+                                ),
+                                Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    Text(
+                                      money(total),
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const Text(
+                                      'total',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: AppTheme.textDim,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          for (final _FinanceSlice slice in slices)
+                            if (slice.amount > 0)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Row(
+                                  children: <Widget>[
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        color: slice.color,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Expanded(
+                                      child: Text(
+                                        slice.label,
+                                        style: const TextStyle(fontSize: 10),
+                                      ),
+                                    ),
+                                    Text(
+                                      money(slice.amount),
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  */
+                  return Column(
+                    children: <Widget>[
+                      for (final ClubSponsorship s in sponsors)
+                        Card(
+                          margin: const EdgeInsets.only(bottom: 6),
+                          child: ListTile(
+                            dense: true,
+                            leading: const Icon(
+                              Icons.verified,
+                              color: AppTheme.accent,
+                              size: 20,
+                            ),
+                            title: Text(
+                              s.sponsorName,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '${s.typeLabel} · Target: Top ${s.target}',
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                            trailing: Text(
+                              '+${money(s.weeklyReward)}/w',
+                              style: const TextStyle(
+                                color: AppTheme.accent,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
           ),
         ],
       ),
@@ -789,7 +1063,9 @@ class _ClubHubSheetState extends State<ClubHubSheet> {
                       future: game.availableSponsorshipOffers(),
                       builder: (BuildContext _, AsyncSnapshot<List<ClubSponsorship>> snap) {
                         if (!snap.hasData) {
-                          return const Center(child: CircularProgressIndicator());
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
                         }
                         final List<ClubSponsorship> offers = snap.data!;
                         if (offers.isEmpty) {
@@ -812,23 +1088,44 @@ class _ClubHubSheetState extends State<ClubHubSheet> {
                                   children: <Widget>[
                                     Row(
                                       children: <Widget>[
-                                        const Icon(Icons.business, color: AppTheme.accent),
+                                        const Icon(
+                                          Icons.business,
+                                          color: AppTheme.accent,
+                                        ),
                                         const SizedBox(width: 8),
                                         Text(
                                           offer.sponsorName,
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                          ),
                                         ),
                                         const Spacer(),
                                         Text(
                                           offer.typeLabel,
-                                          style: const TextStyle(fontSize: 11, color: AppTheme.textDim),
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: AppTheme.textDim,
+                                          ),
                                         ),
                                       ],
                                     ),
                                     const SizedBox(height: 8),
-                                    Text('Upfront signing bonus: ${money(offer.baseReward)}', style: const TextStyle(fontSize: 12)),
-                                    Text('Weekly reward: +${money(offer.weeklyReward)}/week', style: const TextStyle(fontSize: 12, color: AppTheme.accent)),
-                                    Text('Target bonus: ${money(offer.bonusPrize)} (Top ${offer.target} finish)', style: const TextStyle(fontSize: 12)),
+                                    Text(
+                                      'Upfront signing bonus: ${money(offer.baseReward)}',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                    Text(
+                                      'Weekly reward: +${money(offer.weeklyReward)}/week',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: AppTheme.accent,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Target bonus: ${money(offer.bonusPrize)} (Top ${offer.target} finish)',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
                                     const SizedBox(height: 10),
                                     SizedBox(
                                       width: double.infinity,
@@ -836,14 +1133,22 @@ class _ClubHubSheetState extends State<ClubHubSheet> {
                                         onPressed: () async {
                                           await game.signSponsorship(offer);
                                           if (context.mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              SnackBar(content: Text('Signed deal with ${offer.sponsorName}! Received ${money(offer.baseReward)} upfront.')),
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  'Signed deal with ${offer.sponsorName}! Received ${money(offer.baseReward)} upfront.',
+                                                ),
+                                              ),
                                             );
                                             setSheetState(() {});
                                             setState(() => _reload());
                                           }
                                         },
-                                        child: Text('Sign Deal (+${money(offer.baseReward)})'),
+                                        child: Text(
+                                          'Sign Deal (+${money(offer.baseReward)})',
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -1121,4 +1426,238 @@ class _ClubHubSheetState extends State<ClubHubSheet> {
     }
     return value < 0 ? '-$out' : out.toString();
   }
+}
+
+class _FinanceSlice {
+  const _FinanceSlice(this.label, this.amount, this.color);
+
+  final String label;
+  final int amount;
+  final Color color;
+}
+
+class _SeasonFinancePanel extends StatelessWidget {
+  const _SeasonFinancePanel({required this.finance});
+
+  final FinanceSummary finance;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<_FinanceSlice> income = <_FinanceSlice>[
+      _FinanceSlice('Tickets', finance.ticketIncome, const Color(0xff4dd0e1)),
+      _FinanceSlice('Sponsors', finance.sponsorIncome, const Color(0xffffca28)),
+      _FinanceSlice(
+        'Player sales',
+        finance.playerSaleIncome,
+        const Color(0xff81c784),
+      ),
+      _FinanceSlice('Prizes', finance.prizeIncome, const Color(0xffba68c8)),
+    ];
+    final List<_FinanceSlice> expenses = <_FinanceSlice>[
+      _FinanceSlice('Salaries', finance.salaryExpense, const Color(0xffef5350)),
+      _FinanceSlice(
+        'Player purchases',
+        finance.playerPurchaseExpense,
+        const Color(0xffff8a65),
+      ),
+      _FinanceSlice('Other', finance.otherExpense, const Color(0xff90a4ae)),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const Text(
+          'CURRENT SEASON',
+          style: TextStyle(
+            fontSize: 10,
+            letterSpacing: 1,
+            color: AppTheme.textDim,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: _FinanceCard(
+                title: 'Income',
+                total: finance.totalIncome,
+                slices: income,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _FinanceCard(
+                title: 'Expenses',
+                total: finance.totalExpense,
+                slices: expenses,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _moneyRowStatic('Season balance', finance.net, signed: true),
+        const SizedBox(height: 8),
+        const Text(
+          'Income and expenses recorded for the active season. Salaries are estimated from the current weekly wage bill and completed weeks.',
+          style: TextStyle(fontSize: 11, color: AppTheme.textDim),
+        ),
+      ],
+    );
+  }
+
+  static Widget _moneyRowStatic(
+    String label,
+    int value, {
+    bool signed = false,
+  }) {
+    final Color color = signed
+        ? (value >= 0 ? AppTheme.accent : AppTheme.danger)
+        : Colors.white;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: AppTheme.textDim),
+            ),
+          ),
+          Text(
+            signed
+                ? '${value >= 0 ? '+' : '-'}${money(value.abs())}'
+                : money(value),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FinanceCard extends StatelessWidget {
+  const _FinanceCard({
+    required this.title,
+    required this.total,
+    required this.slices,
+  });
+
+  final String title;
+  final int total;
+  final List<_FinanceSlice> slices;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceCard,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        children: <Widget>[
+          Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 116,
+            child: Stack(
+              alignment: Alignment.center,
+              children: <Widget>[
+                CustomPaint(
+                  size: const Size.square(104),
+                  painter: _DonutPainter(slices),
+                ),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      money(total),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Text(
+                      'total',
+                      style: TextStyle(fontSize: 10, color: AppTheme.textDim),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          for (final _FinanceSlice slice in slices)
+            if (slice.amount > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  children: <Widget>[
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: slice.color,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        slice.label,
+                        style: const TextStyle(fontSize: 10),
+                      ),
+                    ),
+                    Text(
+                      money(slice.amount),
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DonutPainter extends CustomPainter {
+  const _DonutPainter(this.slices);
+
+  final List<_FinanceSlice> slices;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Rect bounds = Offset.zero & size;
+    final double total = slices.fold<double>(
+      0,
+      (double sum, _FinanceSlice slice) => sum + slice.amount,
+    );
+    final Paint paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 15
+      ..strokeCap = StrokeCap.butt;
+    if (total <= 0) {
+      paint.color = Colors.white12;
+      canvas.drawArc(bounds.deflate(10), 0, math.pi * 2, false, paint);
+      return;
+    }
+    double start = -math.pi / 2;
+    for (final _FinanceSlice slice in slices) {
+      if (slice.amount <= 0) continue;
+      paint.color = slice.color;
+      final double sweep = math.pi * 2 * slice.amount / total;
+      canvas.drawArc(bounds.deflate(10), start, sweep, false, paint);
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DonutPainter oldDelegate) => oldDelegate.slices != slices;
 }

@@ -219,6 +219,14 @@ class AppDatabase {
       (1650, 'AFC Challenge League', 0, 1, 2, 2, '2', '32', 1.0, 0, 0, 8000000, 0, 0),
       (1651, 'AFC Super Cup', 0, 1, 2, 1, '6', '2', 1.0, 0, 0, 4000000, 0, 0)
     ''');
+    await db.execute(
+      "UPDATE ${t.tournaments} SET name = CASE tournament_id "
+      "WHEN 85 THEN 'BRI Super League' "
+      "WHEN 86 THEN 'Pegadaian Championship' "
+      "WHEN 189 THEN 'Liga Nusantara' "
+      "WHEN 54 THEN 'UEFA Super Cup' "
+      "ELSE name END WHERE tournament_id IN (54, 85, 86, 189)",
+    );
     // Ensure international slots for AFC Challenge League (Indonesia, Thailand, Malaysia, Vietnam, India, etc.)
     await db.execute('''
       INSERT OR IGNORE INTO ${t.internationalSlots} (tournament_id, country_id, slots) VALUES

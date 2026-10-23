@@ -2,6 +2,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../db/schema.dart' as t;
 import '../models/models.dart';
+import '../../core/country_names.dart';
 
 /// Read-mostly reference data: countries, tournaments, teams, stadiums.
 class ReferenceRepository {
@@ -11,8 +12,9 @@ class ReferenceRepository {
 
   /// Countries that have at least one domestic league available, ranked by
   /// how many clubs can play there (best first).
-  Future<List<Map<String, Object?>>> playableCountries() => db.rawQuery(
-    '''
+  Future<List<Map<String, Object?>>> playableCountries() async {
+    final List<Map<String, Object?>> rows = await db.rawQuery(
+      '''
     SELECT c.country_id, c.name, c.iso2, c.power,
            COUNT(DISTINCT tu.tournament_id) AS league_count,
            COUNT(DISTINCT tm.team_id) AS team_count
@@ -23,8 +25,21 @@ class ReferenceRepository {
     GROUP BY c.country_id
     ORDER BY c.name COLLATE NOCASE ASC
   ''',
-    <Object?>[t.orgLeague],
-  );
+      <Object?>[t.orgLeague],
+    );
+    return rows
+        .map(
+          (Map<String, Object?> row) => <String, Object?>{
+            ...row,
+            'name': displayCountryName(
+              row['name'] as String? ?? '',
+              row['iso2'] as String? ?? '',
+              countryId: row['country_id'] as int?,
+            ),
+          },
+        )
+        .toList();
+  }
 
   /// Domestic leagues (organization = 1) of a country, with squad counts.
   Future<List<Map<String, Object?>>> leaguesForCountry(int countryId) =>
@@ -68,10 +83,24 @@ class ReferenceRepository {
   }
 
   /// Every country, for the manager's nationality picker.
-  Future<List<Map<String, Object?>>> allCountries() => db.rawQuery(
-    'SELECT country_id, name, iso2 FROM countries WHERE name IS NOT NULL '
-    'ORDER BY name COLLATE NOCASE',
-  );
+  Future<List<Map<String, Object?>>> allCountries() async {
+    final List<Map<String, Object?>> rows = await db.rawQuery(
+      'SELECT country_id, name, iso2 FROM countries WHERE name IS NOT NULL '
+      'ORDER BY name COLLATE NOCASE',
+    );
+    return rows
+        .map(
+          (Map<String, Object?> row) => <String, Object?>{
+            ...row,
+            'name': displayCountryName(
+              row['name'] as String? ?? '',
+              row['iso2'] as String? ?? '',
+              countryId: row['country_id'] as int?,
+            ),
+          },
+        )
+        .toList();
+  }
 
   /// Continental club competitions this country's clubs qualify for.
   Future<List<Tournament>> internationalCups(int countryId) async {

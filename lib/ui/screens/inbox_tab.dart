@@ -7,6 +7,7 @@ import '../../data/models/models.dart';
 import '../../state/career_provider.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'player_detail_sheet.dart';
 
 /// Full-screen wrapper so the inbox can open from the app bar.
 class InboxScreen extends StatelessWidget {
@@ -91,13 +92,17 @@ class InboxTab extends StatelessWidget {
             actions.add(
               FilledButton(
                 onPressed: () async {
-                  final String? err = await game.renewContract(message.playerId!);
+                  final String? err = await game.renewContract(
+                    message.playerId!,
+                  );
                   if (!dialogContext.mounted) return;
                   Navigator.of(dialogContext).pop();
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text(err ?? 'Contract extended with wage increase!'),
+                        content: Text(
+                          err ?? 'Contract extended with wage increase!',
+                        ),
                       ),
                     );
                   }
@@ -177,7 +182,8 @@ class InboxTab extends StatelessWidget {
               ScaffoldMessenger.of(pageContext).showSnackBar(
                 SnackBar(
                   content: Text(
-                    error ?? '${offer.playerName} loaned to ${offer.toTeamName}.',
+                    error ??
+                        '${offer.playerName} loaned to ${offer.toTeamName}.',
                   ),
                 ),
               );
@@ -235,12 +241,13 @@ class InboxTab extends StatelessWidget {
             if (!pageContext.mounted) return;
             Navigator.of(dialogContext).pop();
             if (error != null) {
-              ScaffoldMessenger.of(pageContext).showSnackBar(
-                SnackBar(content: Text(error)),
-              );
+              ScaffoldMessenger.of(pageContext)
+                  .showSnackBar(SnackBar(content: Text(error)));
               return;
             }
-            final TransferOffer? accepted = await game.transferOffer(offer.offerId);
+            final TransferOffer? accepted = await game.transferOffer(
+              offer.offerId,
+            );
             if (accepted != null && pageContext.mounted) {
               await _showContractDialog(pageContext, game, accepted);
             }
@@ -279,9 +286,8 @@ class InboxTab extends StatelessWidget {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(
-              int.tryParse(fee.text.trim()),
-            ),
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(int.tryParse(fee.text.trim())),
             child: const Text('Send Counter'),
           ),
         ],
@@ -406,64 +412,89 @@ class InboxTab extends StatelessWidget {
                   Expanded(
                     child: FutureBuilder<List<YouthProspect>>(
                       future: game.pendingProspects(),
-                      builder: (BuildContext _, AsyncSnapshot<List<YouthProspect>> snap) {
-                        if (!snap.hasData) {
-                          return const Center(child: CircularProgressIndicator());
-                        }
-                        final List<YouthProspect> list = snap.data!;
-                        if (list.isEmpty) {
-                          return const Center(
-                            child: Text(
-                              'All prospects have been reviewed or signed.',
-                              style: TextStyle(color: AppTheme.textDim),
-                            ),
-                          );
-                        }
-                        return ListView.builder(
-                          itemCount: list.length,
-                          itemBuilder: (BuildContext _, int i) {
-                            final YouthProspect p = list[i];
-                            return Card(
-                              child: ListTile(
-                                leading: PositionBadge(
-                                  positionId: p.positionId,
-                                  profile: p.profile,
+                      builder:
+                          (
+                            BuildContext _,
+                            AsyncSnapshot<List<YouthProspect>> snap,
+                          ) {
+                            if (!snap.hasData) {
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
+                            }
+                            final List<YouthProspect> list = snap.data!;
+                            if (list.isEmpty) {
+                              return const Center(
+                                child: Text(
+                                  'All prospects have been reviewed or signed.',
+                                  style: TextStyle(color: AppTheme.textDim),
                                 ),
-                                title: Text(
-                                  '${p.name}  ${p.power}',
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  '17y · POT ${p.potential} · Foot ${p.profile == 'I' ? 'L' : 'R'}',
-                                  style: const TextStyle(fontSize: 11),
-                                ),
-                                trailing: FilledButton(
-                                  style: FilledButton.styleFrom(
-                                    visualDensity: VisualDensity.compact,
-                                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                                  ),
-                                  onPressed: () async {
-                                    final Player? signed =
-                                        await game.signYouthProspect(p.prospectId);
-                                    if (signed != null && context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('${signed.name} joined your squad!'),
+                              );
+                            }
+                            return ListView.builder(
+                              itemCount: list.length,
+                              itemBuilder: (BuildContext _, int i) {
+                                final YouthProspect p = list[i];
+                                return Card(
+                                  child: ListTile(
+                                    onTap: () => showProspectDetail(
+                                      context,
+                                      name: p.name,
+                                      age: p.age,
+                                      positionId: p.positionId,
+                                      power: p.power,
+                                      potential: p.potential,
+                                      value: 0,
+                                      countryId: p.countryId,
+                                      profile: p.profile,
+                                      height: p.height,
+                                      source: 'Youth Academy',
+                                    ),
+                                    leading: PositionBadge(
+                                      positionId: p.positionId,
+                                      profile: p.profile,
+                                    ),
+                                    title: Text(
+                                      '${p.name}  ${p.power}',
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      '17y · POT ${p.potential} · Foot ${p.profile == 'I' ? 'L' : 'R'}',
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                    trailing: FilledButton(
+                                      style: FilledButton.styleFrom(
+                                        visualDensity: VisualDensity.compact,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
                                         ),
-                                      );
-                                      setSheetState(() {});
-                                    }
-                                  },
-                                  child: const Text('Sign'),
-                                ),
-                              ),
+                                      ),
+                                      onPressed: () async {
+                                        final Player? signed = await game
+                                            .signYouthProspect(p.prospectId);
+                                        if (signed != null && context.mounted) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                '${signed.name} joined your squad!',
+                                              ),
+                                            ),
+                                          );
+                                          setSheetState(() {});
+                                        }
+                                      },
+                                      child: const Text('Sign'),
+                                    ),
+                                  ),
+                                );
+                              },
                             );
                           },
-                        );
-                      },
                     ),
                   ),
                 ],

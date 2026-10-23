@@ -543,6 +543,19 @@ class _MarketTabState extends State<MarketTab> {
                       for (final ScoutWonderkid w in list)
                         Card(
                           child: ListTile(
+                            onTap: () => showProspectDetail(
+                              context,
+                              name: w.playerName,
+                              age: w.age,
+                              positionId: w.positionId,
+                              power: w.power,
+                              potential: w.potential,
+                              value: w.value,
+                              countryId: w.countryId,
+                              profile: 'D',
+                              source: '${w.region} · ${w.scoutName}',
+                              signingFee: (w.value * 0.75).round(),
+                            ),
                             leading: PositionBadge(positionId: w.positionId),
                             title: Row(
                               children: <Widget>[

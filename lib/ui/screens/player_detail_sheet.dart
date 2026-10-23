@@ -21,6 +21,45 @@ Future<void> showPlayerDetail(BuildContext context, int playerId) {
   );
 }
 
+Future<void> showProspectDetail(
+  BuildContext context, {
+  required String name,
+  required int age,
+  required int positionId,
+  required int power,
+  required int potential,
+  required int value,
+  required int countryId,
+  required String profile,
+  int? height,
+  String? source,
+  int? signingFee,
+}) {
+  final CareerProvider game = context.read<CareerProvider>();
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (BuildContext context) => FractionallySizedBox(
+      heightFactor: 0.68,
+      child: _ProspectDetailSheet(
+        countryName: game.countryName(countryId),
+        name: name,
+        age: age,
+        positionId: positionId,
+        power: power,
+        potential: potential,
+        value: value,
+        countryId: countryId,
+        profile: profile,
+        height: height,
+        source: source,
+        signingFee: signingFee,
+      ),
+    ),
+  );
+}
+
 class PlayerDetailSheet extends StatefulWidget {
   const PlayerDetailSheet({super.key, required this.playerId});
 
@@ -28,6 +67,164 @@ class PlayerDetailSheet extends StatefulWidget {
 
   @override
   State<PlayerDetailSheet> createState() => _PlayerDetailSheetState();
+}
+
+class _ProspectDetailSheet extends StatelessWidget {
+  const _ProspectDetailSheet({
+    required this.name,
+    required this.age,
+    required this.positionId,
+    required this.power,
+    required this.potential,
+    required this.value,
+    required this.countryId,
+    required this.countryName,
+    required this.profile,
+    this.height,
+    this.source,
+    this.signingFee,
+  });
+
+  final String name;
+  final int age;
+  final int positionId;
+  final int power;
+  final int potential;
+  final int value;
+  final int countryId;
+  final Future<String> countryName;
+  final String profile;
+  final int? height;
+  final String? source;
+  final int? signingFee;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      decoration: const BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade700,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: <Widget>[
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: AppTheme.accentDim,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                alignment: Alignment.center,
+                child: PositionBadge(positionId: positionId, profile: profile),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    FutureBuilder<String>(
+                      future: countryName,
+                      builder:
+                          (
+                            BuildContext context,
+                            AsyncSnapshot<String> snapshot,
+                          ) {
+                            final String label = snapshot.data ?? 'Loading...';
+                            return Text(
+                              'Age $age · $label',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.textDim,
+                              ),
+                            );
+                          },
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                children: <Widget>[
+                  Text(
+                    '$power',
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                      color: AppTheme.accent,
+                    ),
+                  ),
+                  const Text(
+                    'OVR',
+                    style: TextStyle(fontSize: 9, color: AppTheme.textDim),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          if (source != null) _detailRow('Source', source!),
+          _detailRow(
+            'Position',
+            PositionBadge.labelFor(positionId, profile: profile),
+          ),
+          _detailRow('Potential', '$potential+'),
+          _detailRow('Preferred foot', profile == 'I' ? 'Left' : 'Right'),
+          if (height != null) _detailRow('Height', '$height cm'),
+          if (value > 0) _detailRow('Market value', money(value)),
+          if (signingFee != null) _detailRow('Signing fee', money(signingFee!)),
+          const Spacer(),
+          const Text(
+            'This is a scouting profile. Full contract and match statistics become available after the player joins the squad.',
+            style: TextStyle(fontSize: 11, color: AppTheme.textDim),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: AppTheme.textDim),
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _PlayerDetailSheetState extends State<PlayerDetailSheet>

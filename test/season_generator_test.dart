@@ -306,7 +306,9 @@ void main() {
       internationals: internationals,
     );
     final int seasonId = plan.season.seasonId;
-    final Tournament continental = internationals.first;
+    final Tournament continental = internationals.firstWhere(
+      (Tournament tournament) => tournament.tournamentId == 99,
+    );
 
     final List<Map<String, Object?>> groupMatchRows = await db.query(
       t.matches,
@@ -393,8 +395,8 @@ void main() {
     );
     expect(
       knockout.length,
-      groups.length,
-      reason: 'two qualifiers per group make one tie per group',
+      groups.length * 2,
+      reason: 'two qualifiers per group make one two-legged tie per group',
     );
 
     // Each knockout tie must pair clubs from different groups.

@@ -203,7 +203,9 @@ class NewsEngine {
     final String scope = _scopeOf(c, m.tournamentId, m.org);
     final bool knockout = m.org == 2 && m.groupId == null;
     final int bump = knockout ? 1 : 0;
-    final String score = '${m.hg}-${m.ag}';
+    final String score = m.penaltyHome == null || m.penaltyAway == null
+        ? '${m.hg}-${m.ag}'
+        : '${m.hg}-${m.ag} (pen. ${m.penaltyHome}-${m.penaltyAway})';
     final String? stage = knockout ? await _stage(c, m) : null;
     final String where = stage == null ? m.tourName : '${m.tourName} $stage';
 
@@ -212,7 +214,11 @@ class NewsEngine {
       final bool homeWon = m.winnerId == m.homeId;
       final String champ = homeWon ? m.home : m.away;
       final String beaten = homeWon ? m.away : m.home;
-      final Map<String, Object?> run = await _cupRun(c, m.tournamentId, m.winnerId);
+      final Map<String, Object?> run = await _cupRun(
+        c,
+        m.tournamentId,
+        m.winnerId,
+      );
       out.add(
         NewsItem(
           ref: 'final:${c.seasonId}:${m.tournamentId}',
@@ -320,7 +326,8 @@ class NewsEngine {
           date: c.date,
           scope: scope,
           category: 'thriller',
-          headline: '${m.home} dan ${m.away} berbagi ${m.hg * 2} gol di laga seri $score',
+          headline:
+              '${m.home} dan ${m.away} berbagi ${m.hg * 2} gol di laga seri $score',
           body:
               'Tak ada pemenang meski ${m.hg + m.ag} gol tercipta '
               'di $where.',
@@ -407,7 +414,11 @@ class NewsEngine {
           category: 'roundup',
           headline: _t('wrap:${e.key}:${c.date}:h', <String>[
             'Rangkuman $name: $goals gol dalam ${list.length} laga',
-            'Ulasan pekan $name: ${avg >= 3 ? 'gol di mana-mana' : avg < 2 ? 'pertahanan unggul' : 'pekan yang seimbang'}',
+            'Ulasan pekan $name: ${avg >= 3
+                ? 'gol di mana-mana'
+                : avg < 2
+                ? 'pertahanan unggul'
+                : 'pekan yang seimbang'}',
             '$name: $homeWins kemenangan tuan rumah, $draws laga seri',
           ]),
           body:
@@ -432,7 +443,12 @@ class NewsEngine {
     final List<NewsItem> out = <NewsItem>[];
     final List<_Row> table = await _table(c.seasonId, c.leagueId, c.date);
     if (table.length < 4) return out;
-    final List<_Row> before = await _table(c.seasonId, c.leagueId, c.date, strictlyBefore: true);
+    final List<_Row> before = await _table(
+      c.seasonId,
+      c.leagueId,
+      c.date,
+      strictlyBefore: true,
+    );
     final int games = table.first.played;
     final int totalRounds = (table.length - 1) * 2;
     final int left = totalRounds - games;
@@ -497,8 +513,7 @@ class NewsEngine {
             date: c.date,
             scope: 'league',
             category: 'table',
-            headline:
-                '${table.first.name} kabur $gap poin di puncak klasemen',
+            headline: '${table.first.name} kabur $gap poin di puncak klasemen',
             body:
                 '${table.first.name} sudah menang ${table.first.wins} dari $games laga dan '
                 'unggul $gap poin atas ${table[1].name} dengan sisa $left pekan.',
@@ -510,7 +525,8 @@ class NewsEngine {
     }
 
     // Title clinched.
-    if (left >= 0 && table[1].pts + 3 * (totalRounds - table[1].played) < table.first.pts) {
+    if (left >= 0 &&
+        table[1].pts + 3 * (totalRounds - table[1].played) < table.first.pts) {
       out.add(
         NewsItem(
           ref: 'champ:${c.seasonId}:${c.leagueId}',
@@ -539,7 +555,9 @@ class NewsEngine {
       final int cut = table.length - spots;
       final _Row safe = table[cut - 1];
       final _Row first = table[cut];
-      if (games >= totalRounds * 0.5 && games % 3 == 0 && safe.pts - first.pts <= 3) {
+      if (games >= totalRounds * 0.5 &&
+          games % 3 == 0 &&
+          safe.pts - first.pts <= 3) {
         out.add(
           NewsItem(
             ref: 'relfight:${c.seasonId}:${c.leagueId}:$games',
@@ -584,7 +602,9 @@ class NewsEngine {
 
     // Streaks for clubs that played today.
     for (final int id in played) {
-      final String name = table.firstWhere((_Row r) => r.id == id, orElse: () => table.first).name;
+      final String name = table
+          .firstWhere((_Row r) => r.id == id, orElse: () => table.first)
+          .name;
       final List<List<int>> form = await _form(c, c.leagueId, id);
       final int wins = _run(form, (List<int> g) => g[0] > g[1]);
       final int unbeaten = _run(form, (List<int> g) => g[0] >= g[1]);
@@ -690,10 +710,16 @@ class NewsEngine {
     ''',
       <Object?>[c.seasonId, c.leagueId, c.date],
     );
-    if (stars.isNotEmpty && ((stars.first['goals'] as int? ?? 0) + (stars.first['assists'] as int? ?? 0)) >= 1) {
+    if (stars.isNotEmpty &&
+        ((stars.first['goals'] as int? ?? 0) +
+                (stars.first['assists'] as int? ?? 0)) >=
+            1) {
       final Map<String, Object?> s = stars.first;
       final String club = table
-          .firstWhere((_Row r) => r.id == s['team_id'], orElse: () => table.first)
+          .firstWhere(
+            (_Row r) => r.id == s['team_id'],
+            orElse: () => table.first,
+          )
           .name;
       final int g = s['goals'] as int? ?? 0;
       final int a = s['assists'] as int? ?? 0;
@@ -784,10 +810,13 @@ class NewsEngine {
           date: c.date,
           scope: _scopeOf(c, m.tournamentId, m.org),
           category: 'table',
-          headline: _t('grp:${m.tournamentId}:${m.groupId}:${top.played}:h', <String>[
-            '${top.name} kuasai Grup $groupName',
-            '${top.name} pimpin Grup $groupName di ${m.tourName}',
-          ]),
+          headline: _t(
+            'grp:${m.tournamentId}:${m.groupId}:${top.played}:h',
+            <String>[
+              '${top.name} kuasai Grup $groupName',
+              '${top.name} pimpin Grup $groupName di ${m.tourName}',
+            ],
+          ),
           body:
               '${top.name} punya ${top.pts} poin dari ${top.played} laga '
               '(selisih gol ${_gd(top)}), unggul ${top.pts - table[1].pts} poin dari '
@@ -843,7 +872,13 @@ class NewsEngine {
       final String player = r['player'] as String;
       final String buyer = r['to_name'] as String;
       final String? seller = r['from_name'] as String?;
-      final int imp = fee >= 30000000 ? 5 : fee >= 10000000 ? 4 : fee >= 3000000 ? 3 : 2;
+      final int imp = fee >= 30000000
+          ? 5
+          : fee >= 10000000
+          ? 4
+          : fee >= 3000000
+          ? 3
+          : 2;
       out.add(
         NewsItem(
           ref: 'tf:$id',
@@ -866,11 +901,9 @@ class NewsEngine {
         ),
       );
     }
-    await db.update(
-      t.news,
-      <String, Object?>{'body': '$maxId'},
-      where: "ref = 'meta:transfers'",
-    );
+    await db.update(t.news, <String, Object?>{
+      'body': '$maxId',
+    }, where: "ref = 'meta:transfers'");
     return out;
   }
 
@@ -888,6 +921,7 @@ class NewsEngine {
       '''
       SELECT m.match_id, m.tournament_id, m.home_team_id, m.away_team_id,
              m.home_goals, m.away_goals, m.winner_id, m.phase, m.group_id,
+             m.penalty_home_goals, m.penalty_away_goals,
              th.name AS hn, ta.name AS an, th.power AS hp, ta.power AS ap,
              tu.name AS tn, tu.organization AS org
       FROM matches m
@@ -909,6 +943,8 @@ class NewsEngine {
           awayId: r['away_team_id'] as int,
           hg: r['home_goals'] as int,
           ag: r['away_goals'] as int,
+          penaltyHome: r['penalty_home_goals'] as int?,
+          penaltyAway: r['penalty_away_goals'] as int?,
           winnerId: _winner(r),
           phase: (r['phase'] as int?) ?? 1,
           groupId: r['group_id'] as int?,
@@ -984,7 +1020,11 @@ class NewsEngine {
     return ties == 1 && m.phase == maxPhase && open == 0;
   }
 
-  Future<Map<String, Object?>> _cupRun(_Ctx c, int tournamentId, int teamId) async {
+  Future<Map<String, Object?>> _cupRun(
+    _Ctx c,
+    int tournamentId,
+    int teamId,
+  ) async {
     final List<Map<String, Object?>> rows = await db.rawQuery(
       '''
       SELECT COUNT(*) AS played,
@@ -1101,7 +1141,14 @@ class NewsEngine {
         AND substr(date,1,10) <= ? AND (home_team_id = ? OR away_team_id = ?)
       ORDER BY date DESC, match_id DESC LIMIT 14
     ''',
-      <Object?>[c.seasonId, tournamentId, t.matchFinished, c.date, teamId, teamId],
+      <Object?>[
+        c.seasonId,
+        tournamentId,
+        t.matchFinished,
+        c.date,
+        teamId,
+        teamId,
+      ],
     );
     return <List<int>>[
       for (final Map<String, Object?> r in rows)
@@ -1154,6 +1201,8 @@ class _Match {
     required this.awayId,
     required this.hg,
     required this.ag,
+    required this.penaltyHome,
+    required this.penaltyAway,
     required this.winnerId,
     required this.phase,
     required this.groupId,
@@ -1171,6 +1220,8 @@ class _Match {
   final int awayId;
   final int hg;
   final int ag;
+  final int? penaltyHome;
+  final int? penaltyAway;
   final int winnerId;
   final int phase;
   final int? groupId;

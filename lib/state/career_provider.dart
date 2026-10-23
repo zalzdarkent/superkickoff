@@ -140,8 +140,18 @@ class CareerProvider extends ChangeNotifier {
       return;
     }
     season = await _seasons.currentSeason();
+    week = await _completedWeeks(season!.seasonId);
     await _deriveCareerContext();
     await refreshWorld();
+  }
+
+  Future<int> _completedWeeks(int seasonId) async {
+    final List<Map<String, Object?>> rows = await _db.rawQuery(
+      'SELECT COUNT(DISTINCT substr(date, 1, 10)) AS weeks '
+      'FROM ${t.matches} WHERE season_id = ? AND status = ? AND date IS NOT NULL',
+      <Object?>[seasonId, t.matchFinished],
+    );
+    return (rows.first['weeks'] as num?)?.toInt() ?? 0;
   }
 
   Future<ManagerProfile?> _loadManagerProfile() async {
@@ -197,7 +207,9 @@ class CareerProvider extends ChangeNotifier {
     final List<Tournament> internationals = await _refs.internationalCups(
       team.countryId,
     );
-    final Set<int> have = <int>{for (final Tournament c in cups) c.tournamentId};
+    final Set<int> have = <int>{
+      for (final Tournament c in cups) c.tournamentId,
+    };
     if (internationals.every((Tournament c) => have.contains(c.tournamentId))) {
       return;
     }
@@ -513,8 +525,9 @@ class CareerProvider extends ChangeNotifier {
       bool leagueAlreadyDecided = false;
       if (standings.isNotEmpty) {
         final StandingRow prevFirst = standings.first;
-        final StandingRow? prevSecond =
-            standings.length > 1 ? standings[1] : null;
+        final StandingRow? prevSecond = standings.length > 1
+            ? standings[1]
+            : null;
         final int secondPlayed = prevSecond?.played ?? prevFirst.played;
         final int remainingForSecond = maxRound - secondPlayed;
         final int maxSecondBefore =
@@ -527,13 +540,15 @@ class CareerProvider extends ChangeNotifier {
 
       if (!leagueAlreadyDecided && userRank >= 0 && userRank <= 1) {
         final StandingRow currentFirst = standings.first;
-        final StandingRow? currentSecond =
-            standings.length > 1 ? standings[1] : null;
+        final StandingRow? currentSecond = standings.length > 1
+            ? standings[1]
+            : null;
         final int remainingBefore = maxRound - currentFirst.played;
         final int maxSecondPossible =
             (currentSecond?.points ?? 0) + (remainingBefore * 3);
 
-        final bool canClinch = userRank == 0 &&
+        final bool canClinch =
+            userRank == 0 &&
             (currentFirst.points + 3 > maxSecondPossible ||
                 (maxRound > 0 && mine.round >= maxRound - 2));
         final bool finalRounds = maxRound > 0 && mine.round >= maxRound - 1;
@@ -711,12 +726,15 @@ class CareerProvider extends ChangeNotifier {
     lastMatchdayAggregates = <int, (int, int)>{};
     for (final FixtureMatch m in lastMatchday) {
       // League rounds also use leg 2 (mirror fixtures); only cup ties aggregate.
-      if (m.leg != 2 || m.groupId != null || !cups.any((Tournament c) => c.tournamentId == m.tournamentId)) {
+      if (m.leg != 2 ||
+          m.groupId != null ||
+          !cups.any((Tournament c) => c.tournamentId == m.tournamentId)) {
         continue;
       }
       final List<Map<String, Object?>> rows = await _db.query(
         t.matches,
-        where: 'season_id = ? AND tournament_id = ? AND phase = ? AND leg = 1 '
+        where:
+            'season_id = ? AND tournament_id = ? AND phase = ? AND leg = 1 '
             'AND home_team_id = ? AND away_team_id = ? AND status = ?',
         whereArgs: <Object?>[
           seasonId,
@@ -766,6 +784,7 @@ class CareerProvider extends ChangeNotifier {
         },
       );
       season = next;
+      week = 0;
       await _deriveCareerContext();
       busy = false;
       await refreshWorld();
@@ -861,6 +880,9 @@ class CareerProvider extends ChangeNotifier {
   Future<PlayerDetail?> playerDetail(int playerId) =>
       _squads.playerDetail(playerId, seasonId: season?.seasonId);
 
+  Future<String> countryName(int countryId) async =>
+      (await _refs.countryById(countryId))?.name ?? 'Unknown country';
+
   Future<ClubOverview?> clubOverview() async {
     final ManagerProfile? profile = managerProfile;
     final Country? country = profile == null
@@ -927,6 +949,66 @@ class CareerProvider extends ChangeNotifier {
 
   Future<List<TransferRecord>> transferHistory() =>
       _squads.transferHistory(userTeamId);
+
+  Future<FinanceSummary> financeSummary() async {
+    final Season? current = season;
+    if (current == null || userTeamId == 0) {
+      return const FinanceSummary(
+        ticketIncome: 0,
+        sponsorIncome: 0,
+        playerSaleIncome: 0,
+        prizeIncome: 0,
+        salaryExpense: 0,
+        playerPurchaseExpense: 0,
+        otherExpense: 0,
+      );
+    }
+
+    final String from = '${current.startYear}-07-01';
+    final String to = '${current.endYear}-06-30';
+    final List<Map<String, Object?>> ticketRows = await _db.rawQuery(
+      'SELECT COALESCE(SUM(revenue), 0) AS total FROM ${t.matches} '
+      'WHERE season_id = ? AND home_team_id = ? AND status = ?',
+      <Object?>[current.seasonId, userTeamId, t.matchFinished],
+    );
+    final List<Map<String, Object?>> transferRows = await _db.rawQuery(
+      'SELECT COALESCE(SUM(CASE WHEN from_team_id = ? THEN value ELSE 0 END), 0) '
+      'AS sales, COALESCE(SUM(CASE WHEN to_team_id = ? THEN value ELSE 0 END), 0) '
+      'AS purchases FROM ${t.playerTransfers} '
+      'WHERE date >= ? AND date <= ?',
+      <Object?>[userTeamId, userTeamId, from, to],
+    );
+    final List<Map<String, Object?>> sponsorRows = await _db.rawQuery(
+      'SELECT COALESCE(SUM(base_reward + progress * ?), 0) AS total '
+      'FROM ${t.sponsorships} WHERE team_id = ? AND season_id = ?',
+      <Object?>[week, userTeamId, current.seasonId],
+    );
+    final List<Map<String, Object?>> prizeRows = await _db.rawQuery(
+      'SELECT COALESCE(SUM(amount), 0) AS total '
+      'FROM ${t.competitionPrizeAwards} WHERE team_id = ? AND season_id = ?',
+      <Object?>[userTeamId, current.seasonId],
+    );
+    final List<Map<String, Object?>> wageRows = await _db.rawQuery(
+      'SELECT COALESCE(SUM(p.salary), 0) AS total FROM ${t.teamPlayers} tp '
+      'JOIN ${t.players} p ON p.player_id = tp.player_id '
+      'WHERE tp.team_id = ? AND p.status_id = ?',
+      <Object?>[userTeamId, t.statusActive],
+    );
+    int value(Map<String, Object?> row, String key) =>
+        (row[key] as num?)?.toInt() ?? 0;
+    final Map<String, Object?> transfers = transferRows.isEmpty
+        ? const <String, Object?>{}
+        : transferRows.first;
+    return FinanceSummary(
+      ticketIncome: value(ticketRows.first, 'total'),
+      sponsorIncome: value(sponsorRows.first, 'total'),
+      playerSaleIncome: value(transfers, 'sales'),
+      prizeIncome: value(prizeRows.first, 'total'),
+      salaryExpense: value(wageRows.first, 'total') * week ~/ 4,
+      playerPurchaseExpense: value(transfers, 'purchases'),
+      otherExpense: 0,
+    );
+  }
 
   /// True after the manager pressed Clear, so the XI is not refilled behind
   /// their back until they pick a formation or press Auto.
@@ -1082,7 +1164,7 @@ class CareerProvider extends ChangeNotifier {
     final int clubId = (row['club_team_id'] as int?) ?? 0;
     if (clubId == 0) return 'Player is a free agent';
     if (clubId == userTeamId) return 'Player already in your squad';
-    
+
     final Team? buyer = userTeam;
     if (buyer == null) return 'Unknown team';
     if (buyer.budget < offerAmount) return 'Not enough budget';
@@ -1102,8 +1184,9 @@ class CareerProvider extends ChangeNotifier {
     // Send notification to user about offer submission
     await _messages.insert(
       title: 'Transfer offer sent',
-      body: 'Your offer of ${fmt.money(offerAmount)} for ${row['name']} '
-            'has been sent to ${row['club_name']}. Awaiting response...',
+      body:
+          'Your offer of ${fmt.money(offerAmount)} for ${row['name']} '
+          'has been sent to ${row['club_name']}. Awaiting response...',
       teamId: userTeamId,
       sender: 'Transfer Desk',
       transferOfferId: offerId,
@@ -1113,7 +1196,7 @@ class CareerProvider extends ChangeNotifier {
 
     // shortcut: instant club response, defer this until the next game week when timing matters.
     await _processClubDecision(offerId);
-    
+
     return null;
   }
 
@@ -1124,13 +1207,14 @@ class CareerProvider extends ChangeNotifier {
 
     // Simple AI: accept if offer >= 95% of value, reject if < 80%, counter otherwise
     final double offerPercent = offer.offerAmount / offer.playerValue;
-    
+
     if (offerPercent >= 0.95) {
       // Accepted - move to contract negotiation
       final int msgId = await _messages.insert(
         title: 'Transfer offer accepted!',
-        body: '${offer.fromTeamName} accepted your offer of ${fmt.money(offer.offerAmount)} '
-              'for ${offer.playerName}. Now negotiate contract terms.',
+        body:
+            '${offer.fromTeamName} accepted your offer of ${fmt.money(offer.offerAmount)} '
+            'for ${offer.playerName}. Now negotiate contract terms.',
         teamId: userTeamId,
         sender: offer.fromTeamName,
         transferOfferId: offerId,
@@ -1144,8 +1228,9 @@ class CareerProvider extends ChangeNotifier {
       // Rejected
       final int msgId = await _messages.insert(
         title: 'Transfer offer rejected',
-        body: '${offer.fromTeamName} rejected your offer of ${fmt.money(offer.offerAmount)} '
-              'for ${offer.playerName}. They want at least ${fmt.money(offer.playerValue)}.',
+        body:
+            '${offer.fromTeamName} rejected your offer of ${fmt.money(offer.offerAmount)} '
+            'for ${offer.playerName}. They want at least ${fmt.money(offer.playerValue)}.',
         teamId: userTeamId,
         sender: offer.fromTeamName,
         transferOfferId: offerId,
@@ -1160,8 +1245,9 @@ class CareerProvider extends ChangeNotifier {
       final int counterAmount = (offer.playerValue * 0.95).round();
       final int msgId = await _messages.insert(
         title: 'Counter offer received',
-        body: '${offer.fromTeamName} countered your offer for ${offer.playerName}. '
-              'They want ${fmt.money(counterAmount)} instead of ${fmt.money(offer.offerAmount)}.',
+        body:
+            '${offer.fromTeamName} countered your offer for ${offer.playerName}. '
+            'They want ${fmt.money(counterAmount)} instead of ${fmt.money(offer.offerAmount)}.',
         teamId: userTeamId,
         sender: offer.fromTeamName,
         transferOfferId: offerId,
@@ -1181,16 +1267,17 @@ class CareerProvider extends ChangeNotifier {
     final TransferOffer? offer = await _transfers.getOffer(offerId);
     if (offer == null) return 'Offer not found';
     if (offer.counterAmount == null) return 'No counter offer available';
-    
+
     final Team? buyer = userTeam;
     if (buyer == null) return 'Unknown team';
     if (buyer.budget < offer.counterAmount!) return 'Not enough budget';
 
     final int msgId = await _messages.insert(
       title: 'Counter offer accepted',
-      body: 'You accepted ${offer.fromTeamName}\'s counter offer of '
-            '${fmt.money(offer.counterAmount!)} for ${offer.playerName}. '
-            'Now negotiate contract terms.',
+      body:
+          'You accepted ${offer.fromTeamName}\'s counter offer of '
+          '${fmt.money(offer.counterAmount!)} for ${offer.playerName}. '
+          'Now negotiate contract terms.',
       teamId: userTeamId,
       sender: 'Transfer Desk',
       transferOfferId: offerId,
@@ -1221,7 +1308,8 @@ class CareerProvider extends ChangeNotifier {
     }
     await _messages.insert(
       title: 'Player sold',
-      body: '${offer.playerName} joined ${offer.toTeamName} for '
+      body:
+          '${offer.playerName} joined ${offer.toTeamName} for '
           '${fmt.money(offer.offerAmount)}.',
       teamId: userTeamId,
       sender: 'Transfer Desk',
@@ -1253,7 +1341,8 @@ class CareerProvider extends ChangeNotifier {
       );
       await _messages.insert(
         title: 'Counter offer accepted',
-        body: '${offer.toTeamName} accepted ${fmt.money(amount)} for '
+        body:
+            '${offer.toTeamName} accepted ${fmt.money(amount)} for '
             '${offer.playerName}. Open this message to complete the sale.',
         teamId: userTeamId,
         sender: offer.toTeamName,
@@ -1263,7 +1352,8 @@ class CareerProvider extends ChangeNotifier {
       await _transfers.updateOfferStatus(offerId, t.offerRejected);
       await _messages.insert(
         title: 'Counter offer rejected',
-        body: '${offer.toTeamName} rejected ${fmt.money(amount)} for '
+        body:
+            '${offer.toTeamName} rejected ${fmt.money(amount)} for '
             '${offer.playerName}.',
         teamId: userTeamId,
         sender: offer.toTeamName,
@@ -1280,7 +1370,8 @@ class CareerProvider extends ChangeNotifier {
     await _transfers.updateOfferStatus(offerId, t.offerRejected);
     await _messages.insert(
       title: 'Transfer offer rejected',
-      body: 'You rejected ${offer.toTeamName}\'s offer for ${offer.playerName}.',
+      body:
+          'You rejected ${offer.toTeamName}\'s offer for ${offer.playerName}.',
       teamId: userTeamId,
       sender: 'Transfer Desk',
       transferOfferId: offerId,
@@ -1301,7 +1392,8 @@ class CareerProvider extends ChangeNotifier {
 
     await _messages.insert(
       title: 'Loan deal completed',
-      body: '${offer.playerName} joined ${offer.toTeamName} on loan for '
+      body:
+          '${offer.playerName} joined ${offer.toTeamName} on loan for '
           '${offer.loanSeasons == 1 ? '1 season' : '2 seasons'}. '
           'Your club received a loan fee of ${fmt.money(offer.offerAmount)}.',
       teamId: userTeamId,
@@ -1329,7 +1421,8 @@ class CareerProvider extends ChangeNotifier {
   }) async {
     final TransferOffer? offer = await _transfers.getOffer(offerId);
     if (offer == null) return 'Offer not found';
-    if (offer.status != t.offerAccepted) return 'Offer not yet accepted by club';
+    if (offer.status != t.offerAccepted)
+      return 'Offer not yet accepted by club';
 
     await _transfers.updateContractProposal(
       offerId,
@@ -1340,8 +1433,9 @@ class CareerProvider extends ChangeNotifier {
     // Send notification about contract proposal
     await _messages.insert(
       title: 'Contract proposed to ${offer.playerName}',
-      body: 'Salary: ${fmt.money(salary)}/season, Duration: $durationYears years. '
-            'Awaiting player response...',
+      body:
+          'Salary: ${fmt.money(salary)}/season, Duration: $durationYears years. '
+          'Awaiting player response...',
       teamId: userTeamId,
       sender: 'Transfer Desk',
       transferOfferId: offerId,
@@ -1351,7 +1445,7 @@ class CareerProvider extends ChangeNotifier {
 
     // shortcut: instant player response, defer this until the next game week when timing matters.
     await _processPlayerDecision(offerId);
-    
+
     return null;
   }
 
@@ -1369,36 +1463,47 @@ class CareerProvider extends ChangeNotifier {
       limit: 1,
     );
     if (playerRows.isEmpty) return;
-    
+
     final int currentSalary = (playerRows.first['salary'] as int?) ?? 0;
-    final bool accepted = offer.proposedSalary! >= (currentSalary * 1.1).round();
+    final bool accepted =
+        offer.proposedSalary! >= (currentSalary * 1.1).round();
 
     if (accepted) {
       // Player accepted - complete transfer
       final int msgId = await _messages.insert(
         title: 'Transfer completed!',
-        body: '${offer.playerName} accepted your contract offer! '
-              'Salary: ${fmt.money(offer.proposedSalary!)}/season, '
-              'Duration: ${offer.proposedDurationYears} years.',
+        body:
+            '${offer.playerName} accepted your contract offer! '
+            'Salary: ${fmt.money(offer.proposedSalary!)}/season, '
+            'Duration: ${offer.proposedDurationYears} years.',
         teamId: userTeamId,
         sender: 'Transfer Desk',
         transferOfferId: offerId,
       );
-      await _transfers.updateOfferStatus(offerId, t.offerPlayerAccepted, messageId: msgId);
-      
+      await _transfers.updateOfferStatus(
+        offerId,
+        t.offerPlayerAccepted,
+        messageId: msgId,
+      );
+
       // Complete the transfer
       await _transfers.completeTransfer(offerId);
     } else {
       // Player rejected
       final int msgId = await _messages.insert(
         title: 'Contract rejected',
-        body: '${offer.playerName} rejected your contract offer. '
-              'They want at least ${fmt.money((currentSalary * 1.2).round())}/season.',
+        body:
+            '${offer.playerName} rejected your contract offer. '
+            'They want at least ${fmt.money((currentSalary * 1.2).round())}/season.',
         teamId: userTeamId,
         sender: offer.playerName,
         transferOfferId: offerId,
       );
-      await _transfers.updateOfferStatus(offerId, t.offerAccepted, messageId: msgId);
+      await _transfers.updateOfferStatus(
+        offerId,
+        t.offerAccepted,
+        messageId: msgId,
+      );
     }
     await refreshWorld();
   }
@@ -1426,7 +1531,8 @@ class CareerProvider extends ChangeNotifier {
     await _sponsorships.signSponsorship(offer);
     await _messages.insert(
       title: 'Sponsorship signed: ${offer.sponsorName}',
-      body: 'Signed ${offer.typeLabel} deal with ${offer.sponsorName}. '
+      body:
+          'Signed ${offer.typeLabel} deal with ${offer.sponsorName}. '
           'Received upfront bonus of ${fmt.money(offer.baseReward)} and weekly '
           'payments of ${fmt.money(offer.weeklyReward)}.',
       teamId: userTeamId,
@@ -1462,7 +1568,8 @@ class CareerProvider extends ChangeNotifier {
     );
     await _messages.insert(
       title: 'Scouting Report: ${scout.name} ($region)',
-      body: '${scout.name} has completed scouting in $region and discovered '
+      body:
+          '${scout.name} has completed scouting in $region and discovered '
           '${found.length} young wonderkids. Review their profiles in the Market Scouting tab.',
       teamId: userTeamId,
       sender: 'Chief Scout',
@@ -1540,10 +1647,16 @@ class LiveMatchSession {
     if (result.awayGoals > result.homeGoals) return awayTeam.teamId;
     if (decidedOnPenalties) {
       final int homePen = shootoutEvents
-          .where((MatchEvent e) => e.isHome && e.detail?.startsWith('scored') == true)
+          .where(
+            (MatchEvent e) =>
+                e.isHome && e.detail?.startsWith('scored') == true,
+          )
           .length;
       final int awayPen = shootoutEvents
-          .where((MatchEvent e) => !e.isHome && e.detail?.startsWith('scored') == true)
+          .where(
+            (MatchEvent e) =>
+                !e.isHome && e.detail?.startsWith('scored') == true,
+          )
           .length;
       if (homePen > awayPen) return homeTeam.teamId;
       if (awayPen > homePen) return awayTeam.teamId;

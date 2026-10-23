@@ -138,9 +138,13 @@ class SeasonGenerator {
 
     // ------------------------------------ continental group stage / round 1
     int internationalIndex = 0;
+    int superCupIndex = 0;
     for (final MapEntry<int, List<int>> entry
         in internationalEntrants.entries) {
-      final DateTime start = _internationalDate(internationalIndex++);
+      final bool isSuperCup = entry.key == 54 || entry.key == 1651;
+      final DateTime start = isSuperCup
+          ? _startDate.subtract(Duration(days: 4 + (superCupIndex++ * 3)))
+          : _internationalDate(internationalIndex++);
       if (entry.value.length >= 8) {
         await scheduleGroupStage(
           season.seasonId,
@@ -183,7 +187,9 @@ class SeasonGenerator {
     required List<Tournament> internationals,
     required Map<int, Team> teamCache,
   }) async {
+    _startDate = DateTime(season.startYear, 8, 9);
     int added = 0;
+    int superCupIndex = 0;
     // Clubs already playing a tiered continental cup must not be invited again.
     final List<Map<String, Object?>> playing = await db.rawQuery(
       '''
@@ -261,9 +267,12 @@ class SeasonGenerator {
       final String? nextDate = dateRows.isEmpty
           ? null
           : dateRows.first['next_date'] as String?;
-      final DateTime base =
-          DateTime.tryParse(nextDate ?? '') ?? DateTime(season.startYear, 8, 9);
-      final DateTime date = _nextThursday(base.add(Duration(days: 7 * (added * 6 + 1))));
+      final DateTime base = DateTime.tryParse(nextDate ?? '') ?? _startDate;
+      final bool isSuperCup =
+          tour.tournamentId == 54 || tour.tournamentId == 1651;
+      final DateTime date = isSuperCup
+          ? _startDate.subtract(Duration(days: 4 + (superCupIndex++ * 3)))
+          : _nextThursday(base.add(Duration(days: 7 * (added * 6 + 1))));
       if (entrants.length >= 8) {
         await scheduleGroupStage(
           season.seasonId,
@@ -412,8 +421,9 @@ class SeasonGenerator {
       whereArgs: <Object?>[cupTournamentId],
       limit: 1,
     );
-    final int roundsSetting =
-        tourRows.isEmpty ? 1 : ((tourRows.first['rounds'] as int?) ?? 1);
+    final int roundsSetting = tourRows.isEmpty
+        ? 1
+        : ((tourRows.first['rounds'] as int?) ?? 1);
     final int tieCount = pairs != null ? pairs.length : (survivors.length ~/ 2);
     // Knockout rounds before the final are 2-legged if the tournament setting is rounds == 2.
     final bool twoLegged = roundsSetting == 2 && tieCount > 1;
@@ -494,6 +504,9 @@ class SeasonGenerator {
     Set<int> exclude = const <int>{},
     int? beforeSeasonId,
   }) async {
+    if (tour.tournamentId == 56) {
+      return _intercontinentalTeams(beforeSeasonId: beforeSeasonId);
+    }
     final _ChampionsFeed? feed = _championsFeeds[tour.tournamentId];
     if (feed != null) return _championsOf(tour, feed, beforeSeasonId);
     final rows = await db.query(
@@ -527,12 +540,65 @@ class SeasonGenerator {
   static const Map<int, _ChampionsFeed> _championsFeeds = <int, _ChampionsFeed>{
     54: _ChampionsFeed(<int>[49, 51], 2), // UEFA Super Cup
     1651: _ChampionsFeed(<int>[99, 164], 2), // AFC Super Cup
-    56: _ChampionsFeed(<int>[49, 52, 50, 99, 100, 51, 53, 164], 8),
-    163: _ChampionsFeed(
-      <int>[49, 52, 99, 50, 100, 51, 53, 164, 135, 1650],
-      16,
-    ),
+    163: _ChampionsFeed(<int>[49, 52, 99, 50, 100, 51, 53, 164, 135, 1650], 16),
   };
+
+  static const List<_IntercontinentalRegion> _intercontinentalRegions =
+      <_IntercontinentalRegion>[
+        _IntercontinentalRegion(49, 3), // UEFA
+        _IntercontinentalRegion(52, 2), // CONMEBOL
+        _IntercontinentalRegion(99, 5), // AFC
+        _IntercontinentalRegion(100, 4), // CAF
+        _IntercontinentalRegion(50, 1), // CONCACAF
+        _IntercontinentalRegion(null, 6), // OFC
+      ];
+
+  Future<List<Team>> _intercontinentalTeams({int? beforeSeasonId}) async {
+    final List<Team> teams = <Team>[];
+    final Set<int> selectedIds = <int>{};
+    for (final _IntercontinentalRegion region in _intercontinentalRegions) {
+      Team? selected;
+      if (region.tournamentId != null && beforeSeasonId != null) {
+        final (int, int)? finalTeams = await _lastFinal(
+          region.tournamentId!,
+          beforeSeasonId,
+        );
+        if (finalTeams != null) {
+          final List<Map<String, Object?>> rows = await db.query(
+            t.teams,
+            where: 'team_id = ?',
+            whereArgs: <Object?>[finalTeams.$1],
+            limit: 1,
+          );
+          if (rows.isNotEmpty) {
+            final Team champion = Team.fromMap(rows.first);
+            if (selectedIds.add(champion.teamId)) selected = champion;
+          }
+        }
+      }
+      if (selected == null) {
+        final List<Map<String, Object?>> rows = await db.rawQuery(
+          '''
+          SELECT tm.* FROM ${t.teams} tm
+          JOIN ${t.countries} c ON c.country_id = tm.country_id
+          WHERE tm.division = 1 AND c.confederation = ?
+          ORDER BY tm.power DESC
+          LIMIT 20
+          ''',
+          <Object?>[region.confederation],
+        );
+        for (final Map<String, Object?> row in rows) {
+          final Team candidate = Team.fromMap(row);
+          if (selectedIds.add(candidate.teamId)) {
+            selected = candidate;
+            break;
+          }
+        }
+      }
+      if (selected != null) teams.add(selected);
+    }
+    return teams;
+  }
 
   /// Champions of the feeder cups from the latest finished season, then
   /// runners-up in the same order, up to the field size. Gaps (first season,
@@ -569,11 +635,17 @@ class SeasonGenerator {
     }
     if (teams.length >= feed.size) return teams;
 
-    final List<Map<String, Object?>> slotRows = await db.query(
-      t.internationalSlots,
-      where: 'tournament_id = ?',
-      whereArgs: <Object?>[tour.tournamentId],
-    );
+    final List<Map<String, Object?>> slotRows = tour.tournamentId == 56
+        ? await db.rawQuery('''
+        SELECT DISTINCT country_id, 1 AS slots
+        FROM ${t.internationalSlots}
+        WHERE tournament_id IN (${feed.cups.join(',')})
+        ''')
+        : await db.query(
+            t.internationalSlots,
+            where: 'tournament_id = ?',
+            whereArgs: <Object?>[tour.tournamentId],
+          );
     final List<Team> pool = <Team>[];
     for (final Map<String, Object?> row in slotRows) {
       final List<Map<String, Object?>> clubs = await db.query(
@@ -848,8 +920,7 @@ class SeasonGenerator {
       };
       busyIds.add(teamId);
 
-      final String notInClause =
-          busyIds.isEmpty ? '0' : busyIds.join(',');
+      final String notInClause = busyIds.isEmpty ? '0' : busyIds.join(',');
 
       // Find an available team registered in this season to serve as opponent:
       final List<Map<String, Object?>> candidateRows = await db.rawQuery(
@@ -1037,4 +1108,11 @@ class _ChampionsFeed {
 
   final List<int> cups;
   final int size;
+}
+
+class _IntercontinentalRegion {
+  const _IntercontinentalRegion(this.tournamentId, this.confederation);
+
+  final int? tournamentId;
+  final int confederation;
 }
