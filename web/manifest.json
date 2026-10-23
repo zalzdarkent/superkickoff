@@ -1,11 +1,11 @@
 {
-    "name": "superkickoff",
-    "short_name": "superkickoff",
+    "name": "Superkickoff",
+    "short_name": "Superkickoff",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#000915",
+    "theme_color": "#000915",
+    "description": "Superkickoff — a football manager career game.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

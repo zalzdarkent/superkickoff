@@ -50,6 +50,26 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/img/logo.png
+  remove_alpha_ios: true
+  adaptive_icon_background: "#000915"
+  adaptive_icon_foreground: assets/img/logo.png
+  web:
+    generate: true
+    image_path: assets/img/logo.png
+    background_color: "#000915"
+    theme_color: "#000915"
+  windows:
+    generate: true
+    image_path: assets/img/logo.png
+    icon_size: 256
+  macos:
+    generate: true
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
