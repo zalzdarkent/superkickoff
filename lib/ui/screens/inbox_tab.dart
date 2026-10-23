@@ -465,30 +465,69 @@ class InboxTab extends StatelessWidget {
                                       '17y · POT ${p.potential} · Foot ${p.profile == 'I' ? 'L' : 'R'}',
                                       style: const TextStyle(fontSize: 11),
                                     ),
-                                    trailing: FilledButton(
-                                      style: FilledButton.styleFrom(
-                                        visualDensity: VisualDensity.compact,
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                        ),
-                                      ),
-                                      onPressed: () async {
-                                        final Player? signed = await game
-                                            .signYouthProspect(p.prospectId);
-                                        if (signed != null && context.mounted) {
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            SnackBar(
-                                              content: Text(
-                                                '${signed.name} joined your squad!',
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: <Widget>[
+                                        IconButton(
+                                          icon: const Icon(
+                                            Icons.close,
+                                            size: 18,
+                                            color: AppTheme.textDim,
+                                          ),
+                                          tooltip: 'Reject prospect',
+                                          visualDensity: VisualDensity.compact,
+                                          onPressed: () async {
+                                            final bool rejected = await game
+                                                .rejectYouthProspect(
+                                                  p.prospectId,
+                                                );
+                                            if (!context.mounted) return;
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  rejected
+                                                      ? '${p.name} rejected.'
+                                                      : 'Prospect is no longer available.',
+                                                ),
                                               ),
+                                            );
+                                            if (rejected) {
+                                              setSheetState(() {});
+                                            }
+                                          },
+                                        ),
+                                        FilledButton(
+                                          style: FilledButton.styleFrom(
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
                                             ),
-                                          );
-                                          setSheetState(() {});
-                                        }
-                                      },
-                                      child: const Text('Sign'),
+                                          ),
+                                          onPressed: () async {
+                                            final Player? signed = await game
+                                                .signYouthProspect(
+                                                  p.prospectId,
+                                                );
+                                            if (signed != null &&
+                                                context.mounted) {
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    '${signed.name} joined your squad!',
+                                                  ),
+                                                ),
+                                              );
+                                              setSheetState(() {});
+                                            }
+                                          },
+                                          child: const Text('Sign'),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 );

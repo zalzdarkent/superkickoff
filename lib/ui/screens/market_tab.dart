@@ -582,27 +582,60 @@ class _MarketTabState extends State<MarketTab> {
                               style: const TextStyle(fontSize: 11),
                             ),
                             isThreeLine: true,
-                            trailing: FilledButton(
-                              style: FilledButton.styleFrom(
-                                visualDensity: VisualDensity.compact,
-                              ),
-                              onPressed: () async {
-                                final String? err = await game.signWonderkid(
-                                  w.reportId,
-                                );
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        err ??
-                                            '${w.playerName} joined your squad!',
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.close,
+                                    size: 18,
+                                    color: AppTheme.textDim,
+                                  ),
+                                  tooltip: 'Reject prospect',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () async {
+                                    final bool rejected = await game
+                                        .rejectScoutedWonderkid(w.reportId);
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(
+                                      context,
+                                    ).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          rejected
+                                              ? '${w.playerName} rejected.'
+                                              : 'Prospect is no longer available.',
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                  setState(() {});
-                                }
-                              },
-                              child: const Text('Sign'),
+                                    );
+                                    if (rejected) setState(() {});
+                                  },
+                                ),
+                                FilledButton(
+                                  style: FilledButton.styleFrom(
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  onPressed: () async {
+                                    final String? err = await game.signWonderkid(
+                                      w.reportId,
+                                    );
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            err ??
+                                                '${w.playerName} joined your squad!',
+                                          ),
+                                        ),
+                                      );
+                                      setState(() {});
+                                    }
+                                  },
+                                  child: const Text('Sign'),
+                                ),
+                              ],
                             ),
                           ),
                         ),

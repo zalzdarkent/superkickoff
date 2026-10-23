@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -98,14 +99,79 @@ void main() {
     expect(pending.length, found.length);
 
     // Sign the top wonderkid
+    final ScoutWonderkid selectedWonderkid = pending.first;
     final String? signError = await scouting.signWonderkid(
-      reportId: pending.first.reportId,
+      reportId: selectedWonderkid.reportId,
       teamId: 42,
     );
     expect(signError, isNull);
 
+    final List<Map<String, Object?>> signedPlayers = await db.rawQuery(
+      '''
+      SELECT p.height
+      FROM players p
+      JOIN team_players tp ON tp.player_id = p.player_id
+      WHERE tp.team_id = ? AND p.name = ?
+      ORDER BY p.player_id DESC
+      LIMIT 1
+      ''',
+      <Object?>[42, selectedWonderkid.playerName],
+    );
+    final (int minimumHeight, int maximumHeight) =
+        ScoutingRepository.heightRangeForPosition(selectedWonderkid.positionId);
+    final int signedHeight = signedPlayers.first['height'] as int;
+    expect(signedHeight, inInclusiveRange(minimumHeight, maximumHeight));
+
     final List<ScoutWonderkid> remaining = await scouting.pendingWonderkids(42);
     expect(remaining.length, pending.length - 1);
+
+    final ScoutWonderkid rejectedWonderkid = remaining.first;
+    expect(
+      await scouting.rejectWonderkid(
+        reportId: rejectedWonderkid.reportId,
+        teamId: 551,
+      ),
+      isFalse,
+    );
+    expect(
+      await scouting.rejectWonderkid(
+        reportId: rejectedWonderkid.reportId,
+        teamId: 42,
+      ),
+      isTrue,
+    );
+    final List<ScoutWonderkid> afterReject = await scouting.pendingWonderkids(
+      42,
+    );
+    expect(afterReject.length, remaining.length - 1);
+    expect(
+      afterReject.any(
+        (ScoutWonderkid prospect) =>
+            prospect.reportId == rejectedWonderkid.reportId,
+      ),
+      isFalse,
+    );
+  });
+
+  test('scouted players get varied heights within their position range', () {
+    final math.Random rng = math.Random(42);
+
+    for (int positionId = 1; positionId <= 11; positionId++) {
+      final (int minimumHeight, int maximumHeight) =
+          ScoutingRepository.heightRangeForPosition(positionId);
+      final Set<int> heights = <int>{
+        for (int i = 0; i < 100; i++)
+          ScoutingRepository.heightForPosition(positionId, rng),
+      };
+      expect(heights, isNotEmpty);
+      expect(
+        heights.every((int height) {
+          return height >= minimumHeight && height <= maximumHeight;
+        }),
+        isTrue,
+      );
+      expect(heights.length, greaterThan(1));
+    }
   });
 
   test('schedules 3 pre-season friendlies before league start', () async {

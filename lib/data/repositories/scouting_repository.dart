@@ -246,6 +246,18 @@ class ScoutingRepository {
     return rows.map(ScoutWonderkid.fromMap).toList();
   }
 
+  Future<bool> rejectWonderkid({
+    required int reportId,
+    required int teamId,
+  }) async {
+    final int deleted = await db.delete(
+      t.scoutReports,
+      where: 'report_id = ? AND team_id = ? AND signed = 0',
+      whereArgs: <Object?>[reportId, teamId],
+    );
+    return deleted > 0;
+  }
+
   /// Signs scouted wonderkid to the team squad.
   Future<String?> signWonderkid({
     required int reportId,
@@ -261,6 +273,10 @@ class ScoutingRepository {
     final Map<String, Object?> r = rows.first;
     final int value = (r['value'] as int?) ?? 1000000;
     final int signingFee = (value * 0.75).round(); // Discounted scouting fee
+    final int height = heightForPosition(
+      (r['position_id'] as int?) ?? 1,
+      math.Random(),
+    );
 
     final List<Map<String, Object?>> teamRows = await db.query(
       t.teams,
@@ -280,7 +296,7 @@ class ScoutingRepository {
       final int playerId = await txn.insert(t.players, <String, Object?>{
         'name': r['player_name'],
         'age': r['age'],
-        'height': 176,
+        'height': height,
         'stars': ((r['potential'] as int?) ?? 80) >= 88 ? 1 : 0,
         'value': value,
         'salary': 2500,
@@ -320,6 +336,23 @@ class ScoutingRepository {
     });
 
     return null;
+  }
+
+  static int heightForPosition(int positionId, math.Random rng) {
+    final (int minimum, int maximum) = heightRangeForPosition(positionId);
+    return minimum + rng.nextInt(maximum - minimum + 1);
+  }
+
+  static (int, int) heightRangeForPosition(int positionId) {
+    return switch (positionId) {
+      1 => (178, 200),
+      2 || 3 => (178, 198),
+      4 => (175, 185),
+      5 || 6 || 7 => (175, 194),
+      8 || 9 => (175, 187),
+      10 || 11 => (182, 196),
+      _ => (175, 194),
+    };
   }
 
   static String _wonderkidName(

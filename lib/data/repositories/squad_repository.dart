@@ -1169,6 +1169,18 @@ class SquadRepository {
     return rows.map(YouthProspect.fromMap).toList();
   }
 
+  Future<bool> rejectProspect({
+    required int prospectId,
+    required int teamId,
+  }) async {
+    final int deleted = await db.delete(
+      t.academyProspects,
+      where: 'prospect_id = ? AND team_id = ? AND signed = 0',
+      whereArgs: <Object?>[prospectId, teamId],
+    );
+    return deleted > 0;
+  }
+
   /// Signs an academy prospect into the active club squad.
   Future<Player?> signProspect(int prospectId) async {
     final List<Map<String, Object?>> rows = await db.query(

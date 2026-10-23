@@ -1407,6 +1407,9 @@ class CareerProvider extends ChangeNotifier {
   Future<List<YouthProspect>> pendingProspects() =>
       _squads.pendingProspects(userTeamId);
 
+  Future<bool> rejectYouthProspect(int prospectId) =>
+      _squads.rejectProspect(prospectId: prospectId, teamId: userTeamId);
+
   Future<Player?> signYouthProspect(int prospectId) async {
     final Player? player = await _squads.signProspect(prospectId);
     if (player != null) await refreshWorld();
@@ -1580,6 +1583,9 @@ class CareerProvider extends ChangeNotifier {
 
   Future<List<ScoutWonderkid>> pendingWonderkids() =>
       _scouting.pendingWonderkids(userTeamId);
+
+  Future<bool> rejectScoutedWonderkid(int reportId) =>
+      _scouting.rejectWonderkid(reportId: reportId, teamId: userTeamId);
 
   Future<String?> signWonderkid(int reportId) async {
     final String? error = await _scouting.signWonderkid(

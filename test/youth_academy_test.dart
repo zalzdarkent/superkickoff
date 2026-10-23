@@ -49,6 +49,30 @@ void main() {
     final List<Player> squad = await squads.squadForTeam(42);
     expect(squad.any((Player p) => p.playerId == signed.playerId), isTrue);
 
+    final YouthProspect rejectedProspect = graduates[1];
+    expect(
+      await squads.rejectProspect(
+        prospectId: rejectedProspect.prospectId,
+        teamId: 551,
+      ),
+      isFalse,
+    );
+    expect(
+      await squads.rejectProspect(
+        prospectId: rejectedProspect.prospectId,
+        teamId: 42,
+      ),
+      isTrue,
+    );
+    final List<YouthProspect> pending = await squads.pendingProspects(42);
+    expect(
+      pending.any(
+        (YouthProspect prospect) =>
+            prospect.prospectId == rejectedProspect.prospectId,
+      ),
+      isFalse,
+    );
+
     expect(
       await squads.graduateYouthPlayersIfDue(teamId: 42, date: '2026-05-01'),
       isEmpty,
