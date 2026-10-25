@@ -13,6 +13,7 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import 'match_stats_sheet.dart';
 import 'matchday_results_sheet.dart';
+import 'team_detail_sheet.dart';
 
 /// Live match viewer: the result is pre-simulated by the engine and revealed
 /// minute by minute, exactly like Superkickoff's timeline games.
@@ -239,25 +240,32 @@ class _MatchScreenState extends State<MatchScreen> {
           Row(
             children: <Widget>[
               Expanded(
-                child: Column(
-                  children: <Widget>[
-                    Text(
-                      session.homeTeam.abbreviation,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
+                child: InkWell(
+                  onTap: () => showTeamDetail(context, session.homeTeam.teamId),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Column(
+                      children: <Widget>[
+                        Text(
+                          session.homeTeam.abbreviation,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          session.homeTeam.name,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.textDim,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      session.homeTeam.name,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppTheme.textDim,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
               Column(
@@ -290,25 +298,32 @@ class _MatchScreenState extends State<MatchScreen> {
                 ],
               ),
               Expanded(
-                child: Column(
-                  children: <Widget>[
-                    Text(
-                      session.awayTeam.abbreviation,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
+                child: InkWell(
+                  onTap: () => showTeamDetail(context, session.awayTeam.teamId),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Column(
+                      children: <Widget>[
+                        Text(
+                          session.awayTeam.abbreviation,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          session.awayTeam.name,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.textDim,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      session.awayTeam.name,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppTheme.textDim,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ],

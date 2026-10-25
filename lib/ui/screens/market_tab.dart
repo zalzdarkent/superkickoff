@@ -8,6 +8,7 @@ import '../../state/career_provider.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import 'player_detail_sheet.dart';
+import 'team_detail_sheet.dart';
 
 /// Full-page transfer market: listed players plus the club's transfer history.
 class MarketTab extends StatefulWidget {
@@ -119,10 +120,17 @@ class _MarketTabState extends State<MarketTab> {
 
   Future<void> _makeOffer(Map<String, Object?> row) async {
     final CareerProvider game = context.read<CareerProvider>();
+    final int clubId = (row['club_team_id'] as int?) ?? 0;
+    if (clubId == 0) {
+      return _signFreeAgent(row);
+    }
     final int value = (row['value'] as int?) ?? 0;
     final TextEditingController offer = TextEditingController(
       text: value.toString(),
     );
+    final bool isOpen = game.isTransferWindowOpen;
+    final String nextOpenDate = game.currentTransferWindow?.startDate ?? '';
+
     final int? amount = await showDialog<int>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
@@ -134,6 +142,29 @@ class _MarketTabState extends State<MarketTab> {
             Text('Club: ${row['club_name'] ?? 'Free agent'}'),
             Text('Player value: ${money(value)}'),
             Text('Your budget: ${money(game.userTeam?.budget ?? 0)}'),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isOpen
+                    ? Colors.green.withValues(alpha: 0.12)
+                    : Colors.amber.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: isOpen ? Colors.greenAccent : Colors.amber,
+                  width: 0.8,
+                ),
+              ),
+              child: Text(
+                isOpen
+                    ? '🟢 Transfer Window Terbuka: Kesepakatan akan langsung diproses.'
+                    : 'ℹ️ Transfer Window Sedang Ditutup: Kesepakatan akan dijadwalkan efektif pada pembukaan jendela transfer berikutnya ($nextOpenDate).',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: isOpen ? Colors.greenAccent : Colors.amber.shade200,
+                ),
+              ),
+            ),
             const SizedBox(height: 14),
             TextField(
               controller: offer,
@@ -167,8 +198,90 @@ class _MarketTabState extends State<MarketTab> {
     setState(() => error = failure);
     if (failure == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Offer sent for ${row['name']}. Check Inbox.')),
+        SnackBar(
+          content: Text(
+            isOpen
+                ? 'Offer sent for ${row['name']}. Check Inbox.'
+                : 'Tawaran terkirim untuk ${row['name']} (Dijadwalkan untuk transfer window berikutnya). Cek Inbox.',
+          ),
+        ),
       );
+    }
+  }
+
+  Future<void> _signFreeAgent(Map<String, Object?> row) async {
+    final CareerProvider game = context.read<CareerProvider>();
+    final int salary = (row['salary'] as int?) ?? 50000;
+    final bool canRegisterNow = await game.windowManager.canRegisterFreeAgent(
+      game.season?.seasonId ?? 0,
+      game.userTeamId,
+      game.nextDate ?? '',
+    );
+    if (!mounted) return;
+
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: Text('Rekrut ${row['name']}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text('Status: Pemain Bebas Kontrak (Free Agent)'),
+            Text('Perkiraan Gaji: ${money(salary)}/musim'),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: canRegisterNow
+                    ? Colors.green.withValues(alpha: 0.12)
+                    : Colors.amber.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: canRegisterNow ? Colors.greenAccent : Colors.amber,
+                  width: 0.8,
+                ),
+              ),
+              child: Text(
+                canRegisterNow
+                    ? 'Pemain bebas dapat didaftarkan langsung ke skuad Anda.'
+                    : 'Regulasi liga mewajibkan pendaftaran saat jendela transfer. Kepindahan akan dijadwalkan pada pembukaan jendela transfer berikutnya.',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: canRegisterNow
+                      ? Colors.greenAccent
+                      : Colors.amber.shade200,
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Rekrut Pemain'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    final String? failure = await game.signFreeAgent(row);
+    if (!mounted) return;
+    setState(() => error = failure);
+    if (failure == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Proses perekrutan ${row['name']} berhasil. Cek Inbox.',
+          ),
+        ),
+      );
+      _load();
+      _loadAllPlayers();
     }
   }
 
@@ -176,7 +289,7 @@ class _MarketTabState extends State<MarketTab> {
   Widget build(BuildContext context) {
     final CareerProvider game = context.watch<CareerProvider>();
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Column(
         children: <Widget>[
           Padding(
@@ -201,7 +314,9 @@ class _MarketTabState extends State<MarketTab> {
               ],
             ),
           ),
+          const _TransferWindowBanner(),
           const TabBar(
+            isScrollable: true,
             labelColor: AppTheme.accent,
             unselectedLabelColor: AppTheme.textDim,
             indicatorColor: AppTheme.accent,
@@ -209,6 +324,7 @@ class _MarketTabState extends State<MarketTab> {
             tabs: <Widget>[
               Tab(text: 'Listed players'),
               Tab(text: 'All Players'),
+              Tab(text: 'Terjadwal'),
               Tab(text: 'Scouting'),
               Tab(text: 'Transfer history'),
             ],
@@ -218,6 +334,7 @@ class _MarketTabState extends State<MarketTab> {
               children: <Widget>[
                 _listedTab(),
                 _allPlayersTab(),
+                const _ScheduledTransfersTab(),
                 _scoutingTab(),
                 const _TransferHistory(),
               ],
@@ -824,6 +941,7 @@ class _PlayerMarketCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool isFreeAgent = ((row['club_team_id'] as int?) ?? 0) == 0;
     return Card(
       child: ListTile(
         onTap: () => showPlayerDetail(context, row['player_id'] as int),
@@ -831,20 +949,361 @@ class _PlayerMarketCard extends StatelessWidget {
           positionId: (row['position_id'] as int?) ?? 1,
           profile: row['profile'] as String?,
         ),
-        title: Text(
-          '${row['name']}  ${row['power']}',
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        title: Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                '${row['name']}  ${row['power']}',
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+            ),
+            if (isFreeAgent)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Colors.teal.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: Colors.tealAccent.withValues(alpha: 0.4),
+                  ),
+                ),
+                child: const Text(
+                  'Free Agent',
+                  style: TextStyle(
+                    color: Colors.tealAccent,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+          ],
         ),
         subtitle: Text(
-          '${row['age']}y · ${row['club_name']} · '
+          '${row['age']}y · ${row['club_name'] ?? 'Bebas Agen'} · '
           '${money((row['value'] as int?) ?? 0)}',
           style: const TextStyle(fontSize: 11),
         ),
         trailing: IconButton(
-          icon: const Icon(Icons.add_shopping_cart, color: AppTheme.accent),
+          icon: Icon(
+            isFreeAgent ? Icons.person_add_alt_1 : Icons.add_shopping_cart,
+            color: isFreeAgent ? Colors.tealAccent : AppTheme.accent,
+          ),
+          tooltip: isFreeAgent ? 'Rekrut Pemain Bebas' : 'Beli Pemain',
           onPressed: onBuy,
         ),
       ),
+    );
+  }
+}
+
+class _TransferWindowBanner extends StatelessWidget {
+  const _TransferWindowBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final CareerProvider game = context.watch<CareerProvider>();
+    final TransferWindow? window = game.currentTransferWindow;
+    final String currentDate = game.nextDate ?? '';
+    final bool isOpen = game.isTransferWindowOpen;
+    final bool isDeadline = game.isDeadlineDay;
+
+    final Color bgColor = isOpen
+        ? (isDeadline
+            ? Colors.amber.shade900.withValues(alpha: 0.3)
+            : Colors.green.shade900.withValues(alpha: 0.3))
+        : Colors.red.shade900.withValues(alpha: 0.2);
+    final Color borderColor = isOpen
+        ? (isDeadline ? Colors.amber : Colors.greenAccent)
+        : Colors.redAccent.withValues(alpha: 0.5);
+    final Color textColor = isOpen
+        ? (isDeadline ? Colors.amberAccent : Colors.greenAccent)
+        : Colors.redAccent;
+    final IconData icon = isDeadline
+        ? Icons.warning_amber_rounded
+        : (isOpen ? Icons.lock_open_rounded : Icons.lock_outline_rounded);
+
+    final String title =
+        window != null ? window.displayName : 'Transfer Window';
+    final String badge = isDeadline
+        ? 'DEADLINE DAY'
+        : (isOpen
+            ? 'TERBUKA (${window?.daysUntilDeadline(currentDate) ?? 0}h tersisa)'
+            : 'DITUTUP');
+    final String subtitle = isDeadline
+        ? 'Hari terakhir! Jendela transfer ditutup malam ini. Selesaikan transaksi sebelum deadline.'
+        : (isOpen
+            ? 'Pemain baru dapat didaftarkan langsung ke skuad Anda.'
+            : 'Jendela ditutup (Buka: ${window?.startDate ?? '-'}). Kesepakatan baru otomatis dijadwalkan.');
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor, width: 1),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, color: textColor, size: 24),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: textColor.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        badge,
+                        style: TextStyle(
+                          color: textColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(fontSize: 11, color: AppTheme.textDim),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScheduledTransfersTab extends StatefulWidget {
+  const _ScheduledTransfersTab();
+
+  @override
+  State<_ScheduledTransfersTab> createState() => _ScheduledTransfersTabState();
+}
+
+class _ScheduledTransfersTabState extends State<_ScheduledTransfersTab> {
+  late Future<List<TransferOffer>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = context.read<CareerProvider>().scheduledTransferOffers();
+  }
+
+  void _reload() {
+    setState(() {
+      _future = context.read<CareerProvider>().scheduledTransferOffers();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final CareerProvider game = context.watch<CareerProvider>();
+    return FutureBuilder<List<TransferOffer>>(
+      future: _future,
+      builder:
+          (BuildContext context, AsyncSnapshot<List<TransferOffer>> snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final List<TransferOffer> offers = snap.data ?? const <TransferOffer>[];
+        if (offers.isEmpty) {
+          return RefreshIndicator(
+            onRefresh: () async => _reload(),
+            child: ListView(
+              children: const <Widget>[
+                SizedBox(height: 90),
+                Icon(Icons.calendar_month, size: 42, color: AppTheme.textDim),
+                SizedBox(height: 10),
+                Center(
+                  child: Text(
+                    'Tidak ada transfer terjadwal.\n'
+                    'Kesepakatan yang disetujui di luar jendela transfer akan muncul di sini.',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return RefreshIndicator(
+          onRefresh: () async => _reload(),
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            itemCount: offers.length,
+            itemBuilder: (BuildContext context, int index) {
+              final TransferOffer offer = offers[index];
+              final bool isIncoming = offer.toTeamId == game.userTeamId;
+              return Card(
+                color: AppTheme.surfaceCard,
+                margin: const EdgeInsets.only(bottom: 10),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          Icon(
+                            isIncoming
+                                ? Icons.arrow_downward
+                                : Icons.arrow_upward,
+                            color: isIncoming
+                                ? Colors.greenAccent
+                                : Colors.orangeAccent,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              offer.playerName,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: Colors.blueAccent.withValues(alpha: 0.5),
+                              ),
+                            ),
+                            child: const Text(
+                              'Terjadwal',
+                              style: TextStyle(
+                                color: Colors.lightBlueAccent,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '${offer.fromTeamName} ➔ ${offer.toTeamName}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textDim,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: <Widget>[
+                          Text(
+                            'Biaya: ${money(offer.offerAmount)}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.accent,
+                            ),
+                          ),
+                          if (offer.proposedSalary != null) ...<Widget>[
+                            const SizedBox(width: 12),
+                            Text(
+                              'Gaji: ${money(offer.proposedSalary!)}/thn',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.textDim,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: <Widget>[
+                          Icon(
+                            Icons.event,
+                            size: 14,
+                            color: Colors.blueGrey.shade300,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Tanggal Efektif: ${offer.effectiveDate ?? 'Jendela Berikutnya'}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.blueGrey.shade200,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: () async {
+                              final bool? confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (BuildContext ctx) => AlertDialog(
+                                  title: const Text('Batalkan Transfer'),
+                                  content: Text(
+                                    'Batalkan kesepakatan transfer untuk ${offer.playerName}?',
+                                  ),
+                                  actions: <Widget>[
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(ctx, false),
+                                      child: const Text('Tidak'),
+                                    ),
+                                    FilledButton(
+                                      onPressed: () => Navigator.pop(ctx, true),
+                                      child: const Text('Ya, Batalkan'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (confirm == true) {
+                                await game.cancelScheduledTransfer(
+                                  offer.offerId,
+                                );
+                                _reload();
+                              }
+                            },
+                            child: const Text(
+                              'Batalkan',
+                              style: TextStyle(
+                                color: AppTheme.danger,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }
@@ -936,13 +1395,39 @@ class _TransferHistoryState extends State<_TransferHistory> {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      subtitle: Text(
-                        '${incoming ? 'From' : 'To'} '
-                        '${incoming ? r.fromTeamName : r.toTeamName} · '
-                        '${shortDate(r.date)}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 11),
+                      subtitle: Row(
+                        children: <Widget>[
+                          Text(
+                            incoming ? 'From ' : 'To ',
+                            style: const TextStyle(fontSize: 11, color: AppTheme.textDim),
+                          ),
+                          Flexible(
+                            child: GestureDetector(
+                              onTap: (incoming ? r.fromTeamId : r.toTeamId) != null
+                                  ? () => showTeamDetail(
+                                        context,
+                                        incoming ? r.fromTeamId! : r.toTeamId!,
+                                      )
+                                  : null,
+                              child: Text(
+                                incoming ? r.fromTeamName : r.toTeamName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.accent,
+                                  decoration: TextDecoration.underline,
+                                  decorationColor: Colors.white24,
+                                ),
+                              ),
+                            ),
+                          ),
+                          Text(
+                            ' · ${shortDate(r.date)}',
+                            style: const TextStyle(fontSize: 11, color: AppTheme.textDim),
+                          ),
+                        ],
                       ),
                       trailing: Text(
                         r.value <= 0

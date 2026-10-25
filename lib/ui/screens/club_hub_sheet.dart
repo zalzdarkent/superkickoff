@@ -281,8 +281,9 @@ class _ClubHubSheetState extends State<ClubHubSheet>
     return FutureBuilder<YouthAcademyState>(
       future: _academy,
       builder: (BuildContext context, AsyncSnapshot<YouthAcademyState> snap) {
-        if (!snap.hasData)
+        if (!snap.hasData) {
           return const Center(child: CircularProgressIndicator());
+        }
         final YouthAcademyState academy = snap.data!;
         final int minOverall = 42 + academy.level * 2;
         final int maxOverall = minOverall + 3;

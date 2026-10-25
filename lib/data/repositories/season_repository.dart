@@ -120,6 +120,17 @@ class SeasonRepository {
     return rows.map(FixtureMatch.fromMap).toList();
   }
 
+  /// All scheduled and played matches involving [teamId] in [seasonId].
+  Future<List<FixtureMatch>> fixturesForTeam(int seasonId, int teamId) async {
+    final rows = await db.query(
+      t.matches,
+      where: 'season_id = ? AND (home_team_id = ? OR away_team_id = ?)',
+      whereArgs: <Object?>[seasonId, teamId, teamId],
+      orderBy: 'date ASC, match_id ASC',
+    );
+    return rows.map(FixtureMatch.fromMap).toList();
+  }
+
   Future<FixtureMatch?> matchById(int matchId) async {
     final rows = await db.query(
       t.matches,

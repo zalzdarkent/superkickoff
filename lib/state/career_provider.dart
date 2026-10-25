@@ -23,6 +23,7 @@ import '../game/match_engine.dart';
 import '../game/news_engine.dart';
 import '../game/season_generator.dart';
 import '../game/training.dart';
+import '../game/transfer_window_manager.dart';
 
 /// Presentation-facing career state. One instance lives above the app and
 /// notifies widgets whenever the career world changes.
@@ -61,6 +62,14 @@ class CareerProvider extends ChangeNotifier {
   Team? userTeam;
   ManagerProfile? managerProfile;
   Map<int, Team> teamCache = <int, Team>{};
+
+  TransferWindow? currentTransferWindow;
+  bool isTransferWindowOpen = false;
+  bool isDeadlineDay = false;
+  TransferWindowManager get windowManager => _service.windowManager;
+
+  bool isPreSeasonOrientation = false;
+  String? preSeasonDate;
 
   List<FixtureMatch> upcoming = <FixtureMatch>[];
   String? nextDate;
@@ -384,6 +393,49 @@ class CareerProvider extends ChangeNotifier {
       userTeamId: teamId,
       allTeams: teamCache,
     );
+
+    // Provision transfer windows for this season
+    await _service.windowManager.ensureWindowsForSeason(
+      plan.season.seasonId,
+      plan.season.startYear,
+    );
+
+    // Initial pre-season arrival date: opening day of the summer transfer window
+    final List<TransferWindow> countryWins =
+        await _service.windowManager.windowsForCountry(
+          plan.season.seasonId,
+          countryId,
+        );
+    final TransferWindow? summerWin = countryWins
+        .where((TransferWindow w) => w.windowType == 'summer')
+        .firstOrNull;
+    final String preSeasonDateStr =
+        summerWin?.startDate ?? '${plan.season.startYear}-07-01';
+
+    await _db.insert(t.careerState, <String, Object?>{
+      'season_id': plan.season.seasonId,
+      'orientation_completed': 0,
+      'pre_season_date': preSeasonDateStr,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+    isPreSeasonOrientation = true;
+    preSeasonDate = preSeasonDateStr;
+
+    // Send inaugural Board of Directors welcome letter to manager's inbox
+    await _messages.insert(
+      title: 'Selamat Datang di ${userTeam?.name ?? 'Klub'}!',
+      body:
+          'Dewan Direksi dan segenap pendukung menyambut kedatangan Anda sebagai manajer baru '
+          'untuk memimpin era baru klub ini.\n\n'
+          'Jendela transfer musim panas saat ini telah resmi dibuka. Silakan manfaatkan anggaran belanja '
+          'dan waktu persiapan pra-musim ini untuk memperkuat skuad, menyusun taktik, dan mempersiapkan tim '
+          'sebelum rangkaian pertandingan pra-musim dan kompetisi resmi dimulai.\n\n'
+          'Semoga sukses membawa klub meraih kejayaan!',
+      teamId: teamId,
+      sender: 'Dewan Direksi',
+      date: preSeasonDateStr,
+    );
+
     hasCareer = true;
     await AppDatabase.beginSession();
     await refreshWorld();
@@ -398,11 +450,33 @@ class CareerProvider extends ChangeNotifier {
     }
     await _service.repairSelfMatches(season!.seasonId);
     await _service.resolveFixtureClashes(season!.seasonId);
+
+    // Check pre-season orientation status
+    final List<Map<String, Object?>> stateRows = await _db.query(
+      t.careerState,
+      where: 'season_id = ?',
+      whereArgs: <Object?>[season!.seasonId],
+      limit: 1,
+    );
+    if (stateRows.isNotEmpty &&
+        ((stateRows.first['orientation_completed'] as int?) ?? 0) == 0) {
+      isPreSeasonOrientation = true;
+      preSeasonDate = stateRows.first['pre_season_date'] as String?;
+    } else {
+      isPreSeasonOrientation = false;
+      preSeasonDate = null;
+    }
+
     upcoming = await _service.upcomingMatches(season!.seasonId);
-    nextDate = await _service.nextMatchDate(season!.seasonId);
-    matchesToday = nextDate == null
-        ? <FixtureMatch>[]
-        : await _service.matchesOnDate(season!.seasonId, nextDate!);
+    if (isPreSeasonOrientation && preSeasonDate != null) {
+      nextDate = preSeasonDate;
+      matchesToday = <FixtureMatch>[];
+    } else {
+      nextDate = await _service.nextMatchDate(season!.seasonId);
+      matchesToday = nextDate == null
+          ? <FixtureMatch>[]
+          : await _service.matchesOnDate(season!.seasonId, nextDate!);
+    }
     formation = Formation.parse(await _squads.formationForTeam(userTeamId));
     lineup = await _squads.lineupForTeam(userTeamId);
     await _ensureLineup();
@@ -451,7 +525,64 @@ class CareerProvider extends ChangeNotifier {
     if (refreshed != null) {
       teamCache[refreshed.teamId] = refreshed;
     }
+    final String todayDate = nextDate ?? _todayIso();
+    await _service.windowManager.ensureWindowsForSeason(
+      season!.seasonId,
+      season!.startYear,
+    );
+    currentTransferWindow = await _service.windowManager.activeWindowForTeam(
+      season!.seasonId,
+      userTeamId,
+      todayDate,
+    );
+    currentTransferWindow ??=
+        await _service.windowManager.nextRegistrationWindowForTeam(
+          season!.seasonId,
+          userTeamId,
+          todayDate,
+        );
+    isTransferWindowOpen =
+        currentTransferWindow?.isWindowOpen(todayDate) ?? false;
+    isDeadlineDay =
+        currentTransferWindow?.isDeadlineDay(todayDate) ?? false;
     notifyListeners();
+  }
+
+  static String _todayIso() {
+    final DateTime now = DateTime.now();
+    return '${now.year.toString().padLeft(4, '0')}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Complete the pre-season orientation and advance to the match calendar.
+  Future<void> completePreSeasonOrientation() async {
+    if (season == null) return;
+    await _db.update(
+      t.careerState,
+      <String, Object?>{'orientation_completed': 1},
+      where: 'season_id = ?',
+      whereArgs: <Object?>[season!.seasonId],
+    );
+    isPreSeasonOrientation = false;
+    preSeasonDate = null;
+    await refreshWorld();
+    notifyListeners();
+  }
+
+  /// Finds the first scheduled match for user's club in this season (e.g. friendly 1).
+  Future<FixtureMatch?> firstUpcomingUserMatch() async {
+    if (season == null) return null;
+    final List<FixtureMatch> all = await _seasons.fixturesForSeason(
+      season!.seasonId,
+    );
+    for (final FixtureMatch m in all) {
+      if (m.status == t.matchScheduled &&
+          (m.homeTeamId == userTeamId || m.awayTeamId == userTeamId)) {
+        return m;
+      }
+    }
+    return null;
   }
 
   // ------------------------------------------------------------- match days
@@ -823,6 +954,10 @@ class CareerProvider extends ChangeNotifier {
       ? Future<List<FixtureMatch>>.value(<FixtureMatch>[])
       : _seasons.fixturesForSeason(season!.seasonId);
 
+  Future<List<FixtureMatch>> fixturesForTeam(int teamId) => season == null
+      ? Future<List<FixtureMatch>>.value(<FixtureMatch>[])
+      : _seasons.fixturesForTeam(season!.seasonId, teamId);
+
   // ---------------------------------------------------------------- squad
 
   Future<List<Player>> squadForUser() => _squads.squadForTeam(userTeamId);
@@ -896,6 +1031,44 @@ class CareerProvider extends ChangeNotifier {
   }
 
   Future<List<ClubTrophy>> clubTrophies() => _seasons.clubTrophies(userTeamId);
+
+  Future<ClubOverview?> clubOverviewForTeam(int teamId) async {
+    if (teamId == userTeamId) {
+      return clubOverview();
+    }
+    return _squads.clubOverview(teamId);
+  }
+
+  Future<List<ClubTrophy>> clubTrophiesForTeam(int teamId) =>
+      _seasons.clubTrophies(teamId);
+
+  Future<List<Player>> squadForTeam(int teamId) => _squads.squadForTeam(teamId);
+
+  Future<Formation> formationForTeam(int teamId) async {
+    if (teamId == userTeamId) {
+      return formation;
+    }
+    final String stored = await _squads.formationForTeam(teamId);
+    return Formation.parse(stored);
+  }
+
+  Future<Map<int, int>> lineupForTeam(int teamId) async {
+    if (teamId == userTeamId) {
+      return lineup;
+    }
+    return _squads.lineupForTeam(teamId);
+  }
+
+  Future<Team?> teamById(int teamId) async {
+    if (teamCache.containsKey(teamId)) {
+      return teamCache[teamId];
+    }
+    final Team? t = await _refs.teamById(teamId);
+    if (t != null) {
+      teamCache[teamId] = t;
+    }
+    return t;
+  }
 
   /// Archived-season browsing used by the Table tab history screen.
   Future<List<Season>> allSeasons() => _seasons.allSeasons();
@@ -1171,6 +1344,7 @@ class CareerProvider extends ChangeNotifier {
 
     final int playerId = row['player_id'] as int;
     final int playerValue = (row['value'] as int?) ?? 0;
+    final String currentDate = nextDate ?? _todayIso();
 
     // Create transfer offer
     final int offerId = await _transfers.createOffer(
@@ -1179,6 +1353,7 @@ class CareerProvider extends ChangeNotifier {
       toTeamId: userTeamId,
       offerAmount: offerAmount,
       playerValue: playerValue,
+      agreementDate: currentDate,
     );
 
     // Send notification to user about offer submission
@@ -1190,11 +1365,12 @@ class CareerProvider extends ChangeNotifier {
       teamId: userTeamId,
       sender: 'Transfer Desk',
       transferOfferId: offerId,
+      date: currentDate,
     );
 
     await refreshWorld();
 
-    // shortcut: instant club response, defer this until the next game week when timing matters.
+    // Process club response
     await _processClubDecision(offerId);
 
     return null;
@@ -1300,21 +1476,61 @@ class CareerProvider extends ChangeNotifier {
     }
     if (offer.status != t.offerPending) return 'This offer is no longer active';
 
-    await _transfers.updateOfferStatus(offerId, t.offerPlayerAccepted);
-    final String? error = await _transfers.completeTransfer(offerId);
-    if (error != null) {
-      await _transfers.updateOfferStatus(offerId, t.offerPending);
-      return error;
-    }
-    await _messages.insert(
-      title: 'Player sold',
-      body:
-          '${offer.playerName} joined ${offer.toTeamName} for '
-          '${fmt.money(offer.offerAmount)}.',
-      teamId: userTeamId,
-      sender: 'Transfer Desk',
-      transferOfferId: offerId,
+    final String currentDate = nextDate ?? _todayIso();
+
+    // Check destination club registration window
+    final bool isWindowOpen = await _service.windowManager.isWindowOpenForTeam(
+      season?.seasonId ?? 0,
+      offer.toTeamId,
+      currentDate,
     );
+
+    if (isWindowOpen) {
+      await _transfers.updateOfferStatus(offerId, t.offerPlayerAccepted);
+      final String? error = await _transfers.completeTransfer(
+        offerId,
+        effectiveDate: currentDate,
+      );
+      if (error != null) {
+        await _transfers.updateOfferStatus(offerId, t.offerPending);
+        return error;
+      }
+      await _messages.insert(
+        title: 'Player sold',
+        body:
+            '${offer.playerName} joined ${offer.toTeamName} for '
+            '${fmt.money(offer.offerAmount)}.',
+        teamId: userTeamId,
+        sender: 'Transfer Desk',
+        transferOfferId: offerId,
+        date: currentDate,
+      );
+    } else {
+      // Destination club's window is closed -> schedule move
+      final TransferWindow nextWindow =
+          await _service.windowManager.nextRegistrationWindowForTeam(
+            season?.seasonId ?? 0,
+            offer.toTeamId,
+            currentDate,
+          );
+      await _transfers.scheduleTransfer(
+        offerId,
+        agreementDate: currentDate,
+        effectiveDate: nextWindow.startDate,
+      );
+      await _messages.insert(
+        title: 'Penjualan Terjadwal Disepakati',
+        body:
+            'Kesepakatan penjualan ${offer.playerName} ke ${offer.toTeamName} seharga ${fmt.money(offer.offerAmount)} telah disetujui. '
+            'Karena jendela transfer klub tujuan sedang ditutup, kepindahan akan efektif pada ${nextWindow.startDate}. '
+            'Pemain tetap bermain untuk klub Anda hingga tanggal tersebut.',
+        teamId: userTeamId,
+        sender: 'Transfer Desk',
+        transferOfferId: offerId,
+        date: currentDate,
+      );
+    }
+
     await refreshWorld();
     return null;
   }
@@ -1387,19 +1603,56 @@ class CareerProvider extends ChangeNotifier {
     }
     if (offer.status != t.offerPending) return 'This offer is no longer active';
 
-    final String? error = await _transfers.completeLoan(offerId);
-    if (error != null) return error;
-
-    await _messages.insert(
-      title: 'Loan deal completed',
-      body:
-          '${offer.playerName} joined ${offer.toTeamName} on loan for '
-          '${offer.loanSeasons == 1 ? '1 season' : '2 seasons'}. '
-          'Your club received a loan fee of ${fmt.money(offer.offerAmount)}.',
-      teamId: userTeamId,
-      sender: 'Transfer Desk',
-      transferOfferId: offerId,
+    final String currentDate = nextDate ?? _todayIso();
+    final bool isWindowOpen = await _service.windowManager.isWindowOpenForTeam(
+      season?.seasonId ?? 0,
+      offer.toTeamId,
+      currentDate,
     );
+
+    if (isWindowOpen) {
+      final String? error = await _transfers.completeLoan(
+        offerId,
+        effectiveDate: currentDate,
+      );
+      if (error != null) return error;
+
+      await _messages.insert(
+        title: 'Loan deal completed',
+        body:
+            '${offer.playerName} joined ${offer.toTeamName} on loan for '
+            '${offer.loanSeasons == 1 ? '1 season' : '2 seasons'}. '
+            'Your club received a loan fee of ${fmt.money(offer.offerAmount)}.',
+        teamId: userTeamId,
+        sender: 'Transfer Desk',
+        transferOfferId: offerId,
+        date: currentDate,
+      );
+    } else {
+      final TransferWindow nextWindow =
+          await _service.windowManager.nextRegistrationWindowForTeam(
+            season?.seasonId ?? 0,
+            offer.toTeamId,
+            currentDate,
+          );
+      await _transfers.scheduleTransfer(
+        offerId,
+        agreementDate: currentDate,
+        effectiveDate: nextWindow.startDate,
+      );
+      await _messages.insert(
+        title: 'Peminjaman Terjadwal Disepakati',
+        body:
+            'Peminjaman ${offer.playerName} ke ${offer.toTeamName} telah disetujui. '
+            'Kepindahan akan efektif saat jendela transfer klub tujuan dibuka pada ${nextWindow.startDate}. '
+            'Pemain tetap bermain untuk klub Anda hingga tanggal tersebut.',
+        teamId: userTeamId,
+        sender: 'Transfer Desk',
+        transferOfferId: offerId,
+        date: currentDate,
+      );
+    }
+
     await refreshWorld();
     return null;
   }
@@ -1424,8 +1677,9 @@ class CareerProvider extends ChangeNotifier {
   }) async {
     final TransferOffer? offer = await _transfers.getOffer(offerId);
     if (offer == null) return 'Offer not found';
-    if (offer.status != t.offerAccepted)
+    if (offer.status != t.offerAccepted) {
       return 'Offer not yet accepted by club';
+    }
 
     await _transfers.updateContractProposal(
       offerId,
@@ -1471,26 +1725,69 @@ class CareerProvider extends ChangeNotifier {
     final bool accepted =
         offer.proposedSalary! >= (currentSalary * 1.1).round();
 
-    if (accepted) {
-      // Player accepted - complete transfer
-      final int msgId = await _messages.insert(
-        title: 'Transfer completed!',
-        body:
-            '${offer.playerName} accepted your contract offer! '
-            'Salary: ${fmt.money(offer.proposedSalary!)}/season, '
-            'Duration: ${offer.proposedDurationYears} years.',
-        teamId: userTeamId,
-        sender: 'Transfer Desk',
-        transferOfferId: offerId,
-      );
-      await _transfers.updateOfferStatus(
-        offerId,
-        t.offerPlayerAccepted,
-        messageId: msgId,
-      );
+    final String currentDate = nextDate ?? _todayIso();
 
-      // Complete the transfer
-      await _transfers.completeTransfer(offerId);
+    if (accepted) {
+      // Check destination club registration window
+      final bool isWindowOpen =
+          await _service.windowManager.isWindowOpenForTeam(
+            season?.seasonId ?? 0,
+            offer.toTeamId,
+            currentDate,
+          );
+
+      if (isWindowOpen) {
+        // Window is open: complete transfer immediately
+        final int msgId = await _messages.insert(
+          title: 'Transfer completed!',
+          body:
+              '${offer.playerName} accepted your contract offer! '
+              'Salary: ${fmt.money(offer.proposedSalary!)}/season, '
+              'Duration: ${offer.proposedDurationYears} years.',
+          teamId: userTeamId,
+          sender: 'Transfer Desk',
+          transferOfferId: offerId,
+          date: currentDate,
+        );
+        await _transfers.updateOfferStatus(
+          offerId,
+          t.offerPlayerAccepted,
+          messageId: msgId,
+          agreementDate: currentDate,
+          effectiveDate: currentDate,
+        );
+        await _transfers.completeTransfer(offerId, effectiveDate: currentDate);
+      } else {
+        // Window is closed: schedule transfer for next window
+        final TransferWindow nextWindow =
+            await _service.windowManager.nextRegistrationWindowForTeam(
+              season?.seasonId ?? 0,
+              offer.toTeamId,
+              currentDate,
+            );
+        final int msgId = await _messages.insert(
+          title: 'Transfer Terjadwal Disepakati',
+          body:
+              '${offer.playerName} telah menyetujui kontrak! '
+              'Namun karena jendela transfer saat ini ditutup, '
+              'kepindahan dijadwalkan secara resmi pada ${nextWindow.startDate}. '
+              'Pemain tetap berada di klub asalnya (${offer.fromTeamName}) hingga jendela transfer dibuka.',
+          teamId: userTeamId,
+          sender: 'Transfer Desk',
+          transferOfferId: offerId,
+          date: currentDate,
+        );
+        await _transfers.scheduleTransfer(
+          offerId,
+          agreementDate: currentDate,
+          effectiveDate: nextWindow.startDate,
+        );
+        await _transfers.updateOfferStatus(
+          offerId,
+          t.offerAwaitingWindow,
+          messageId: msgId,
+        );
+      }
     } else {
       // Player rejected
       final int msgId = await _messages.insert(
@@ -1501,6 +1798,7 @@ class CareerProvider extends ChangeNotifier {
         teamId: userTeamId,
         sender: offer.playerName,
         transferOfferId: offerId,
+        date: currentDate,
       );
       await _transfers.updateOfferStatus(
         offerId,
@@ -1517,6 +1815,120 @@ class CareerProvider extends ChangeNotifier {
   /// Get pending transfer offers.
   Future<List<TransferOffer>> pendingTransferOffers() =>
       _transfers.pendingOffersForTeam(userTeamId);
+
+  /// Get active scheduled transfers for user's team.
+  Future<List<TransferOffer>> scheduledTransferOffers() =>
+      _transfers.scheduledOffersForTeam(userTeamId);
+
+  /// Sign a free agent player with league exception & registration window checks.
+  Future<String?> signFreeAgent(
+    Map<String, Object?> playerRow, {
+    int? salary,
+    int durationYears = 2,
+  }) async {
+    final int clubId = (playerRow['club_team_id'] as int?) ?? 0;
+    if (clubId != 0) return 'Player is not a free agent';
+
+    final int playerId = playerRow['player_id'] as int;
+    final int playerSalary = salary ?? ((playerRow['salary'] as int?) ?? 50000);
+    final String currentDate = nextDate ?? _todayIso();
+
+    // Check if user club can register free agent now
+    final bool canRegister = await _service.windowManager.canRegisterFreeAgent(
+      season?.seasonId ?? 0,
+      userTeamId,
+      currentDate,
+    );
+
+    if (canRegister) {
+      await _db.insert(t.teamPlayers, <String, Object?>{
+        'team_id': userTeamId,
+        'player_id': playerId,
+      });
+      await _db.update(
+        t.players,
+        <String, Object?>{
+          'market_status': t.marketActive,
+          'squad_status': t.squadFirstTeam,
+          'salary': playerSalary,
+        },
+        where: 'player_id = ?',
+        whereArgs: <Object?>[playerId],
+      );
+      final int year =
+          DateTime.tryParse(currentDate)?.year ?? DateTime.now().year;
+      await _db.insert(t.contracts, <String, Object?>{
+        'player_id': playerId,
+        'team_id': userTeamId,
+        'start_date': currentDate,
+        'end_date': '${year + durationYears}-06-30',
+        'status': 1,
+        'salary': playerSalary,
+      });
+      await _squads.refreshTeamPower(userTeamId);
+      await _messages.insert(
+        title: 'Free Agent Ditandatangani',
+        body:
+            '${playerRow['name']} resmi menandatangani kontrak sebagai pemain bebas dan telah didaftarkan ke skuad.',
+        teamId: userTeamId,
+        sender: 'Transfer Desk',
+        date: currentDate,
+      );
+    } else {
+      final TransferWindow nextWindow =
+          await _service.windowManager.nextRegistrationWindowForTeam(
+            season?.seasonId ?? 0,
+            userTeamId,
+            currentDate,
+          );
+      final int offerId = await _transfers.createOffer(
+        playerId: playerId,
+        fromTeamId: 0,
+        toTeamId: userTeamId,
+        offerAmount: 0,
+        playerValue: (playerRow['value'] as int?) ?? 0,
+        transferType: 'free_agent',
+        agreementDate: currentDate,
+        effectiveDate: nextWindow.startDate,
+        eligibleDate: nextWindow.startDate,
+      );
+      await _transfers.scheduleTransfer(
+        offerId,
+        agreementDate: currentDate,
+        effectiveDate: nextWindow.startDate,
+      );
+      await _messages.insert(
+        title: 'Perekrutan Bebas Transfer Terjadwal',
+        body:
+            '${playerRow['name']} telah setuju bergabung dengan klub Anda. '
+            'Karena regulasi liga melarang registrasi di luar jendela transfer, '
+            'pendaftaran resmi dijadwalkan pada pembukaan jendela transfer berikutnya (${nextWindow.startDate}).',
+        teamId: userTeamId,
+        sender: 'Transfer Desk',
+        transferOfferId: offerId,
+        date: currentDate,
+      );
+    }
+
+    await refreshWorld();
+    return null;
+  }
+
+  /// Cancels a scheduled transfer.
+  Future<void> cancelScheduledTransfer(int offerId, {String? reason}) async {
+    await _transfers.cancelOffer(
+      offerId,
+      reason: reason ?? 'Dibatalkan oleh manajer',
+    );
+    await _messages.insert(
+      title: 'Transfer Dibatalkan',
+      body: 'Kesepakatan transfer terjadwal telah dibatalkan.',
+      teamId: userTeamId,
+      sender: 'Transfer Desk',
+      transferOfferId: offerId,
+    );
+    await refreshWorld();
+  }
 
   // ----------------------------------------------------------- sponsorships
 

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/format.dart';
 import '../../data/models/models.dart';
 import '../theme.dart';
+import 'team_detail_sheet.dart';
 
 /// Shows every result from the matchday that just finished.
 Future<void> showMatchdayResults(
@@ -121,7 +122,7 @@ class _MatchdayResultsSheet extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
               itemCount: matches.length,
               itemBuilder: (BuildContext context, int index) =>
-                  _row(matches[index]),
+                  _row(context, matches[index]),
             ),
           ),
           SafeArea(
@@ -141,7 +142,7 @@ class _MatchdayResultsSheet extends StatelessWidget {
     );
   }
 
-  Widget _row(FixtureMatch match) {
+  Widget _row(BuildContext context, FixtureMatch match) {
     final Team? home = teams[match.homeTeamId];
     final Team? away = teams[match.awayTeamId];
     final bool mine =
@@ -184,14 +185,21 @@ class _MatchdayResultsSheet extends StatelessWidget {
           Row(
             children: <Widget>[
               Expanded(
-                child: Text(
-                  home?.name ?? '?',
-                  textAlign: TextAlign.right,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: mine ? FontWeight.w700 : FontWeight.w400,
+                child: InkWell(
+                  onTap: () => showTeamDetail(context, match.homeTeamId),
+                  borderRadius: BorderRadius.circular(4),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+                    child: Text(
+                      home?.name ?? '?',
+                      textAlign: TextAlign.right,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: mine ? FontWeight.w700 : FontWeight.w400,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -230,13 +238,20 @@ class _MatchdayResultsSheet extends StatelessWidget {
                 ),
               ),
               Expanded(
-                child: Text(
-                  away?.name ?? '?',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: mine ? FontWeight.w700 : FontWeight.w400,
+                child: InkWell(
+                  onTap: () => showTeamDetail(context, match.awayTeamId),
+                  borderRadius: BorderRadius.circular(4),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+                    child: Text(
+                      away?.name ?? '?',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: mine ? FontWeight.w700 : FontWeight.w400,
+                      ),
+                    ),
                   ),
                 ),
               ),

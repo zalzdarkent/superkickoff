@@ -149,7 +149,30 @@ class AppDatabase {
         updated_date TEXT,
         message_id INTEGER,
         is_loan INTEGER NOT NULL DEFAULT 0,
-        loan_seasons INTEGER NOT NULL DEFAULT 1
+        loan_seasons INTEGER NOT NULL DEFAULT 1,
+        agreement_date TEXT,
+        effective_date TEXT,
+        eligible_date TEXT,
+        transfer_type TEXT NOT NULL DEFAULT 'permanent',
+        loan_months INTEGER,
+        wage_split_ratio REAL NOT NULL DEFAULT 1.0,
+        loan_start_date TEXT,
+        loan_end_date TEXT,
+        cancellation_reason TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ${t.transferWindows} (
+        window_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        season_id INTEGER NOT NULL,
+        country_id INTEGER NOT NULL,
+        tournament_id INTEGER NOT NULL DEFAULT 0,
+        window_type TEXT NOT NULL,
+        start_date TEXT NOT NULL,
+        end_date TEXT NOT NULL,
+        is_open INTEGER NOT NULL DEFAULT 0,
+        allow_free_agents_outside INTEGER NOT NULL DEFAULT 1,
+        UNIQUE (season_id, country_id, tournament_id, window_type)
       )
     ''');
     await db.execute('''
@@ -198,6 +221,13 @@ class AppDatabase {
         value INTEGER NOT NULL,
         country_id INTEGER NOT NULL,
         signed INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ${t.careerState} (
+        season_id INTEGER PRIMARY KEY,
+        orientation_completed INTEGER NOT NULL DEFAULT 0,
+        pre_season_date TEXT
       )
     ''');
     await db.execute('''
@@ -298,6 +328,69 @@ class AppDatabase {
     )) {
       await db.execute(
         'ALTER TABLE ${t.transferOffers} ADD COLUMN loan_seasons INTEGER NOT NULL DEFAULT 1',
+      );
+    }
+    if (!offerColumns.any(
+      (Map<String, Object?> column) => column['name'] == 'agreement_date',
+    )) {
+      await db.execute(
+        'ALTER TABLE ${t.transferOffers} ADD COLUMN agreement_date TEXT',
+      );
+    }
+    if (!offerColumns.any(
+      (Map<String, Object?> column) => column['name'] == 'effective_date',
+    )) {
+      await db.execute(
+        'ALTER TABLE ${t.transferOffers} ADD COLUMN effective_date TEXT',
+      );
+    }
+    if (!offerColumns.any(
+      (Map<String, Object?> column) => column['name'] == 'eligible_date',
+    )) {
+      await db.execute(
+        'ALTER TABLE ${t.transferOffers} ADD COLUMN eligible_date TEXT',
+      );
+    }
+    if (!offerColumns.any(
+      (Map<String, Object?> column) => column['name'] == 'transfer_type',
+    )) {
+      await db.execute(
+        "ALTER TABLE ${t.transferOffers} ADD COLUMN transfer_type TEXT NOT NULL DEFAULT 'permanent'",
+      );
+    }
+    if (!offerColumns.any(
+      (Map<String, Object?> column) => column['name'] == 'loan_months',
+    )) {
+      await db.execute(
+        'ALTER TABLE ${t.transferOffers} ADD COLUMN loan_months INTEGER',
+      );
+    }
+    if (!offerColumns.any(
+      (Map<String, Object?> column) => column['name'] == 'wage_split_ratio',
+    )) {
+      await db.execute(
+        'ALTER TABLE ${t.transferOffers} ADD COLUMN wage_split_ratio REAL NOT NULL DEFAULT 1.0',
+      );
+    }
+    if (!offerColumns.any(
+      (Map<String, Object?> column) => column['name'] == 'loan_start_date',
+    )) {
+      await db.execute(
+        'ALTER TABLE ${t.transferOffers} ADD COLUMN loan_start_date TEXT',
+      );
+    }
+    if (!offerColumns.any(
+      (Map<String, Object?> column) => column['name'] == 'loan_end_date',
+    )) {
+      await db.execute(
+        'ALTER TABLE ${t.transferOffers} ADD COLUMN loan_end_date TEXT',
+      );
+    }
+    if (!offerColumns.any(
+      (Map<String, Object?> column) => column['name'] == 'cancellation_reason',
+    )) {
+      await db.execute(
+        'ALTER TABLE ${t.transferOffers} ADD COLUMN cancellation_reason TEXT',
       );
     }
     final List<Map<String, Object?>> trainingColumns = await db.rawQuery(

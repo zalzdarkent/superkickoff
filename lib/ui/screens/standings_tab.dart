@@ -7,6 +7,7 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import 'player_detail_sheet.dart';
 import 'season_history_sheet.dart';
+import 'team_detail_sheet.dart';
 
 /// Competition table plus leaderboards. Every domestic and continental
 /// competition generated for this career can be selected here.
@@ -491,16 +492,17 @@ class _LeagueTableState extends State<_LeagueTable> {
               : null)
         : _getQualification(index, widget.stats.standings.length);
     final Color barColor = qual?.color ?? Colors.transparent;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8.5),
-      decoration: BoxDecoration(
-        color: isUser ? AppTheme.accentDim.withAlpha(60) : null,
-        border: Border(
-          bottom: BorderSide(color: Colors.grey.shade900, width: 0.5),
+    return InkWell(
+      onTap: () => showTeamDetail(context, row.teamId),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8.5),
+        decoration: BoxDecoration(
+          color: isUser ? AppTheme.accentDim.withAlpha(60) : null,
+          border: Border(
+            bottom: BorderSide(color: Colors.grey.shade900, width: 0.5),
+          ),
         ),
-      ),
-      child: Row(
+        child: Row(
         children: <Widget>[
           SizedBox(
             width: _rankWidth,
@@ -553,8 +555,9 @@ class _LeagueTableState extends State<_LeagueTable> {
           _cell('${row.points}', width: _ptsWidth, bold: true),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 /// Shared leaderboard list for the four statistical tabs.
@@ -704,13 +707,18 @@ class _LeaderList extends StatelessWidget {
                                 ],
                               ],
                             ),
-                            Text(
-                              row.clubName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: AppTheme.textDim,
+                            GestureDetector(
+                              onTap: () => showTeamDetail(context, row.teamId),
+                              child: Text(
+                                row.clubName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppTheme.textDim,
+                                  decoration: TextDecoration.underline,
+                                  decorationColor: Colors.white24,
+                                ),
                               ),
                             ),
                           ],

@@ -5,6 +5,7 @@ import '../../data/models/models.dart';
 import '../../state/career_provider.dart';
 import '../theme.dart';
 import 'knockout_bracket_sheet.dart';
+import 'team_detail_sheet.dart';
 
 /// Season calendar grouped by match week with results and upcoming games.
 class FixturesTab extends StatefulWidget {
@@ -278,12 +279,19 @@ class _FixturesTabState extends State<FixturesTab> {
             ),
           ),
         Expanded(
-          child: Text(
-            home?.name ?? '?',
-            textAlign: TextAlign.right,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: nameStyle,
+          child: InkWell(
+            onTap: () => showTeamDetail(context, m.homeTeamId),
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+              child: Text(
+                home?.name ?? '?',
+                textAlign: TextAlign.right,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: nameStyle,
+              ),
+            ),
           ),
         ),
         Container(
@@ -300,11 +308,18 @@ class _FixturesTabState extends State<FixturesTab> {
           ),
         ),
         Expanded(
-          child: Text(
-            away?.name ?? '?',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: nameStyle,
+          child: InkWell(
+            onTap: () => showTeamDetail(context, m.awayTeamId),
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+              child: Text(
+                away?.name ?? '?',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: nameStyle,
+              ),
+            ),
           ),
         ),
         if (legLabel != null) const SizedBox(width: 38),

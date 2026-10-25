@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../data/models/models.dart';
 import '../../state/career_provider.dart';
 import '../theme.dart';
+import 'team_detail_sheet.dart';
 
 /// Browses the final league tables and continental group tables of past
 /// seasons. Archived matches stay in the database, so tables are rebuilt from
@@ -297,15 +298,17 @@ class _SeasonHistoryScreenState extends State<SeasonHistoryScreen> {
         league != null &&
         league.relegationSpots > 0 &&
         index >= rowCount - league.relegationSpots;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-      decoration: BoxDecoration(
-        color: isUser ? AppTheme.accentDim.withAlpha(60) : null,
-        border: Border(
-          bottom: BorderSide(color: Colors.grey.shade900, width: 0.5),
+    return InkWell(
+      onTap: () => showTeamDetail(context, row.teamId),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+        decoration: BoxDecoration(
+          color: isUser ? AppTheme.accentDim.withAlpha(60) : null,
+          border: Border(
+            bottom: BorderSide(color: Colors.grey.shade900, width: 0.5),
+          ),
         ),
-      ),
-      child: Row(
+        child: Row(
         children: <Widget>[
           SizedBox(
             width: _rankWidth,
@@ -351,6 +354,7 @@ class _SeasonHistoryScreenState extends State<SeasonHistoryScreen> {
           _cell('${row.points}', width: _ptsWidth, bold: true),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }

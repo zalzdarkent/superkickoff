@@ -6,6 +6,8 @@ import '../../game/match_engine.dart';
 import '../../state/career_provider.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'player_detail_sheet.dart';
+import 'team_detail_sheet.dart';
 
 /// Full-time match report: team statistics charts plus every player rating.
 class MatchStatsSheet extends StatelessWidget {
@@ -74,11 +76,18 @@ class MatchStatsSheet extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
-                Text(
-                  session.homeTeam.abbreviation,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                InkWell(
+                  onTap: () => showTeamDetail(context, session.homeTeam.teamId),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    child: Text(
+                      session.homeTeam.abbreviation,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
                 Padding(
@@ -91,17 +100,24 @@ class MatchStatsSheet extends StatelessWidget {
                     ),
                   ),
                 ),
-                Text(
-                  session.awayTeam.abbreviation,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                InkWell(
+                  onTap: () => showTeamDetail(context, session.awayTeam.teamId),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    child: Text(
+                      session.awayTeam.abbreviation,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 18),
-            _teamLegend(),
+            _teamLegend(context),
             const SizedBox(height: 8),
             _statBar(
               'Possession',
@@ -126,8 +142,8 @@ class MatchStatsSheet extends StatelessWidget {
             _statBar('Red cards', homeReds, awayReds),
             const SizedBox(height: 18),
             for (final Team team in teamOrder) ...<Widget>[
-              _ratingsHeader(team, team.teamId == userTeamId),
-              ..._ratings(played, team),
+              _ratingsHeader(context, team, team.teamId == userTeamId),
+              ..._ratings(context, played, team),
               const SizedBox(height: 12),
             ],
           ],
@@ -139,40 +155,48 @@ class MatchStatsSheet extends StatelessWidget {
   static int _percent(int value, int total) =>
       total <= 0 ? 0 : ((value * 100) / total).round();
 
-  Widget _teamLegend() {
+  Widget _teamLegend(BuildContext context) {
     return Row(
       children: <Widget>[
         Expanded(
-          child: Row(
-            children: <Widget>[
-              Container(width: 8, height: 8, color: AppTheme.accent),
-              const SizedBox(width: 5),
-              Flexible(
-                child: Text(
-                  session.homeTeam.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 10, color: AppTheme.textDim),
+          child: InkWell(
+            onTap: () => showTeamDetail(context, session.homeTeam.teamId),
+            borderRadius: BorderRadius.circular(4),
+            child: Row(
+              children: <Widget>[
+                Container(width: 8, height: 8, color: AppTheme.accent),
+                const SizedBox(width: 5),
+                Flexible(
+                  child: Text(
+                    session.homeTeam.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 10, color: AppTheme.textDim),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         Expanded(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: <Widget>[
-              Flexible(
-                child: Text(
-                  session.awayTeam.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 10, color: AppTheme.textDim),
+          child: InkWell(
+            onTap: () => showTeamDetail(context, session.awayTeam.teamId),
+            borderRadius: BorderRadius.circular(4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                Flexible(
+                  child: Text(
+                    session.awayTeam.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 10, color: AppTheme.textDim),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 5),
-              Container(width: 8, height: 8, color: _awayColor),
-            ],
+                const SizedBox(width: 5),
+                Container(width: 8, height: 8, color: _awayColor),
+              ],
+            ),
           ),
         ),
       ],
@@ -241,39 +265,47 @@ class MatchStatsSheet extends StatelessWidget {
     );
   }
 
-  Widget _ratingsHeader(Team team, bool mine) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        children: <Widget>[
-          CrestAvatar(team: team, radius: 12),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              mine ? '${team.name} · YOUR TEAM' : team.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: mine ? AppTheme.accent : Colors.white,
+  Widget _ratingsHeader(BuildContext context, Team team, bool mine) {
+    return InkWell(
+      onTap: () => showTeamDetail(context, team.teamId),
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: <Widget>[
+            CrestAvatar(team: team, radius: 12),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                mine ? '${team.name} · YOUR TEAM' : team.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: mine ? AppTheme.accent : Colors.white,
+                ),
               ),
             ),
-          ),
-          const Text(
-            'RATING',
-            style: TextStyle(
-              fontSize: 9,
-              letterSpacing: 1,
-              color: AppTheme.textDim,
+            const Text(
+              'RATING',
+              style: TextStyle(
+                fontSize: 9,
+                letterSpacing: 1,
+                color: AppTheme.textDim,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  List<Widget> _ratings(List<MatchPlayerRow> played, Team team) {
+  List<Widget> _ratings(
+    BuildContext context,
+    List<MatchPlayerRow> played,
+    Team team,
+  ) {
     final List<MatchPlayerRow> rows =
         played.where((MatchPlayerRow row) => row.teamId == team.teamId).toList()
           ..sort(
@@ -291,10 +323,12 @@ class MatchStatsSheet extends StatelessWidget {
         ),
       ];
     }
-    return <Widget>[for (final MatchPlayerRow row in rows) _playerRow(row)];
+    return <Widget>[
+      for (final MatchPlayerRow row in rows) _playerRow(context, row),
+    ];
   }
 
-  Widget _playerRow(MatchPlayerRow row) {
+  Widget _playerRow(BuildContext context, MatchPlayerRow row) {
     final double score = row.rating / 10;
     final Color ratingColor = score >= 7
         ? AppTheme.accent
@@ -308,9 +342,12 @@ class MatchStatsSheet extends StatelessWidget {
       if (row.yellowCards > 0) '${row.yellowCards}Y',
       if (row.redCards > 0) '${row.redCards}R',
     ];
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
+    return InkWell(
+      onTap: () => showPlayerDetail(context, row.playerId),
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 2),
+        child: Row(
         children: <Widget>[
           SizedBox(
             width: 20,
@@ -379,6 +416,7 @@ class MatchStatsSheet extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }
