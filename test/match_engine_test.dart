@@ -232,12 +232,28 @@ void main() {
       bool creditsHome(MatchEvent e) =>
           e.type == MatchEvent.ownGoal ? !e.isHome : e.isHome;
 
-      final int homeScored = result.events
-          .where((MatchEvent e) => scoring(e) && creditsHome(e))
+      final int homeDisallowed = result.events
+          .where(
+            (MatchEvent e) =>
+                e.type == MatchEvent.varGoalDisallowed && e.isHome,
+          )
           .length;
-      final int awayScored = result.events
-          .where((MatchEvent e) => scoring(e) && !creditsHome(e))
+      final int awayDisallowed = result.events
+          .where(
+            (MatchEvent e) =>
+                e.type == MatchEvent.varGoalDisallowed && !e.isHome,
+          )
           .length;
+      final int homeScored =
+          result.events
+              .where((MatchEvent e) => scoring(e) && creditsHome(e))
+              .length -
+          homeDisallowed;
+      final int awayScored =
+          result.events
+              .where((MatchEvent e) => scoring(e) && !creditsHome(e))
+              .length -
+          awayDisallowed;
       expect(homeScored, result.homeGoals);
       expect(awayScored, result.awayGoals);
       for (final MatchEvent event in result.events) {
@@ -326,6 +342,82 @@ void main() {
         expect(scored(true), shootout.homeScore);
         expect(scored(false), shootout.awayScore);
       }
+    });
+
+    test('VAR disallowed goals properly deduct goal and remove assist', () {
+      bool foundDisallowed = false;
+      for (int seed = 1; seed <= 500; seed++) {
+        final MatchResult result = MatchEngine(random: Random(seed)).simulate(
+          MatchInput(
+            homeSquad: buildSquad(1),
+            awaySquad: buildSquad(2),
+            capacityGeneral: 10000,
+            capacityStand: 5000,
+            capacityTerrace: 2000,
+            capacityBoxes: 500,
+            homePower: 80,
+          ),
+          recordEvents: true,
+        );
+        final List<MatchEvent> disallowed = result.events
+            .where((MatchEvent e) => e.type == MatchEvent.varGoalDisallowed)
+            .toList();
+        if (disallowed.isNotEmpty) {
+          foundDisallowed = true;
+          final int homeDisallowed = result.events
+              .where(
+                (MatchEvent e) =>
+                    e.type == MatchEvent.varGoalDisallowed && e.isHome,
+              )
+              .length;
+          final int awayDisallowed = result.events
+              .where(
+                (MatchEvent e) =>
+                    e.type == MatchEvent.varGoalDisallowed && !e.isHome,
+              )
+              .length;
+          final int homeNet =
+              result.events
+                  .where(
+                    (MatchEvent e) =>
+                        (e.type == MatchEvent.goal ||
+                            e.type == MatchEvent.penaltyScored) &&
+                        e.isHome,
+                  )
+                  .length -
+              homeDisallowed +
+              result.events
+                  .where((MatchEvent e) => e.type == MatchEvent.ownGoal && !e.isHome)
+                  .length;
+          final int awayNet =
+              result.events
+                  .where(
+                    (MatchEvent e) =>
+                        (e.type == MatchEvent.goal ||
+                            e.type == MatchEvent.penaltyScored) &&
+                        !e.isHome,
+                  )
+                  .length -
+              awayDisallowed +
+              result.events
+                  .where((MatchEvent e) => e.type == MatchEvent.ownGoal && e.isHome)
+                  .length;
+          expect(result.homeGoals, homeNet);
+          expect(result.awayGoals, awayNet);
+
+          // Total player goals should match final result goals
+          final int totalPlayerGoals = result.playerRows.fold<int>(
+            0,
+            (int sum, MatchPlayerRow r) => sum + r.goals,
+          );
+          final int ownGoals = result.events
+              .where((MatchEvent e) => e.type == MatchEvent.ownGoal)
+              .length;
+          expect(totalPlayerGoals + ownGoals, result.homeGoals + result.awayGoals);
+          break;
+        }
+      }
+      expect(foundDisallowed, isTrue);
     });
   });
 }

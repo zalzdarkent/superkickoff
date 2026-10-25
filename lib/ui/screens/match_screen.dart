@@ -150,6 +150,9 @@ class _MatchScreenState extends State<MatchScreen> {
   }
 
   int _goalsUpTo(LiveMatchSession session, bool home) {
+    if (displayedMinute >= 90) {
+      return home ? session.result.homeGoals : session.result.awayGoals;
+    }
     int goals = 0;
     for (final MatchEvent e in session.result.events) {
       if (e.minute > displayedMinute) break;
@@ -160,6 +163,11 @@ class _MatchScreenState extends State<MatchScreen> {
             ? !e.isHome
             : e.isHome;
         if (benefitsHome == home) goals++;
+      } else if (e.type == MatchEvent.varGoalDisallowed) {
+        final bool disallowedHome = e.isHome;
+        if (disallowedHome == home) {
+          goals = max(0, goals - 1);
+        }
       }
     }
     return goals;
