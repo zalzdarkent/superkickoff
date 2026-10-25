@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../data/models/models.dart';
 import '../../state/career_provider.dart';
 import '../theme.dart';
+import 'annual_awards_gala_sheet.dart';
 import 'team_detail_sheet.dart';
 
 /// Browses the final league tables and continental group tables of past
@@ -101,7 +102,22 @@ class _SeasonHistoryScreenState extends State<SeasonHistoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Season history')),
+      appBar: AppBar(
+        title: const Text('Season history'),
+        actions: <Widget>[
+          if (_seasonId != null)
+            IconButton(
+              icon: const Icon(Icons.workspace_premium, color: Color(0xFFFFD700)),
+              tooltip: 'Awards Gala',
+              onPressed: () async {
+                final CareerProvider game = context.read<CareerProvider>();
+                final SeasonGalaSummary gala = await game.seasonGalaAwards(_seasonId!);
+                if (!context.mounted) return;
+                showAnnualAwardsGala(context, gala: gala);
+              },
+            ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null

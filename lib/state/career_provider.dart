@@ -109,6 +109,18 @@ class CareerProvider extends ChangeNotifier {
   // Live match session (filled while watching a match).
   LiveMatchSession? liveSession;
 
+  /// Most recent gala awards waiting to be seen by the manager.
+  SeasonGalaSummary? pendingGala;
+
+  void dismissPendingGala() {
+    pendingGala = null;
+    notifyListeners();
+  }
+
+  /// Fetches the gala awards summary for [seasonId].
+  Future<SeasonGalaSummary> seasonGalaAwards(int seasonId) =>
+      _seasons.seasonGalaAwards(seasonId, userTeamId: userTeamId);
+
   // ------------------------------------------------------------ bootstrap
 
   Future<void> init([Database? database]) async {
@@ -966,6 +978,7 @@ class CareerProvider extends ChangeNotifier {
     await refreshWorld();
     // End of season?
     if (await _service.seasonComplete(season!.seasonId)) {
+      final int completedSeasonId = season!.seasonId;
       busy = true;
       busyStatus = 'Season finished!';
       notifyListeners();
@@ -976,6 +989,12 @@ class CareerProvider extends ChangeNotifier {
           notifyListeners();
         },
       );
+      try {
+        pendingGala = await _seasons.seasonGalaAwards(
+          completedSeasonId,
+          userTeamId: userTeamId,
+        );
+      } catch (_) {}
       season = next;
       week = 0;
       await _deriveCareerContext();
@@ -997,6 +1016,7 @@ class CareerProvider extends ChangeNotifier {
     userTeam = null;
     managerProfile = null;
     season = null;
+    pendingGala = null;
     await init();
   }
 
@@ -1009,6 +1029,7 @@ class CareerProvider extends ChangeNotifier {
     userTeam = null;
     managerProfile = null;
     season = null;
+    pendingGala = null;
     await init();
   }
 
@@ -1174,6 +1195,8 @@ class CareerProvider extends ChangeNotifier {
     final List<PlayerAward> awards = await _seasons.clubAwards(userTeamId);
     return ClubHistory(seasons: seasons, awards: awards);
   }
+
+  Future<List<PlayerAward>> clubAwards() => _seasons.clubAwards(userTeamId);
 
   /// Expands the stadium one step and refreshes the career world on success.
   Future<String?> expandStadium() async {

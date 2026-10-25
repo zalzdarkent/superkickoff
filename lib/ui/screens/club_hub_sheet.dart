@@ -9,6 +9,7 @@ import '../../data/models/models.dart';
 import '../../state/career_provider.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'annual_awards_gala_sheet.dart';
 import 'player_detail_sheet.dart';
 
 /// Opens the club hub: overview, finances and stadium in three tabs.
@@ -33,6 +34,7 @@ class _ClubHubSheetState extends State<ClubHubSheet>
     with SingleTickerProviderStateMixin {
   late Future<ClubOverview?> _future;
   late Future<List<ClubTrophy>> _trophies;
+  late Future<List<PlayerAward>> _awards;
   late Future<YouthAcademyState> _academy;
   late final TabController _tabController;
   bool _busy = false;
@@ -43,6 +45,7 @@ class _ClubHubSheetState extends State<ClubHubSheet>
     _tabController = TabController(length: 5, vsync: this);
     _future = context.read<CareerProvider>().clubOverview();
     _trophies = context.read<CareerProvider>().clubTrophies();
+    _awards = context.read<CareerProvider>().clubAwards();
     _academy = context.read<CareerProvider>().youthAcademyState();
   }
 
@@ -56,6 +59,7 @@ class _ClubHubSheetState extends State<ClubHubSheet>
     setState(() {
       _future = context.read<CareerProvider>().clubOverview();
       _trophies = context.read<CareerProvider>().clubTrophies();
+      _awards = context.read<CareerProvider>().clubAwards();
       _academy = context.read<CareerProvider>().youthAcademyState();
     });
   }
@@ -595,92 +599,286 @@ class _ClubHubSheetState extends State<ClubHubSheet>
   }
 
   Widget _honoursTab() {
-    return FutureBuilder<List<ClubTrophy>>(
-      future: _trophies,
-      builder:
-          (BuildContext context, AsyncSnapshot<List<ClubTrophy>> snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            final List<ClubTrophy> trophies =
-                snapshot.data ?? const <ClubTrophy>[];
-            if (trophies.isEmpty) {
-              return const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text(
-                    'No trophies yet. Win a league, domestic cup or '
-                    'continental competition to fill this cabinet.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppTheme.textDim),
-                  ),
+    return FutureBuilder<List<Object>>(
+      future: Future.wait<Object>(<Future<Object>>[_trophies, _awards]),
+      builder: (BuildContext context, AsyncSnapshot<List<Object>> snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final List<ClubTrophy> trophies =
+            (snapshot.data?[0] as List<ClubTrophy>?) ?? const <ClubTrophy>[];
+        final List<PlayerAward> awards =
+            (snapshot.data?[1] as List<PlayerAward>?) ?? const <PlayerAward>[];
+
+        final Map<String, List<ClubTrophy>> grouped =
+            <String, List<ClubTrophy>>{};
+        for (final ClubTrophy trophy in trophies) {
+          grouped
+              .putIfAbsent(trophy.tournamentName, () => <ClubTrophy>[])
+              .add(trophy);
+        }
+        final List<MapEntry<String, List<ClubTrophy>>> entries =
+            grouped.entries.toList()..sort(
+              (
+                MapEntry<String, List<ClubTrophy>> a,
+                MapEntry<String, List<ClubTrophy>> b,
+              ) => b.value.length.compareTo(a.value.length),
+            );
+
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: <Widget>[
+            // 1. Gala Banner Card
+            Container(
+              margin: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: <Color>[Color(0xFF2A1F02), Color(0xFF1E1B4B)],
                 ),
-              );
-            }
-            final Map<String, List<ClubTrophy>> grouped =
-                <String, List<ClubTrophy>>{};
-            for (final ClubTrophy trophy in trophies) {
-              grouped
-                  .putIfAbsent(trophy.tournamentName, () => <ClubTrophy>[])
-                  .add(trophy);
-            }
-            final List<MapEntry<String, List<ClubTrophy>>> entries =
-                grouped.entries.toList()..sort(
-                  (
-                    MapEntry<String, List<ClubTrophy>> a,
-                    MapEntry<String, List<ClubTrophy>> b,
-                  ) => b.value.length.compareTo(a.value.length),
-                );
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-              children: <Widget>[
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surfaceCard,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.white10),
+                border: Border.all(color: const Color(0xFFFFD700), width: 1.2),
+              ),
+              child: Row(
+                children: <Widget>[
+                  const Icon(
+                    Icons.workspace_premium,
+                    color: Color(0xFFFFD700),
+                    size: 28,
                   ),
-                  child: Row(
-                    children: <Widget>[
-                      const Icon(
-                        Icons.emoji_events,
-                        color: AppTheme.warn,
-                        size: 30,
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'ANNUAL AWARDS GALA',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.2,
+                            color: Color(0xFFFFD700),
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Ballon d\'Or, Golden Boot, & XI Terbaik',
+                          style: TextStyle(fontSize: 11, color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFD700),
+                      foregroundColor: Colors.black87,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
                       ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            '${trophies.length}',
-                            style: const TextStyle(
-                              fontSize: 26,
-                              height: 1,
-                              fontWeight: FontWeight.w900,
-                              color: AppTheme.warn,
-                            ),
-                          ),
-                          const Text(
-                            'TROPHIES',
-                            style: TextStyle(
-                              fontSize: 9,
-                              letterSpacing: 1,
-                              color: AppTheme.textDim,
-                            ),
-                          ),
-                        ],
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () async {
+                      final CareerProvider game = context.read<CareerProvider>();
+                      final SeasonGalaSummary gala = await game.seasonGalaAwards(
+                        game.season?.seasonId ?? 1,
+                      );
+                      if (!context.mounted) return;
+                      showAnnualAwardsGala(context, gala: gala);
+                    },
+                    child: const Text(
+                      'Buka Gala',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // 2. Trophies Cabinet Header
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceCard,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Row(
+                children: <Widget>[
+                  const Icon(
+                    Icons.emoji_events,
+                    color: AppTheme.warn,
+                    size: 30,
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        '${trophies.length}',
+                        style: const TextStyle(
+                          fontSize: 26,
+                          height: 1,
+                          fontWeight: FontWeight.w900,
+                          color: AppTheme.warn,
+                        ),
+                      ),
+                      const Text(
+                        'TROPHIES WON',
+                        style: TextStyle(
+                          fontSize: 9,
+                          letterSpacing: 1,
+                          color: AppTheme.textDim,
+                        ),
                       ),
                     ],
                   ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (trophies.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                child: Text(
+                  'Belum ada trofi kejuaraan. Menangkan liga atau turnamen piala untuk mengisi lemari trofi ini.',
+                  style: TextStyle(fontSize: 12, color: AppTheme.textDim),
                 ),
-                const SizedBox(height: 10),
-                for (final MapEntry<String, List<ClubTrophy>> entry in entries)
-                  _trophyRow(entry.key, entry.value),
-              ],
-            );
-          },
+              )
+            else
+              for (final MapEntry<String, List<ClubTrophy>> entry in entries)
+                _trophyRow(entry.key, entry.value),
+
+            const SizedBox(height: 16),
+
+            // 3. Individual Awards Cabinet Header
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceCard,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Row(
+                children: <Widget>[
+                  const Icon(
+                    Icons.military_tech,
+                    color: Color(0xFF60A5FA),
+                    size: 30,
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        '${awards.length}',
+                        style: const TextStyle(
+                          fontSize: 26,
+                          height: 1,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF60A5FA),
+                        ),
+                      ),
+                      const Text(
+                        'INDIVIDUAL PLAYER AWARDS',
+                        style: TextStyle(
+                          fontSize: 9,
+                          letterSpacing: 1,
+                          color: AppTheme.textDim,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (awards.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                child: Text(
+                  'Belum ada pemain klub yang memenangkan penghargaan individu musim ini.',
+                  style: TextStyle(fontSize: 12, color: AppTheme.textDim),
+                ),
+              )
+            else
+              for (final PlayerAward award in awards)
+                _awardRow(award),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _awardRow(PlayerAward award) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceCard,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: InkWell(
+        onTap: award.playerId > 0
+            ? () => showPlayerDetail(context, award.playerId)
+            : null,
+        child: Row(
+          children: <Widget>[
+            const Icon(Icons.stars, color: Color(0xFFFFD700), size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    award.label,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFFFFD700),
+                    ),
+                  ),
+                  Text(
+                    award.playerName,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                  if (award.statSubtitle != null)
+                    Text(
+                      award.statSubtitle!,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppTheme.textDim,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white10,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                '${award.year}',
+                style: const TextStyle(fontSize: 11, color: Colors.white70),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

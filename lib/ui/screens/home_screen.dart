@@ -15,6 +15,7 @@ import 'match_screen.dart';
 import 'matchday_results_sheet.dart';
 import 'squad_tab.dart';
 import 'standings_tab.dart';
+import 'annual_awards_gala_sheet.dart';
 import 'fixtures_tab.dart';
 import 'team_detail_sheet.dart';
 
@@ -298,6 +299,7 @@ class OverviewTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: <Widget>[
+        if (game.pendingGala != null) _pendingGalaCard(context, game),
         if (game.isPreSeasonOrientation)
           _preSeasonOrientationCard(context, game, team)
         else
@@ -335,6 +337,101 @@ class OverviewTab extends StatelessWidget {
         _unreadInboxCard(context, game, onOpenInbox: onOpenInbox),
         const SizedBox(height: 24),
       ],
+    );
+  }
+
+  Widget _pendingGalaCard(BuildContext context, CareerProvider game) {
+    final SeasonGalaSummary gala = game.pendingGala!;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[Color(0xFF2E2002), Color(0xFF1E1B4B)],
+        ),
+        border: Border.all(color: const Color(0xFFFFD700), width: 1.5),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: const Color(0xFFFFD700).withValues(alpha: 0.2),
+            blurRadius: 12,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFFD700),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.emoji_events,
+                    size: 18,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      const Text(
+                        'ANNUAL AWARDS GALA',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.5,
+                          color: Color(0xFFFFD700),
+                        ),
+                      ),
+                      Text(
+                        'Malam Penghargaan Musim ${gala.year}!',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18, color: Colors.white60),
+                  onPressed: game.dismissPendingGala,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Pemenang Ballon d\'Or, Golden Boot, dan Team of the Year (Once Ideal) telah diumumkan.',
+              style: TextStyle(fontSize: 12, color: Colors.white70),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFFFD700),
+                  foregroundColor: Colors.black87,
+                  textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                icon: const Icon(Icons.celebration, size: 18),
+                label: const Text('Buka Gala Penghargaan'),
+                onPressed: () => showAnnualAwardsGala(context, gala: gala),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

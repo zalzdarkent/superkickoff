@@ -883,7 +883,7 @@ class PlayerCareerRow {
 
 /// A player award stored in player_awards.
 class PlayerAward {
-  PlayerAward({
+  const PlayerAward({
     required this.awardId,
     required this.playerId,
     required this.playerName,
@@ -892,6 +892,10 @@ class PlayerAward {
     required this.year,
     required this.seasonId,
     this.goals,
+    this.rating,
+    this.statSubtitle,
+    this.positionId,
+    this.teamId,
   });
 
   final int awardId;
@@ -902,13 +906,71 @@ class PlayerAward {
   final int year;
   final int seasonId;
   final int? goals;
+  final double? rating;
+  final String? statSubtitle;
+  final int? positionId;
+  final int? teamId;
 
   String get label => switch (type) {
-    t.awardTopScorer => 'Top scorer',
-    t.awardMvp => 'MVP',
-    t.awardYoungPlayer => 'Best young player',
+    t.awardBallonDor => "Ballon d'Or",
+    t.awardTopScorer => 'Golden Boot',
+    t.awardGoldenGlove => 'Golden Glove',
+    t.awardYoungPlayer => 'Best Young Player',
+    t.awardMvp => 'Player of the Season (MVP)',
+    t.awardManagerOfTheYear => 'Manager of the Year',
+    t.awardTeamOfTheYear => 'Team of the Year',
     _ => 'Award',
   };
+
+  String get shortLabel => switch (type) {
+    t.awardBallonDor => "Ballon d'Or",
+    t.awardTopScorer => 'Golden Boot',
+    t.awardGoldenGlove => 'Golden Glove',
+    t.awardYoungPlayer => 'Best Young',
+    t.awardMvp => 'MVP',
+    t.awardManagerOfTheYear => 'Manager of Year',
+    t.awardTeamOfTheYear => 'Team of Year',
+    _ => 'Award',
+  };
+}
+
+/// Aggregated gala summary for a season: individual award winners,
+/// Team of the Year (Once Ideal), and club honours.
+class SeasonGalaSummary {
+  const SeasonGalaSummary({
+    required this.seasonId,
+    required this.year,
+    required this.seasonName,
+    this.ballonDor,
+    this.goldenBoot,
+    this.goldenGlove,
+    this.youngPlayer,
+    this.mvp,
+    this.managerOfTheYear,
+    this.teamOfTheYear = const <PlayerAward>[],
+    this.clubTrophies = const <ClubTrophy>[],
+    this.userClubAwards = const <PlayerAward>[],
+  });
+
+  final int seasonId;
+  final int year;
+  final String seasonName;
+  final PlayerAward? ballonDor;
+  final PlayerAward? goldenBoot;
+  final PlayerAward? goldenGlove;
+  final PlayerAward? youngPlayer;
+  final PlayerAward? mvp;
+  final PlayerAward? managerOfTheYear;
+  final List<PlayerAward> teamOfTheYear;
+  final List<ClubTrophy> clubTrophies;
+  final List<PlayerAward> userClubAwards;
+
+  bool get isEmpty =>
+      ballonDor == null &&
+      goldenBoot == null &&
+      goldenGlove == null &&
+      youngPlayer == null &&
+      teamOfTheYear.isEmpty;
 }
 
 /// A transfer offer in negotiation.
@@ -1383,7 +1445,7 @@ class CareerSeason {
 
 /// One trophy won by a club, derived from a completed competition.
 class ClubTrophy {
-  ClubTrophy({
+  const ClubTrophy({
     required this.tournamentId,
     required this.tournamentName,
     required this.organization,

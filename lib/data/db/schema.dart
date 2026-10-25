@@ -96,6 +96,10 @@ const int statusDead = 3;
 const int awardTopScorer = 1;
 const int awardMvp = 2;
 const int awardYoungPlayer = 3;
+const int awardBallonDor = 4;
+const int awardGoldenGlove = 5;
+const int awardTeamOfTheYear = 6;
+const int awardManagerOfTheYear = 7;
 
 // -------------------------------------------- transfer_offers.status values
 const int offerPending = 1;

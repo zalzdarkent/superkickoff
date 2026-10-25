@@ -230,6 +230,19 @@ class AppDatabase {
         pre_season_date TEXT
       )
     ''');
+    try {
+      await db.execute('ALTER TABLE ${t.playerAwards} ADD COLUMN rating REAL');
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE ${t.playerAwards} ADD COLUMN stat_subtitle TEXT',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE ${t.playerAwards} ADD COLUMN position_id INTEGER',
+      );
+    } catch (_) {}
     await db.execute('''
       INSERT OR IGNORE INTO ${t.tournaments} (
         tournament_id, name, division_id, status, organization, rounds,
