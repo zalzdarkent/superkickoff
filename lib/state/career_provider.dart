@@ -55,6 +55,9 @@ class CareerProvider extends ChangeNotifier {
   Tournament? league;
   Tournament? cup;
 
+  /// All domestic league divisions generated for this season (e.g. Div 1, Div 2, Div 3).
+  List<Tournament> domesticLeagues = <Tournament>[];
+
   /// Every knockout competition of the season: domestic cup plus continental
   /// cups such as the Champions League or AFC Champions League.
   List<Tournament> cups = <Tournament>[];
@@ -190,6 +193,7 @@ class CareerProvider extends ChangeNotifier {
       return;
     }
     league = await _leagueFor(userTeam!);
+    await _loadLeagues(season!.seasonId, userTeam!.countryId);
     await _loadCups(season!.seasonId);
     // Cache every team that participates this season.
     final rows = await _db.rawQuery(
@@ -204,7 +208,57 @@ class CareerProvider extends ChangeNotifier {
       for (final Map<String, Object?> row in rows)
         row['team_id'] as int: Team.fromMap(row),
     };
+    await _ensureDomesticLeagues();
     await _ensureInternationalCups();
+  }
+
+  /// Older saves only have the top division generated. Add missing domestic
+  /// lower divisions when a save is loaded; already-linked ones are skipped.
+  Future<void> _ensureDomesticLeagues() async {
+    final Season? current = season;
+    final Team? team = userTeam;
+    if (current == null || team == null) return;
+    final List<Tournament> allDomestic = await _refs.domesticLeagues(
+      team.countryId,
+    );
+    final Set<int> have = <int>{
+      for (final Tournament l in domesticLeagues) l.tournamentId,
+    };
+    if (allDomestic.every((Tournament l) => have.contains(l.tournamentId))) {
+      return;
+    }
+    final int added = await SeasonGenerator(_db, random: _rng)
+        .addDomesticLeagues(
+          season: current,
+          countryId: team.countryId,
+          leagues: allDomestic,
+          teamCache: teamCache,
+          currentDate: nextDate,
+        );
+    if (added > 0) {
+      await _loadLeagues(current.seasonId, team.countryId);
+    }
+  }
+
+  Future<void> _loadLeagues(int seasonId, int countryId) async {
+    final rows = await _db.rawQuery(
+      '''
+      SELECT tu.* FROM season_tournaments st
+      JOIN tournaments tu ON tu.tournament_id = st.tournament_id
+      JOIN tournament_countries tc ON tc.tournament_id = tu.tournament_id
+      WHERE st.season_id = ? AND tu.organization = ? AND tc.country_id = ?
+      ORDER BY tu.division_id ASC, tu.name ASC
+    ''',
+      <Object?>[seasonId, t.orgLeague, countryId],
+    );
+    domesticLeagues = rows.map(Tournament.fromMap).toList();
+    if (domesticLeagues.isNotEmpty) {
+      final int userDiv = userTeam?.division ?? 1;
+      league = domesticLeagues
+              .where((Tournament l) => l.divisionId == userDiv)
+              .firstOrNull ??
+          domesticLeagues.first;
+    }
   }
 
   /// Older saves lack some continental competitions (or all of them). Add the
@@ -355,12 +409,19 @@ class CareerProvider extends ChangeNotifier {
     int teamId,
     void Function(String) onProgress,
   ) async {
+    final List<Tournament> allDomestic = await _refs.domesticLeagues(countryId);
     final CareerPlan plan = await SeasonGenerator(_db, random: _rng)
         .generateCareer(
           countryId: countryId,
           league: leagueTournament,
           cup: cupTournament,
           internationals: await _refs.internationalCups(countryId),
+          otherLeagues: allDomestic
+              .where(
+                (Tournament l) =>
+                    l.tournamentId != leagueTournament.tournamentId,
+              )
+              .toList(),
         );
     onProgress('Saving career...');
     // Persist the manager pick for continuation across restarts.
@@ -374,6 +435,7 @@ class CareerProvider extends ChangeNotifier {
     userTeam = await _refs.teamById(teamId);
     league = leagueTournament;
     cup = cupTournament;
+    await _loadLeagues(plan.season.seasonId, countryId);
     await _loadCups(plan.season.seasonId);
     final rows = await _db.rawQuery(
       '''

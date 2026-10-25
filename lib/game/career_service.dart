@@ -1436,13 +1436,16 @@ class CareerService {
     );
 
     onProgress('Promotion and relegation...');
-    for (final Tournament tour in tournaments) {
-      if (!tour.isLeague) continue;
-      final List<StandingRow> table = await _seasons.standings(
-        current.seasonId,
-        tour.tournamentId,
+    final List<Tournament> leagueTours =
+        tournaments.where((Tournament t) => t.isLeague).toList();
+    final Team? userClubBefore = await _refs.teamById(userTeamId);
+    if (userClubBefore != null) {
+      await _applyCountryPromotionRelegation(
+        seasonId: current.seasonId,
+        countryId: userClubBefore.countryId,
+        leagues: leagueTours,
+        userTeamId: userTeamId,
       );
-      await _applyPromotionRelegation(tour, table);
     }
 
     onProgress('Ageing squads...');
@@ -1522,11 +1525,17 @@ class CareerService {
       return current; // nothing more we can generate; provider decides.
     }
 
+    final List<Tournament> allDomestic = await _refs.domesticLeagues(
+      userTeam.countryId,
+    );
     final CareerPlan plan = await _gen.generateCareer(
       countryId: userTeam.countryId,
       league: nextLeague,
       cup: nextCup,
       internationals: await _refs.internationalCups(userTeam.countryId),
+      otherLeagues: allDomestic
+          .where((Tournament l) => l.tournamentId != nextLeague.tournamentId)
+          .toList(),
       startYear: current.startYear + 1,
     );
     final List<Team> seasonClubs = await _registeredClubs();
@@ -1641,66 +1650,123 @@ class CareerService {
     return rows.map(Tournament.fromMap).toList();
   }
 
-  Future<void> _applyPromotionRelegation(
-    Tournament tour,
-    List<StandingRow> table,
-  ) async {
-    if (table.isEmpty) return;
-    final countryRows = await db.query(
-      t.tournamentCountries,
-      columns: <String>['country_id'],
-      where: 'tournament_id = ?',
-      whereArgs: <Object?>[tour.tournamentId],
-      limit: 1,
-    );
-    if (countryRows.isEmpty) return;
-    final int countryId = countryRows.first['country_id'] as int;
+  Future<void> _applyCountryPromotionRelegation({
+    required int seasonId,
+    required int countryId,
+    required List<Tournament> leagues,
+    required int userTeamId,
+  }) async {
+    final List<Tournament> sorted = List<Tournament>.of(leagues)
+      ..sort(
+        (Tournament a, Tournament b) =>
+            a.divisionId.compareTo(b.divisionId),
+      );
+    if (sorted.isEmpty) return;
 
-    // Count the division below first: a league may only send clubs down when
-    // that division can send replacements up, otherwise it shrinks forever.
-    final int? lowerCount = Sqflite.firstIntValue(
-      await db.rawQuery(
-        'SELECT COUNT(*) FROM teams WHERE country_id = ? AND division = ?',
-        <Object?>[countryId, tour.divisionId + 1],
-      ),
-    );
-    final int lowerTeams = lowerCount ?? 0;
-    final int relegated = min(tour.relegationSpots, lowerTeams);
-    final int promoted = tour.divisionId > 1
-        ? min(tour.promotionSlots, lowerTeams - relegated)
-        : 0;
-    final int incoming = relegated + promoted;
-    if (incoming == 0) return;
+    final Map<int, List<StandingRow>> tables = <int, List<StandingRow>>{};
+    for (final Tournament tour in sorted) {
+      final List<StandingRow> table = await _seasons.standings(
+        seasonId,
+        tour.tournamentId,
+      );
+      if (table.isNotEmpty) {
+        tables[tour.divisionId] = table;
+      }
+    }
 
-    // Clubs from the division below were not simulated, so the strongest
-    // ones take the vacated places.
-    final lowerRows = await db.query(
-      t.teams,
-      columns: <String>['team_id'],
-      where: 'country_id = ? AND division = ?',
-      whereArgs: <Object?>[countryId, tour.divisionId + 1],
-      orderBy: 'power DESC',
-      limit: incoming,
-    );
-    for (final Map<String, Object?> row in lowerRows) {
-      await db.execute(
-        'UPDATE teams SET division = division - 1 WHERE team_id = ?',
-        <Object?>[row['team_id']],
+    final Map<int, int> newDivisions = <int, int>{};
+    final Set<int> promotedTeamIds = <int>{};
+    final Set<int> relegatedTeamIds = <int>{};
+
+    for (int i = 0; i < sorted.length; i++) {
+      final Tournament currentTour = sorted[i];
+      final int div = currentTour.divisionId;
+      final List<StandingRow>? table = tables[div];
+      if (table == null || table.isEmpty) continue;
+
+      final Tournament? lowerTour = sorted
+          .where((Tournament t) => t.divisionId == div + 1)
+          .firstOrNull;
+      if (lowerTour != null) {
+        final List<StandingRow>? lowerTable = tables[div + 1];
+        final int swapCount = min(
+          currentTour.relegationSpots > 0
+              ? currentTour.relegationSpots
+              : lowerTour.promotionSlots,
+          min(table.length, lowerTable?.length ?? 0),
+        );
+        if (swapCount > 0 && lowerTable != null) {
+          // Bottom swapCount of current division go down to div + 1
+          for (int k = table.length - swapCount; k < table.length; k++) {
+            final int tId = table[k].teamId;
+            newDivisions[tId] = div + 1;
+            relegatedTeamIds.add(tId);
+          }
+          // Top swapCount of lower division come up to div
+          for (int k = 0; k < swapCount; k++) {
+            final int tId = lowerTable[k].teamId;
+            newDivisions[tId] = div;
+            promotedTeamIds.add(tId);
+          }
+        } else if (swapCount > 0 &&
+            (lowerTable == null || lowerTable.isEmpty)) {
+          // Fallback if lower division was not simulated
+          final lowerRows = await db.query(
+            t.teams,
+            columns: <String>['team_id'],
+            where: 'country_id = ? AND division = ?',
+            whereArgs: <Object?>[countryId, div + 1],
+            orderBy: 'power DESC',
+            limit: swapCount,
+          );
+          for (final Map<String, Object?> row in lowerRows) {
+            final int tId = row['team_id'] as int;
+            newDivisions[tId] = div;
+            promotedTeamIds.add(tId);
+          }
+          for (int k = table.length - swapCount; k < table.length; k++) {
+            final int tId = table[k].teamId;
+            newDivisions[tId] = div + 1;
+            relegatedTeamIds.add(tId);
+          }
+        }
+      }
+    }
+
+    // Apply all division updates
+    for (final MapEntry<int, int> entry in newDivisions.entries) {
+      await db.update(
+        t.teams,
+        <String, Object?>{'division': entry.value},
+        where: 'team_id = ?',
+        whereArgs: <Object?>[entry.key],
       );
     }
 
-    // Promote the best clubs of this league up one division.
-    for (int i = 0; i < promoted; i++) {
-      await db.execute(
-        'UPDATE teams SET division = division - 1 WHERE team_id = ? AND division > 1',
-        <Object?>[table[i].teamId],
+    // Notify user if club promoted or relegated
+    if (promotedTeamIds.contains(userTeamId)) {
+      final int newDiv = newDivisions[userTeamId]!;
+      final Tournament? targetTour = sorted
+          .where((Tournament t) => t.divisionId == newDiv)
+          .firstOrNull;
+      await _messages.insert(
+        title: 'PROMOTION CELEBRATION!',
+        body:
+            'Congratulations! By finishing in the promotion places, our club has earned promotion to ${targetTour?.name ?? 'Division $newDiv'} for next season!',
+        teamId: userTeamId,
+        sender: 'Board of Directors',
       );
-    }
-    // Relegate the bottom clubs.
-    for (int i = max(0, table.length - relegated); i < table.length; i++) {
-      await db.execute(
-        'UPDATE teams SET division = division + 1 WHERE team_id = ?',
-        <Object?>[table[i].teamId],
+    } else if (relegatedTeamIds.contains(userTeamId)) {
+      final int newDiv = newDivisions[userTeamId]!;
+      final Tournament? targetTour = sorted
+          .where((Tournament t) => t.divisionId == newDiv)
+          .firstOrNull;
+      await _messages.insert(
+        title: 'RELEGATION CONFIRMED',
+        body:
+            'A disappointing conclusion to the campaign. Our club has been relegated to ${targetTour?.name ?? 'Division $newDiv'}. We must rebuild and fight for immediate promotion next season.',
+        teamId: userTeamId,
+        sender: 'Board of Directors',
       );
     }
   }

@@ -24,16 +24,24 @@ class SeasonGenerator {
     required Tournament league,
     required Tournament? cup,
     List<Tournament> internationals = const <Tournament>[],
+    List<Tournament> otherLeagues = const <Tournament>[],
     int startYear = 2025,
   }) async {
     _startDate = DateTime(startYear, 8, 9); // first Saturday of August-ish
 
+    final List<Tournament> allDomesticLeagues = <Tournament>[
+      league,
+      ...otherLeagues.where((Tournament l) => l.tournamentId != league.tournamentId),
+    ];
+
     final Season season = await _insertSeason(startYear);
-    await db.insert(t.seasonTournaments, <String, Object?>{
-      'season_id': season.seasonId,
-      'tournament_id': league.tournamentId,
-      'status': t.seasonTournamentActive,
-    });
+    for (final Tournament tour in allDomesticLeagues) {
+      await db.insert(t.seasonTournaments, <String, Object?>{
+        'season_id': season.seasonId,
+        'tournament_id': tour.tournamentId,
+        'status': t.seasonTournamentActive,
+      });
+    }
     if (cup != null) {
       await db.insert(t.seasonTournaments, <String, Object?>{
         'season_id': season.seasonId,
@@ -50,10 +58,21 @@ class SeasonGenerator {
     }
 
     // ------------------------------------------------ participants
-    final List<Team> leagueTeams = await _teamsOf(countryId, league.divisionId);
-    final List<Team> cupTeams = await _teamsOf(countryId, null);
     final Map<int, Team> allTeams = <int, Team>{};
-    for (final Team tm in <Team>[...leagueTeams, ...cupTeams]) {
+    for (final Tournament lg in allDomesticLeagues) {
+      List<Team> divTeams = await _teamsOf(countryId, lg.divisionId);
+      final int maxDivTeams = lg.slots > 0 ? lg.slots : 24;
+      if (divTeams.length > maxDivTeams) {
+        divTeams = List<Team>.of(divTeams)
+          ..sort((Team a, Team b) => b.power.compareTo(a.power));
+        divTeams = divTeams.take(maxDivTeams).toList();
+      }
+      for (final Team tm in divTeams) {
+        allTeams[tm.teamId] = tm;
+      }
+    }
+    final List<Team> cupTeams = await _teamsOf(countryId, null);
+    for (final Team tm in cupTeams) {
       allTeams[tm.teamId] = tm;
     }
     // Continental entrants: each country sends its top clubs by power.
@@ -97,27 +116,41 @@ class SeasonGenerator {
     }
 
     // ------------------------------------------------ league fixtures
-    final int teamCount = leagueTeams.length;
-    final int rounds = teamCount >= 2 ? (teamCount - 1) * 2 : 0;
-    final List<FixtureSlot> slots = doubleRoundRobin(
-      leagueTeams.map((Team tm) => tm.teamId).toList(),
-      _rng,
-    );
-
     final List<Map<String, Object?>> matchRows = <Map<String, Object?>>[];
-    for (final FixtureSlot slot in slots) {
-      matchRows.add(
-        _matchRow(
-          season.seasonId,
-          league.tournamentId,
-          allTeams[slot.home]!,
-          allTeams[slot.away]!,
-          round: slot.round,
-          phase: 1,
-          leg: slot.leg,
-          date: _iso(_leagueDate(slot.round)),
-        ),
-      );
+    int userLeagueRounds = 0;
+    for (final Tournament lg in allDomesticLeagues) {
+      List<Team> divTeams = await _teamsOf(countryId, lg.divisionId);
+      final int maxDivTeams = lg.slots > 0 ? lg.slots : 24;
+      if (divTeams.length > maxDivTeams) {
+        divTeams = List<Team>.of(divTeams)
+          ..sort((Team a, Team b) => b.power.compareTo(a.power));
+        divTeams = divTeams.take(maxDivTeams).toList();
+      }
+      final int teamCount = divTeams.length;
+      final int r = teamCount >= 2 ? (teamCount - 1) * 2 : 0;
+      if (lg.tournamentId == league.tournamentId) {
+        userLeagueRounds = r;
+      }
+      if (teamCount >= 2) {
+        final List<FixtureSlot> slots = doubleRoundRobin(
+          divTeams.map((Team tm) => tm.teamId).toList(),
+          _rng,
+        );
+        for (final FixtureSlot slot in slots) {
+          matchRows.add(
+            _matchRow(
+              season.seasonId,
+              lg.tournamentId,
+              allTeams[slot.home]!,
+              allTeams[slot.away]!,
+              round: slot.round,
+              phase: 1,
+              leg: slot.leg,
+              date: _iso(_leagueDate(slot.round)),
+            ),
+          );
+        }
+      }
     }
 
     // ------------------------------------------------ cup first round
@@ -125,7 +158,7 @@ class SeasonGenerator {
     if (cup != null && cupTeams.length >= 4) {
       final List<int> surviving = seedByIdes(cupTeams);
       cupPhases = knockoutRounds(surviving.length);
-      final DateTime cupDate = _cupDate(1, rounds);
+      final DateTime cupDate = _cupDate(1, userLeagueRounds);
       await scheduleCupRound(
         season.seasonId,
         cup.tournamentId,
@@ -172,7 +205,7 @@ class SeasonGenerator {
       season: season,
       leagueTournamentId: league.tournamentId,
       cupTournamentId: cup?.tournamentId,
-      leagueRounds: rounds,
+      leagueRounds: userLeagueRounds,
       cupRounds: cupPhases,
       teamCount: allTeams.length,
       matchCount: matchRows.length,
@@ -295,6 +328,140 @@ class SeasonGenerator {
     }
     await resolveFixtureClashes(season.seasonId);
     await repairSelfMatches(season.seasonId);
+    return added;
+  }
+
+  /// Adds domestic lower division leagues to an existing season if they weren't
+  /// generated yet.
+  Future<int> addDomesticLeagues({
+    required Season season,
+    required int countryId,
+    required List<Tournament> leagues,
+    required Map<int, Team> teamCache,
+    String? currentDate,
+  }) async {
+    _startDate = DateTime(season.startYear, 8, 9);
+    int added = 0;
+    final List<Map<String, Object?>> matchRows = <Map<String, Object?>>[];
+
+    for (final Tournament tour in leagues) {
+      final List<Map<String, Object?>> linked = await db.query(
+        t.seasonTournaments,
+        where: 'season_id = ? AND tournament_id = ?',
+        whereArgs: <Object?>[season.seasonId, tour.tournamentId],
+        limit: 1,
+      );
+      if (linked.isNotEmpty) continue;
+
+      List<Team> divTeams = await _teamsOf(countryId, tour.divisionId);
+      final int maxDivTeams = tour.slots > 0 ? tour.slots : 24;
+      if (divTeams.length > maxDivTeams) {
+        divTeams = List<Team>.of(divTeams)
+          ..sort((Team a, Team b) => b.power.compareTo(a.power));
+        divTeams = divTeams.take(maxDivTeams).toList();
+      }
+      if (divTeams.length < 2) continue;
+
+      for (final Team tm in divTeams) {
+        teamCache[tm.teamId] = tm;
+      }
+
+      final List<Map<String, Object?>> registered = await db.query(
+        t.seasonTeams,
+        columns: <String>['team_id'],
+        where: 'season_id = ?',
+        whereArgs: <Object?>[season.seasonId],
+      );
+      final Set<int> registeredIds = <int>{
+        for (final Map<String, Object?> row in registered)
+          row['team_id'] as int,
+      };
+      for (final Team tm in divTeams) {
+        if (!registeredIds.contains(tm.teamId)) {
+          await db.insert(t.seasonTeams, <String, Object?>{
+            'team_id': tm.teamId,
+            'season_id': season.seasonId,
+            'coach_id': tm.coachId,
+          });
+        }
+      }
+
+      await db.insert(t.seasonTournaments, <String, Object?>{
+        'season_id': season.seasonId,
+        'tournament_id': tour.tournamentId,
+        'status': t.seasonTournamentActive,
+      });
+
+      final List<FixtureSlot> slots = doubleRoundRobin(
+        divTeams.map((Team tm) => tm.teamId).toList(),
+        _rng,
+      );
+      for (final FixtureSlot slot in slots) {
+        matchRows.add(
+          _matchRow(
+            season.seasonId,
+            tour.tournamentId,
+            teamCache[slot.home]!,
+            teamCache[slot.away]!,
+            round: slot.round,
+            phase: 1,
+            leg: slot.leg,
+            date: _iso(_leagueDate(slot.round)),
+          ),
+        );
+      }
+      added++;
+    }
+
+    if (matchRows.isNotEmpty) {
+      await _insertMatches(matchRows);
+      await repairSelfMatches(season.seasonId);
+
+      // If season is underway, simulate past scheduled matches prior to currentDate
+      if (currentDate != null) {
+        final List<Map<String, Object?>> pastMatches = await db.query(
+          t.matches,
+          where: 'season_id = ? AND date < ? AND status = ?',
+          whereArgs: <Object?>[season.seasonId, currentDate, t.matchScheduled],
+        );
+        if (pastMatches.isNotEmpty) {
+          final Batch batch = db.batch();
+          for (final Map<String, Object?> row in pastMatches) {
+            final int matchId = row['match_id'] as int;
+            final int homeId = row['home_team_id'] as int;
+            final int awayId = row['away_team_id'] as int;
+            final Team? home = teamCache[homeId];
+            final Team? away = teamCache[awayId];
+            if (home != null && away != null) {
+              final double homeAdv = 1.1;
+              final double homeRoll = _rng.nextDouble() * (home.power * homeAdv);
+              final double awayRoll = _rng.nextDouble() * away.power;
+              final int homeGoals = homeRoll > awayRoll + 15
+                  ? 2 + _rng.nextInt(3)
+                  : (homeRoll > awayRoll ? 1 + _rng.nextInt(2) : _rng.nextInt(2));
+              final int awayGoals = awayRoll > homeRoll + 15
+                  ? 2 + _rng.nextInt(3)
+                  : (awayRoll > homeRoll ? 1 + _rng.nextInt(2) : _rng.nextInt(2));
+              final int? winnerId = homeGoals > awayGoals
+                  ? homeId
+                  : (awayGoals > homeGoals ? awayId : null);
+              batch.update(
+                t.matches,
+                <String, Object?>{
+                  'status': t.matchFinished,
+                  'home_goals': homeGoals,
+                  'away_goals': awayGoals,
+                  'winner_id': winnerId,
+                },
+                where: 'match_id = ?',
+                whereArgs: <Object?>[matchId],
+              );
+            }
+          }
+          await batch.commit(noResult: true);
+        }
+      }
+    }
     return added;
   }
 

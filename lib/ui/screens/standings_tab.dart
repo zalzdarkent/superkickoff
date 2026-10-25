@@ -37,7 +37,10 @@ class _StandingsTabState extends State<StandingsTab> {
   Widget build(BuildContext context) {
     final CareerProvider game = context.watch<CareerProvider>();
     final List<Tournament> options = <Tournament>[
-      if (game.league != null) game.league!,
+      if (game.domesticLeagues.isNotEmpty)
+        ...game.domesticLeagues
+      else if (game.league != null)
+        game.league!,
       ...game.cups,
     ];
     if (options.isEmpty) {
@@ -85,9 +88,47 @@ class _StandingsTabState extends State<StandingsTab> {
                                 for (final Tournament tournament in options)
                                   DropdownMenuItem<int>(
                                     value: tournament.tournamentId,
-                                    child: Text(
-                                      tournament.name,
-                                      overflow: TextOverflow.ellipsis,
+                                    child: Row(
+                                      children: <Widget>[
+                                        Expanded(
+                                          child: Text(
+                                            tournament.name,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        if (tournament.isLeague &&
+                                            game.domesticLeagues.length > 1) ...<Widget>[
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppTheme.surface,
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: tournament.divisionId == 1
+                                                    ? AppTheme.accent
+                                                    : AppTheme.textDim
+                                                        .withValues(alpha: 0.4),
+                                                width: 0.8,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              'Div ${tournament.divisionId}',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w600,
+                                                color: tournament.divisionId == 1
+                                                    ? AppTheme.accent
+                                                    : AppTheme.textDim,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                   ),
                               ],
@@ -277,12 +318,17 @@ class _LeagueTableState extends State<_LeagueTable> {
   _QualRule? _getQualification(int index, int total) {
     if (!widget.tournament.isLeague) return null;
 
+    final bool hasLowerDiv = widget.game.domesticLeagues.any(
+      (Tournament t) => t.divisionId == widget.tournament.divisionId + 1,
+    );
+
     // Lower divisions
     if (widget.tournament.divisionId > 1) {
       if (index < widget.tournament.promotionSlots) {
         return const _QualRule('Promotion', 'PRO', AppTheme.accent);
       }
-      if (widget.tournament.relegationSpots > 0 &&
+      if (hasLowerDiv &&
+          widget.tournament.relegationSpots > 0 &&
           index >= total - widget.tournament.relegationSpots) {
         return const _QualRule('Relegation', 'REL', AppTheme.danger);
       }
@@ -290,7 +336,8 @@ class _LeagueTableState extends State<_LeagueTable> {
     }
 
     // Top Division Relegation
-    if (widget.tournament.relegationSpots > 0 &&
+    if (hasLowerDiv &&
+        widget.tournament.relegationSpots > 0 &&
         index >= total - widget.tournament.relegationSpots) {
       return const _QualRule('Relegation', 'REL', AppTheme.danger);
     }
