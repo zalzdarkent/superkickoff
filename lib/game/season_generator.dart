@@ -175,13 +175,7 @@ class SeasonGenerator {
               round: slot.round,
               phase: 1,
               leg: slot.leg,
-              date: _iso(
-                _startDate.add(
-                  Duration(
-                    days: config.matchdayIntervalDays * (slot.round - 1),
-                  ),
-                ),
-              ),
+              date: _iso(_roundDate(_startDate, slot.round, config)),
             ),
           );
         }
@@ -296,6 +290,7 @@ class SeasonGenerator {
       final Map<int, Team> byId = <int, Team>{
         for (final Team tm in invited) tm.teamId: tm,
       };
+      await _persistConfig(tour, season.startYear);
       final CompetitionConfig tourConfig = await _configForTournament(
         tour.tournamentId,
         seasonStartYear: season.startYear,
@@ -445,11 +440,7 @@ class SeasonGenerator {
             round: slot.round,
             phase: 1,
             leg: slot.leg,
-            date: _iso(
-              _startDate.add(
-                Duration(days: config.matchdayIntervalDays * (slot.round - 1)),
-              ),
-            ),
+            date: _iso(_roundDate(_startDate, slot.round, config)),
           ),
         );
       }
@@ -616,11 +607,7 @@ class SeasonGenerator {
             round: slot.round,
             phase: 0,
             leg: slot.leg,
-            date: _iso(
-              start.add(
-                Duration(days: cfg.matchdayIntervalDays * (slot.round - 1)),
-              ),
-            ),
+            date: _iso(_roundDate(start, slot.round, cfg)),
             groupId: g + 1,
           ),
         );
@@ -671,11 +658,7 @@ class SeasonGenerator {
           round: slot.round,
           phase: 0,
           leg: 1,
-          date: _iso(
-            start.add(
-              Duration(days: cfg.matchdayIntervalDays * (slot.round - 1)),
-            ),
-          ),
+          date: _iso(_roundDate(start, slot.round, cfg)),
         ),
       );
     }
@@ -841,7 +824,8 @@ class SeasonGenerator {
         if (!paired.contains(id)) id,
     ];
 
-    final bool isFinal = matchPairs.length <= 1;
+    final bool isFinal =
+        matchPairs.length == 1 && advancingByes.isEmpty && seeded.length == 2;
     final int legs = (isFinal && config.finalSingleMatch)
         ? 1
         : config.knockoutLegs;
@@ -879,7 +863,7 @@ class SeasonGenerator {
             round: phase,
             phase: phase,
             leg: 2,
-            date: _iso(date.add(const Duration(days: 7))),
+            date: _iso(date.add(Duration(days: config.matchdayIntervalDays))),
             neutralVenue: false,
             extraTime: config.extraTime,
             awayGoalsRule: config.awayGoals,
@@ -1301,6 +1285,24 @@ class SeasonGenerator {
         await txn.insert(t.matches, row);
       }
     });
+  }
+
+  DateTime _roundDate(
+    DateTime start,
+    int round,
+    CompetitionConfig config,
+  ) {
+    final DateTime preferred = start.add(
+      Duration(days: config.matchdayIntervalDays * (round - 1)),
+    );
+    if (config.allowedWeekdays.isEmpty) return preferred;
+    for (int offset = 0; offset < 7; offset++) {
+      final DateTime candidate = preferred.add(Duration(days: offset));
+      if (config.allowedWeekdays.contains(candidate.weekday)) return candidate;
+    }
+    throw StateError(
+      'Competition ${config.tournamentId} has no valid allowed weekdays.',
+    );
   }
 
   /// Cup is on Wednesdays, interleaved: phase 1 mid-week before half-time.

@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import '../data/db/schema.dart' as t;
 import '../data/models/models.dart';
 
@@ -561,12 +563,19 @@ class FixtureValidator {
   static FixtureValidationReport validateCalendar({
     required List<FixtureMatch> fixtures,
     int minRestDays = 2,
+    Map<int, int>? minRestDaysByCompetition,
     Map<int, int>? seasonOfCompetition,
   }) {
     final List<FixtureViolation> out = <FixtureViolation>[];
     final Set<int> matchIds = <int>{};
     final Map<int, List<FixtureMatch>> byClub = <int, List<FixtureMatch>>{};
+    final Map<int, List<FixtureMatch>> byStadium =
+        <int, List<FixtureMatch>>{};
     final Map<String, FixtureMatch> identities = <String, FixtureMatch>{};
+    final Map<String, Map<int, List<String>>> datesByRound =
+        <String, Map<int, List<String>>>{};
+    final Map<String, List<FixtureMatch>> legsByTie =
+        <String, List<FixtureMatch>>{};
 
     for (final FixtureMatch m in fixtures) {
       final int competitionId = m.tournamentId;
@@ -626,6 +635,24 @@ class FixtureValidator {
       }
       byClub.putIfAbsent(m.homeTeamId, () => <FixtureMatch>[]).add(m);
       byClub.putIfAbsent(m.awayTeamId, () => <FixtureMatch>[]).add(m);
+      if (m.stadiumId > 0) {
+        byStadium.putIfAbsent(m.stadiumId, () => <FixtureMatch>[]).add(m);
+      }
+      final String roundKey =
+          '${m.tournamentId}:${m.phase}:${m.groupId ?? -1}:${m.leg}';
+      datesByRound
+          .putIfAbsent(roundKey, () => <int, List<String>>{})
+          .putIfAbsent(m.round, () => <String>[])
+          .add(m.date ?? '');
+      if (m.phase > 0 && m.groupId == null) {
+        final String pair = _pairKey(m.homeTeamId, m.awayTeamId);
+        legsByTie
+            .putIfAbsent(
+              '${m.tournamentId}:${m.phase}:$pair',
+              () => <FixtureMatch>[],
+            )
+            .add(m);
+      }
     }
 
     for (final MapEntry<int, List<FixtureMatch>> entry in byClub.entries) {
@@ -650,14 +677,22 @@ class FixtureValidator {
               list[i],
             ),
           );
-        } else if (days < minRestDays) {
+        } else if (days <
+            max(
+              minRestDays,
+              minRestDaysByCompetition?[list[i].tournamentId] ?? minRestDays,
+            )) {
+          final int requiredRest = max(
+            minRestDays,
+            minRestDaysByCompetition?[list[i].tournamentId] ?? minRestDays,
+          );
           out.add(
             FixtureViolation(
               code: 'calendar_rest',
               message:
                   'Club ${entry.key} has only $days day(s) between fixtures '
                   '${list[i - 1].date} and ${list[i].date}; minimum is '
-                  '$minRestDays.',
+                  '$requiredRest.',
               competitionId: list[i].tournamentId,
               seasonId: list[i].seasonId,
               matchId: list[i].matchId,
@@ -666,6 +701,78 @@ class FixtureValidator {
             ),
           );
         }
+      }
+    }
+
+    for (final MapEntry<int, List<FixtureMatch>> entry in byStadium.entries) {
+      final List<FixtureMatch> fixtures = entry.value
+        ..sort((FixtureMatch a, FixtureMatch b) {
+          final int date = (a.date ?? '').compareTo(b.date ?? '');
+          return date != 0 ? date : a.matchId.compareTo(b.matchId);
+        });
+      for (int i = 1; i < fixtures.length; i++) {
+        if (fixtures[i].date != null &&
+            fixtures[i].date == fixtures[i - 1].date) {
+          out.add(
+            _violation(
+              'calendar_stadium_overlap',
+              'Stadium ${entry.key} hosts multiple fixtures on '
+                  '${fixtures[i].date}.',
+              fixtures[i].tournamentId,
+              fixtures[i].seasonId,
+              fixtures[i],
+            ),
+          );
+        }
+      }
+    }
+
+    for (final MapEntry<String, Map<int, List<String>>> entry
+        in datesByRound.entries) {
+      final List<int> rounds = entry.value.keys.toList()..sort();
+      for (int i = 1; i < rounds.length; i++) {
+        final List<String> previous = entry.value[rounds[i - 1]]!..sort();
+        final List<String> current = entry.value[rounds[i]]!..sort();
+        if (previous.last.isNotEmpty &&
+            current.first.isNotEmpty &&
+            current.first.compareTo(previous.last) < 0) {
+          final FixtureMatch fixture = fixtures.firstWhere(
+            (FixtureMatch m) =>
+                '${m.tournamentId}:${m.phase}:${m.groupId ?? -1}:${m.leg}' ==
+                    entry.key &&
+                m.round == rounds[i],
+          );
+          out.add(
+            _violation(
+              'calendar_round_order',
+              'Round ${rounds[i]} starts before round ${rounds[i - 1]} is '
+                  'complete in this phase.',
+              fixture.tournamentId,
+              fixture.seasonId,
+              fixture,
+            ),
+          );
+        }
+      }
+    }
+
+    for (final MapEntry<String, List<FixtureMatch>> entry
+        in legsByTie.entries) {
+      final List<FixtureMatch> legs = entry.value
+        ..sort((FixtureMatch a, FixtureMatch b) => a.leg.compareTo(b.leg));
+      if (legs.length > 1 &&
+          legs.first.date != null &&
+          legs.last.date != null &&
+          legs.last.date!.compareTo(legs.first.date!) <= 0) {
+        out.add(
+          _violation(
+            'calendar_knockout_leg_order',
+            'The return leg must be scheduled after the first leg.',
+            legs.last.tournamentId,
+            legs.last.seasonId,
+            legs.last,
+          ),
+        );
       }
     }
     return FixtureValidationReport(out);

@@ -271,6 +271,7 @@ class AppDatabase {
         group_size INTEGER NOT NULL DEFAULT 4,
         group_count INTEGER NOT NULL DEFAULT 0,
         group_double_round_robin INTEGER NOT NULL DEFAULT 1,
+        group_qualifiers_per_group INTEGER NOT NULL DEFAULT 2,
         league_phase_opponents INTEGER NOT NULL DEFAULT 0,
         league_phase_home_matches INTEGER NOT NULL DEFAULT 0,
         league_phase_away_matches INTEGER NOT NULL DEFAULT 0,
@@ -287,6 +288,7 @@ class AppDatabase {
         promotion_slots INTEGER NOT NULL DEFAULT 0,
         relegation_slots INTEGER NOT NULL DEFAULT 0,
         unavailable_dates TEXT NOT NULL DEFAULT '[]',
+        allowed_weekdays TEXT NOT NULL DEFAULT '[]',
         PRIMARY KEY (tournament_id, season_start_year)
       )
     ''');
@@ -299,6 +301,23 @@ class AppDatabase {
       await db.execute(
         "ALTER TABLE competition_configs ADD COLUMN "
         "unavailable_dates TEXT NOT NULL DEFAULT '[]'",
+      );
+    }
+    if (!configColumns.any(
+      (Map<String, Object?> column) =>
+          column['name'] == 'group_qualifiers_per_group',
+    )) {
+      await db.execute(
+        'ALTER TABLE competition_configs ADD COLUMN '
+        'group_qualifiers_per_group INTEGER NOT NULL DEFAULT 2',
+      );
+    }
+    if (!configColumns.any(
+      (Map<String, Object?> column) => column['name'] == 'allowed_weekdays',
+    )) {
+      await db.execute(
+        "ALTER TABLE competition_configs ADD COLUMN "
+        "allowed_weekdays TEXT NOT NULL DEFAULT '[]'",
       );
     }
     await db.execute('''

@@ -13,6 +13,8 @@ import 'package:superkickoff/data/repositories/reference_repository.dart';
 import 'package:superkickoff/data/repositories/season_repository.dart';
 import 'package:superkickoff/data/repositories/squad_repository.dart';
 import 'package:superkickoff/game/career_service.dart';
+import 'package:superkickoff/game/competition_config.dart';
+import 'package:superkickoff/game/fixture_calendar.dart';
 import 'package:superkickoff/game/match_engine.dart';
 import 'package:superkickoff/game/season_generator.dart';
 
@@ -279,7 +281,7 @@ void main() {
     }
   });
 
-  test('continental group stage qualifies two clubs per group', () async {
+  test('group progression honors configured qualifiers and persists byes', () async {
     const int countryId = 94; // Indonesia: two AFC cups.
     final Tournament league = Tournament.fromMap(
       await findTournament(
@@ -308,6 +310,14 @@ void main() {
     final int seasonId = plan.season.seasonId;
     final Tournament continental = internationals.firstWhere(
       (Tournament tournament) => tournament.tournamentId == 99,
+    );
+    final FixtureSchedulingService calendar = FixtureSchedulingService(db);
+    final CompetitionConfig groupConfig = await calendar.resolveConfig(
+      continental,
+      seasonStartYear: plan.season.startYear,
+    );
+    await calendar.persistConfig(
+      groupConfig.copyWith(groupQualifiersPerGroup: 1),
     );
 
     final List<Map<String, Object?>> groupMatchRows = await db.query(
@@ -393,15 +403,35 @@ void main() {
           'AND phase = 1',
       whereArgs: <Object?>[seasonId, continental.tournamentId],
     );
+    final List<int> byes = await generator.byesForPhase(
+      seasonId,
+      continental.tournamentId,
+      1,
+    );
+    final Set<int> advanced = <int>{
+      for (final Map<String, Object?> row in knockout)
+        row['home_team_id'] as int,
+      for (final Map<String, Object?> row in knockout)
+        row['away_team_id'] as int,
+      ...byes,
+    };
     expect(
-      knockout.length,
-      groups.length * 2,
-      reason: 'two qualifiers per group make one two-legged tie per group',
+      advanced.length,
+      groups.length,
+      reason: 'one configured qualifier per group advances',
     );
 
     // Each knockout tie must pair clubs from different groups.
     final Map<int, int> teamToGroup = <int, int>{};
-    for (final GroupTable g in groups) {
+    final List<GroupTable> completedGroups = await seasons.groupTables(
+      seasonId,
+      continental.tournamentId,
+    );
+    final Set<int> groupWinners = <int>{
+      for (final GroupTable group in completedGroups) group.rows.first.teamId,
+    };
+    expect(advanced, groupWinners);
+    for (final GroupTable g in completedGroups) {
       for (final StandingRow r in g.rows) {
         teamToGroup[r.teamId] = g.groupId;
       }
@@ -471,43 +501,46 @@ void main() {
     expect(leg2.length, 2);
   });
 
-  test('repairSelfMatches replaces corrupted same-team match with valid opponent', () async {
-    final SeasonGenerator generator = SeasonGenerator(db, random: Random(7));
-    const int seasonId = 888;
-    final List<Map<String, Object?>> teamRows = await db.query(
-      t.teams,
-      where: 'division = 1',
-      limit: 4,
-    );
-    for (final Map<String, Object?> r in teamRows) {
-      await db.insert(t.seasonTeams, <String, Object?>{
-        'team_id': r['team_id'],
+  test(
+    'repairSelfMatches replaces corrupted same-team match with valid opponent',
+    () async {
+      final SeasonGenerator generator = SeasonGenerator(db, random: Random(7));
+      const int seasonId = 888;
+      final List<Map<String, Object?>> teamRows = await db.query(
+        t.teams,
+        where: 'division = 1',
+        limit: 4,
+      );
+      for (final Map<String, Object?> r in teamRows) {
+        await db.insert(t.seasonTeams, <String, Object?>{
+          'team_id': r['team_id'],
+          'season_id': seasonId,
+        });
+      }
+
+      final int persibId = teamRows.first['team_id'] as int;
+      // Insert a corrupted self-match: Persib vs Persib
+      await db.insert(t.matches, <String, Object?>{
         'season_id': seasonId,
+        'tournament_id': 164,
+        'home_team_id': persibId,
+        'away_team_id': persibId,
+        'phase': 1,
+        'leg': 1,
+        'status': t.matchScheduled,
+        'date': '2026-02-25',
       });
-    }
 
-    final int persibId = teamRows.first['team_id'] as int;
-    // Insert a corrupted self-match: Persib vs Persib
-    await db.insert(t.matches, <String, Object?>{
-      'season_id': seasonId,
-      'tournament_id': 164,
-      'home_team_id': persibId,
-      'away_team_id': persibId,
-      'phase': 1,
-      'leg': 1,
-      'status': t.matchScheduled,
-      'date': '2026-02-25',
-    });
+      await generator.repairSelfMatches(seasonId);
 
-    await generator.repairSelfMatches(seasonId);
-
-    final List<Map<String, Object?>> matches = await db.query(
-      t.matches,
-      where: 'season_id = ? AND tournament_id = 164',
-      whereArgs: <Object?>[seasonId],
-    );
-    expect(matches.length, 1);
-    expect(matches.first['home_team_id'], persibId);
-    expect(matches.first['away_team_id'], isNot(equals(persibId)));
-  });
+      final List<Map<String, Object?>> matches = await db.query(
+        t.matches,
+        where: 'season_id = ? AND tournament_id = 164',
+        whereArgs: <Object?>[seasonId],
+      );
+      expect(matches.length, 1);
+      expect(matches.first['home_team_id'], persibId);
+      expect(matches.first['away_team_id'], isNot(equals(persibId)));
+    },
+  );
 }

@@ -519,6 +519,8 @@ void main() {
             ).copyWith(
               minRestDays: 4,
               matchdayIntervalDays: 9,
+              groupQualifiersPerGroup: 1,
+              allowedWeekdays: <int>[DateTime.monday, DateTime.friday],
               unavailableDates: <DateTime>[DateTime(2044, 8, 9)],
             );
         final FixtureSchedulingService calendar = FixtureSchedulingService(db);
@@ -531,6 +533,11 @@ void main() {
 
         expect(restored.minRestDays, 4);
         expect(restored.matchdayIntervalDays, 9);
+        expect(restored.groupQualifiersPerGroup, 1);
+        expect(restored.allowedWeekdays, <int>[
+          DateTime.monday,
+          DateTime.friday,
+        ]);
         expect(restored.unavailableDates, <DateTime>[DateTime(2044, 8, 9)]);
         final DateTime? available = calendar.findAvailableDate(
           preferred: DateTime(2044, 8, 9),
@@ -685,13 +692,14 @@ void main() {
       required String date,
       int phase = 1,
       int status = t.matchScheduled,
+      int stadiumId = 1,
     }) async {
       return db.insert(t.matches, <String, Object?>{
         'season_id': seasonId,
         'tournament_id': tournamentId,
         'home_team_id': home,
         'away_team_id': away,
-        'stadium_id': 1,
+        'stadium_id': stadiumId,
         'phase': phase,
         'round': 1,
         'leg': 1,
@@ -791,6 +799,131 @@ void main() {
         whereArgs: <Object?>[next],
       );
       expect(rescheduled.first['original_date'], '2025-09-07');
+    });
+
+    test('resolves same-day stadium clashes', () async {
+      const int seasonId = 8006;
+      await insertSeason(seasonId, 2025);
+      await insertMatch(
+        seasonId: seasonId,
+        tournamentId: 1,
+        home: 20,
+        away: 21,
+        date: '2025-09-06',
+        stadiumId: 101,
+      );
+      final int clash = await insertMatch(
+        seasonId: seasonId,
+        tournamentId: 3,
+        home: 22,
+        away: 23,
+        date: '2025-09-06',
+        stadiumId: 101,
+      );
+
+      expect(await calendar.resolveSeasonConflicts(seasonId), 1);
+      final List<Map<String, Object?>> rows = await db.query(
+        t.matches,
+        where: 'match_id = ?',
+        whereArgs: <Object?>[clash],
+      );
+      expect(rows.single['date'], isNot('2025-09-06'));
+    });
+
+    test('cancelled fixtures do not reserve clubs or stadiums', () async {
+      const int seasonId = 8007;
+      await insertSeason(seasonId, 2025);
+      await insertMatch(
+        seasonId: seasonId,
+        tournamentId: 1,
+        home: 24,
+        away: 25,
+        date: '2025-09-06',
+        status: t.matchCancelled,
+        stadiumId: 102,
+      );
+      final int scheduled = await insertMatch(
+        seasonId: seasonId,
+        tournamentId: 3,
+        home: 24,
+        away: 26,
+        date: '2025-09-06',
+        stadiumId: 102,
+      );
+
+      expect(await calendar.resolveSeasonConflicts(seasonId), 0);
+      final List<Map<String, Object?>> rows = await db.query(
+        t.matches,
+        where: 'match_id = ?',
+        whereArgs: <Object?>[scheduled],
+      );
+      expect(rows.single['date'], '2025-09-06');
+    });
+
+    test('does not reschedule a fixture beyond the season end', () async {
+      const int seasonId = 8008;
+      await insertSeason(seasonId, 2025);
+      final int matchId = await insertMatch(
+        seasonId: seasonId,
+        tournamentId: 3,
+        home: 27,
+        away: 28,
+        date: '2026-06-27',
+      );
+
+      final FixtureRescheduleResult result = await calendar.rescheduleMatch(
+        matchId,
+        DateTime(2026, 7, 1),
+      );
+
+      expect(result.success, isFalse);
+      final List<Map<String, Object?>> rows = await db.query(
+        t.matches,
+        where: 'match_id = ?',
+        whereArgs: <Object?>[matchId],
+      );
+      expect(rows.single['date'], '2026-06-27');
+    });
+
+    test('saving a result twice does not duplicate incidents', () async {
+      const int seasonId = 8009;
+      await insertSeason(seasonId, 2025);
+      final int matchId = await insertMatch(
+        seasonId: seasonId,
+        tournamentId: 3,
+        home: 29,
+        away: 30,
+        date: '2025-09-06',
+      );
+      final MatchRepository repository = MatchRepository(db);
+      Future<void> save() => repository.saveResult(
+        matchId: matchId,
+        homeGoals: 1,
+        awayGoals: 0,
+        winnerId: 29,
+        attendanceGeneral: 0,
+        attendanceStand: 0,
+        attendanceTerrace: 0,
+        attendanceBoxes: 0,
+        revenue: 0,
+        events: <Map<String, Object?>>[
+          <String, Object?>{'type': MatchRepository.evGoal},
+        ],
+        playerRows: const <Map<String, Object?>>[],
+        injuredPlayerIds: const <int>[],
+        suspendedPlayerIds: const <int>[],
+      );
+
+      await save();
+      await expectLater(save(), throwsA(isA<StateError>()));
+      expect(
+        await db.query(
+          t.matchIncidents,
+          where: 'match_id = ?',
+          whereArgs: <Object?>[matchId],
+        ),
+        hasLength(1),
+      );
     });
 
     test('postponement keeps the fixture identity and status', () async {
@@ -1382,16 +1515,28 @@ void main() {
       await db.execute(
         'ALTER TABLE competition_configs DROP COLUMN unavailable_dates',
       );
+      await db.execute(
+        'ALTER TABLE competition_configs '
+        'DROP COLUMN group_qualifiers_per_group',
+      );
+      await db.execute(
+        'ALTER TABLE competition_configs DROP COLUMN allowed_weekdays',
+      );
       await AppDatabase.ensureLocalTables(db);
       final List<Map<String, Object?>> configColumns = await db.rawQuery(
         'PRAGMA table_info(competition_configs)',
       );
+      final Set<String> configColumnNames = <String>{
+        for (final Map<String, Object?> column in configColumns)
+          column['name'] as String,
+      };
       expect(
-        configColumns.any(
-          (Map<String, Object?> column) =>
-              column['name'] == 'unavailable_dates',
-        ),
-        isTrue,
+        configColumnNames,
+        containsAll(<String>[
+          'unavailable_dates',
+          'group_qualifiers_per_group',
+          'allowed_weekdays',
+        ]),
       );
       final List<Map<String, Object?>> columns = await db.rawQuery(
         'PRAGMA table_info(${t.matches})',

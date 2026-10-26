@@ -20,6 +20,7 @@ import 'match_engine.dart';
 import 'offseason.dart';
 import 'prize_engine.dart';
 import 'competition_config.dart';
+import 'fixture_scheduler.dart';
 import 'season_generator.dart';
 import 'training.dart';
 import 'transfer_window_manager.dart';
@@ -1103,24 +1104,28 @@ class CareerService {
         ),
       );
       if ((knockoutMatches ?? 0) == 0) {
-        final List<(int, int)> pairs = _pairGroupKnockout(groups);
-        if (pairs.isEmpty) return false;
+        final KnockoutPlan plan = _planGroupKnockout(
+          groups,
+          config.groupQualifiersPerGroup,
+        );
+        if (plan.isEmpty) return false;
+        final List<int> qualifiers = <int>{
+          for (final (int a, int b) in plan.pairs) ...<int>[a, b],
+          ...plan.byes,
+        }.toList();
         final int scheduled = await _gen.scheduleCupRound(
           seasonId,
           cupTournamentId,
-          <int>[
-            for (final (int a, int b) in pairs) ...<int>[a, b],
-          ],
+          qualifiers,
           phase: 1,
           date: await _nextCupDate(
             seasonId,
             cupTournamentId,
-            teamIds: <int>[
-              for (final (int a, int b) in pairs) ...<int>[a, b],
-            ],
+            teamIds: qualifiers,
           ),
           allTeams: teamCache,
-          pairs: pairs,
+          pairs: plan.pairs,
+          byes: plan.byes,
         );
         await _gen.resolveFixtureClashes(seasonId);
         return scheduled > 0;
@@ -1277,9 +1282,15 @@ class CareerService {
   /// Pairs group winners against runners-up across different groups, placing
   /// teams from the same group in opposite halves of the bracket tree so they
   /// cannot meet before the final.
-  static List<(int, int)> _pairGroupKnockout(List<GroupTable> groups) {
+  static KnockoutPlan _planGroupKnockout(
+    List<GroupTable> groups,
+    int qualifiersPerGroup,
+  ) {
     final List<(int, int)> pairs = <(int, int)>[];
     final Set<int> paired = <int>{};
+    if (qualifiersPerGroup <= 0 || groups.isEmpty) {
+      return KnockoutPlan(bracketSize: 0, pairs: pairs, byes: <int>[]);
+    }
 
     void tryPair(int a, int b) {
       if (a != b && paired.add(a) && paired.add(b)) {
@@ -1287,35 +1298,37 @@ class CareerService {
       }
     }
 
-    if (groups.length < 2) {
-      if (groups.isNotEmpty && groups[0].rows.length >= 2) {
-        tryPair(groups[0].rows[0].teamId, groups[0].rows[1].teamId);
+    if (qualifiersPerGroup != 2 || groups.length < 2 || groups.length.isOdd) {
+      final List<int> qualified = <int>[];
+      for (int place = 0; place < qualifiersPerGroup; place++) {
+        final Iterable<GroupTable> orderedGroups = place.isOdd
+            ? groups.reversed
+            : groups;
+        for (final GroupTable group in orderedGroups) {
+          if (group.rows.length > place) {
+            qualified.add(group.rows[place].teamId);
+          }
+        }
       }
-      return pairs;
+      return KnockoutScheduler.planOpeningRound(qualified);
     }
-    if (groups.length.isEven) {
-      // Top bracket half: even group winners vs odd group runners-up.
-      for (int i = 0; i < groups.length; i += 2) {
-        if (groups[i].rows.isNotEmpty && groups[i + 1].rows.length > 1) {
-          tryPair(groups[i].rows[0].teamId, groups[i + 1].rows[1].teamId);
-        }
-      }
-      // Bottom bracket half: odd group winners vs even group runners-up.
-      for (int i = 0; i < groups.length; i += 2) {
-        if (groups[i + 1].rows.isNotEmpty && groups[i].rows.length > 1) {
-          tryPair(groups[i + 1].rows[0].teamId, groups[i].rows[1].teamId);
-        }
-      }
-    } else {
-      // Fallback for odd group counts: cycle winner of group i vs runner-up of (i+1)%N.
-      for (int i = 0; i < groups.length; i++) {
-        final int next = (i + 1) % groups.length;
-        if (groups[i].rows.isNotEmpty && groups[next].rows.length > 1) {
-          tryPair(groups[i].rows[0].teamId, groups[next].rows[1].teamId);
-        }
+    // Top bracket half: even group winners vs odd group runners-up.
+    for (int i = 0; i < groups.length; i += 2) {
+      if (groups[i].rows.isNotEmpty && groups[i + 1].rows.length > 1) {
+        tryPair(groups[i].rows[0].teamId, groups[i + 1].rows[1].teamId);
       }
     }
-    return pairs;
+    // Bottom bracket half: odd group winners vs even group runners-up.
+    for (int i = 0; i < groups.length; i += 2) {
+      if (groups[i + 1].rows.isNotEmpty && groups[i].rows.length > 1) {
+        tryPair(groups[i + 1].rows[0].teamId, groups[i].rows[1].teamId);
+      }
+    }
+    return KnockoutPlan(
+      bracketSize: groups.length * qualifiersPerGroup,
+      pairs: pairs,
+      byes: <int>[],
+    );
   }
 
   /// Safe weekday (Tuesdays, Wednesdays, or Thursdays) after the latest fixture

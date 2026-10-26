@@ -40,8 +40,21 @@ class MatchRepository {
     required List<int> suspendedPlayerIds,
   }) {
     return db.transaction((Transaction txn) async {
+      final List<Map<String, Object?>> current = await txn.query(
+        t.matches,
+        columns: <String>['status'],
+        where: 'match_id = ?',
+        whereArgs: <Object?>[matchId],
+        limit: 1,
+      );
+      if (current.isEmpty ||
+          current.first['status'] != t.matchScheduled) {
+        throw StateError(
+          'Match $matchId is missing or is no longer scheduled.',
+        );
+      }
       // 1. Update match row.
-      await txn.update(
+      final int updated = await txn.update(
         t.matches,
         <String, Object?>{
           'home_goals': homeGoals,
@@ -59,6 +72,9 @@ class MatchRepository {
         where: 'match_id = ?',
         whereArgs: <Object?>[matchId],
       );
+      if (updated != 1) {
+        throw StateError('Match $matchId could not be completed.');
+      }
       // 2. Incidents as JSON rows.
       if (events.isNotEmpty) {
         final String json = jsonEncode(events);

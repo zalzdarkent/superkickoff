@@ -44,6 +44,7 @@ class CompetitionConfig {
     this.groupSize = 4,
     this.groupCount = 0,
     this.groupDoubleRoundRobin = true,
+    this.groupQualifiersPerGroup = 2,
     this.leaguePhaseOpponents = 0,
     this.leaguePhaseHomeMatches = 0,
     this.leaguePhaseAwayMatches = 0,
@@ -60,7 +61,9 @@ class CompetitionConfig {
     this.promotionSlots = 0,
     this.relegationSlots = 0,
     List<DateTime> unavailableDates = const <DateTime>[],
-  }) : unavailableDates = List<DateTime>.unmodifiable(unavailableDates);
+    List<int> allowedWeekdays = const <int>[],
+  }) : unavailableDates = List<DateTime>.unmodifiable(unavailableDates),
+       allowedWeekdays = List<int>.unmodifiable(allowedWeekdays);
 
   final int tournamentId;
   final String name;
@@ -85,6 +88,7 @@ class CompetitionConfig {
   final int groupCount;
 
   final bool groupDoubleRoundRobin;
+  final int groupQualifiersPerGroup;
 
   final int leaguePhaseOpponents;
   final int leaguePhaseHomeMatches;
@@ -116,6 +120,7 @@ class CompetitionConfig {
   /// Dates on which the competition must not schedule fixtures (international
   /// windows, winter breaks, ...).
   final List<DateTime> unavailableDates;
+  final List<int> allowedWeekdays;
 
   bool get isLeagueLike =>
       format == CompetitionFormat.doubleRoundRobin ||
@@ -139,6 +144,7 @@ class CompetitionConfig {
     int? groupSize,
     int? groupCount,
     bool? groupDoubleRoundRobin,
+    int? groupQualifiersPerGroup,
     int? leaguePhaseOpponents,
     int? leaguePhaseHomeMatches,
     int? leaguePhaseAwayMatches,
@@ -155,6 +161,7 @@ class CompetitionConfig {
     int? promotionSlots,
     int? relegationSlots,
     List<DateTime>? unavailableDates,
+    List<int>? allowedWeekdays,
   }) => CompetitionConfig(
     tournamentId: tournamentId ?? this.tournamentId,
     name: name ?? this.name,
@@ -168,6 +175,8 @@ class CompetitionConfig {
     groupSize: groupSize ?? this.groupSize,
     groupCount: groupCount ?? this.groupCount,
     groupDoubleRoundRobin: groupDoubleRoundRobin ?? this.groupDoubleRoundRobin,
+    groupQualifiersPerGroup:
+        groupQualifiersPerGroup ?? this.groupQualifiersPerGroup,
     leaguePhaseOpponents: leaguePhaseOpponents ?? this.leaguePhaseOpponents,
     leaguePhaseHomeMatches:
         leaguePhaseHomeMatches ?? this.leaguePhaseHomeMatches,
@@ -186,6 +195,7 @@ class CompetitionConfig {
     promotionSlots: promotionSlots ?? this.promotionSlots,
     relegationSlots: relegationSlots ?? this.relegationSlots,
     unavailableDates: unavailableDates ?? this.unavailableDates,
+    allowedWeekdays: allowedWeekdays ?? this.allowedWeekdays,
   );
 
   /// Derives a config from the bundled tournament row, then applies the known
@@ -228,6 +238,7 @@ class CompetitionConfig {
         doubleRoundRobin: true,
         matchdayIntervalDays: 7,
         minRestDays: 2,
+        allowedWeekdays: _parseWeekdays(tournament.playDays),
         promotionSlots: tournament.promotionSlots,
         relegationSlots: tournament.relegationSpots,
       );
@@ -437,6 +448,18 @@ class CompetitionConfig {
         knockoutLegs: 1,
       );
 
+  static List<int> _parseWeekdays(String value) {
+    final Set<int> weekdays = <int>{};
+    for (final String token in value.split(',')) {
+      final int? weekday = int.tryParse(token.trim());
+      if (weekday != null && weekday >= DateTime.monday &&
+          weekday <= DateTime.sunday) {
+        weekdays.add(weekday);
+      }
+    }
+    return weekdays.toList()..sort();
+  }
+
   // ----------------------------------------------------- season overrides
 
   static final Map<String, CompetitionConfig> _overrides =
@@ -470,6 +493,7 @@ class CompetitionConfig {
     'group_size': groupSize,
     'group_count': groupCount,
     'group_double_round_robin': groupDoubleRoundRobin ? 1 : 0,
+    'group_qualifiers_per_group': groupQualifiersPerGroup,
     'league_phase_opponents': leaguePhaseOpponents,
     'league_phase_home_matches': leaguePhaseHomeMatches,
     'league_phase_away_matches': leaguePhaseAwayMatches,
@@ -488,14 +512,21 @@ class CompetitionConfig {
     'unavailable_dates': jsonEncode(
       unavailableDates.map((DateTime date) => date.toIso8601String()).toList(),
     ),
+    'allowed_weekdays': jsonEncode(allowedWeekdays),
   };
 
   static CompetitionConfig fromDbMap(Map<String, Object?> m) {
     final Object? rawDates = m['unavailable_dates'];
+    final Object? rawWeekdays = m['allowed_weekdays'];
     final List<DateTime> unavailableDates = rawDates == null
         ? <DateTime>[]
         : (jsonDecode(rawDates as String) as List<dynamic>)
               .map((dynamic value) => DateTime.parse(value as String))
+              .toList();
+    final List<int> allowedWeekdays = rawWeekdays == null
+        ? <int>[]
+        : (jsonDecode(rawWeekdays as String) as List<dynamic>)
+              .map((dynamic value) => value as int)
               .toList();
     return CompetitionConfig(
       tournamentId: m['tournament_id'] as int,
@@ -521,6 +552,8 @@ class CompetitionConfig {
       groupCount: (m['group_count'] as int?) ?? 0,
       groupDoubleRoundRobin:
           ((m['group_double_round_robin'] as int?) ?? 1) == 1,
+      groupQualifiersPerGroup:
+          (m['group_qualifiers_per_group'] as int?) ?? 2,
       leaguePhaseOpponents: (m['league_phase_opponents'] as int?) ?? 0,
       leaguePhaseHomeMatches: (m['league_phase_home_matches'] as int?) ?? 0,
       leaguePhaseAwayMatches: (m['league_phase_away_matches'] as int?) ?? 0,
@@ -537,6 +570,7 @@ class CompetitionConfig {
       promotionSlots: (m['promotion_slots'] as int?) ?? 0,
       relegationSlots: (m['relegation_slots'] as int?) ?? 0,
       unavailableDates: unavailableDates,
+      allowedWeekdays: allowedWeekdays,
     );
   }
 

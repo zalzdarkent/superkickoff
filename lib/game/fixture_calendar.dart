@@ -52,7 +52,8 @@ class FixtureSchedulingService {
   }) async {
     final List<Map<String, Object?>> rows = await db.rawQuery(
       '''
-      SELECT match_id, tournament_id, home_team_id, away_team_id, date,
+      SELECT match_id, tournament_id, home_team_id, away_team_id,
+             stadium_id, date,
              status, phase, round, group_id, original_date
       FROM matches
       WHERE season_id = ? AND date IS NOT NULL AND status != ?
@@ -63,7 +64,7 @@ class FixtureSchedulingService {
     if (rows.isEmpty) return 0;
 
     final DateTime seasonStart = await _seasonStart(seasonId);
-    final DateTime seasonEnd = seasonStart.add(const Duration(days: 330));
+    final DateTime seasonEnd = await _seasonEnd(seasonId, seasonStart);
     final Map<int, Future<CompetitionConfig>> configs =
         <int, Future<CompetitionConfig>>{};
     Future<CompetitionConfig> configFor(int tournamentId) =>
@@ -75,6 +76,7 @@ class FixtureSchedulingService {
     // Finished fixtures are fixed points; scheduled fixtures are placed in
     // chronological order. The result is deterministic and idempotent.
     final Map<int, List<DateTime>> clubDates = <int, List<DateTime>>{};
+    final Map<int, List<DateTime>> stadiumDates = <int, List<DateTime>>{};
     final List<Map<String, Object?>> ordered =
         List<Map<String, Object?>>.of(rows)
           ..sort((Map<String, Object?> a, Map<String, Object?> b) {
@@ -95,6 +97,11 @@ class FixtureSchedulingService {
           row['away_team_id'] as int,
           row['date'] as String,
         );
+        _addStadiumDate(
+          stadiumDates,
+          row['stadium_id'] as int? ?? 0,
+          row['date'] as String,
+        );
       }
     }
 
@@ -104,6 +111,7 @@ class FixtureSchedulingService {
       final int matchId = row['match_id'] as int;
       final int home = row['home_team_id'] as int;
       final int away = row['away_team_id'] as int;
+      final int stadiumId = row['stadium_id'] as int? ?? 0;
       final CompetitionConfig config = await configFor(
         row['tournament_id'] as int,
       );
@@ -115,10 +123,16 @@ class FixtureSchedulingService {
       final bool unavailable = _isUnavailable(parsed, config.unavailableDates);
       final bool clash = _hasClash(clubDates, home, away, parsed, 0);
       final bool restIssue = _hasClash(clubDates, home, away, parsed, restDays);
+      final bool stadiumIssue = _hasStadiumClash(
+        stadiumDates,
+        stadiumId,
+        parsed,
+      );
 
-      if (!clash && !restIssue && !unavailable) {
+      if (!clash && !restIssue && !stadiumIssue && !unavailable) {
         _addClubDate(clubDates, home, oldDate);
         _addClubDate(clubDates, away, oldDate);
+        _addStadiumDate(stadiumDates, stadiumId, oldDate);
         continue;
       }
 
@@ -134,7 +148,12 @@ class FixtureSchedulingService {
         minRestDays: restDays,
         preferredRestDays: preferredRestDays,
         unavailableDates: config.unavailableDates,
-        allowedWeekdays: cupLike
+        stadiumId: stadiumId,
+        stadiumDates: stadiumDates,
+        forwardOnly: true,
+        allowedWeekdays: config.allowedWeekdays.isNotEmpty
+            ? config.allowedWeekdays
+            : cupLike
             ? const <int>[
                 DateTime.tuesday,
                 DateTime.wednesday,
@@ -152,30 +171,42 @@ class FixtureSchedulingService {
         );
         _addClubDate(clubDates, home, oldDate);
         _addClubDate(clubDates, away, oldDate);
+        _addStadiumDate(stadiumDates, stadiumId, oldDate);
         continue;
       }
 
       final String newDate = iso(candidate);
       if (recordChanges) {
-        await db.update(
-          t.matches,
-          <String, Object?>{
-            'date': newDate,
-            'original_date': row['original_date'] ?? oldDate,
-            'reschedule_reason': 'Calendar conflict / rest-period rule',
-          },
-          where: 'match_id = ?',
-          whereArgs: <Object?>[matchId],
+        await db.transaction((Transaction txn) async {
+          await txn.update(
+            t.matches,
+            <String, Object?>{
+              'date': newDate,
+              'original_date': row['original_date'] ?? oldDate,
+              'reschedule_reason': 'Calendar conflict / rest-period rule',
+            },
+            where: 'match_id = ?',
+            whereArgs: <Object?>[matchId],
+          );
+          await _insertReschedule(
+            txn,
+            matchId: matchId,
+            oldDate: oldDate,
+            newDate: newDate,
+            reason: 'Calendar conflict / rest-period rule',
+          );
+        });
+      } else {
+        await _recordReschedule(
+          matchId: matchId,
+          oldDate: oldDate,
+          newDate: newDate,
+          reason: 'Calendar conflict / rest-period rule',
         );
       }
-      await _recordReschedule(
-        matchId: matchId,
-        oldDate: oldDate,
-        newDate: newDate,
-        reason: 'Calendar conflict / rest-period rule',
-      );
       _addClubDate(clubDates, home, newDate);
       _addClubDate(clubDates, away, newDate);
+      _addStadiumDate(stadiumDates, stadiumId, newDate);
       moved++;
     }
     return moved;
@@ -215,13 +246,19 @@ class FixtureSchedulingService {
     final int tournamentId = (match['tournament_id'] as int?) ?? 0;
     final int home = match['home_team_id'] as int;
     final int away = match['away_team_id'] as int;
+    final int stadiumId = match['stadium_id'] as int? ?? 0;
     final String? oldDate = match['date'] as String?;
 
     final Map<int, List<DateTime>> clubDates = await _clubDates(
       seasonId,
       excludingMatchId: matchId,
     );
+    final Map<int, List<DateTime>> stadiumDates = await _stadiumDates(
+      seasonId,
+      excludingMatchId: matchId,
+    );
     final DateTime start = await _seasonStart(seasonId);
+    final DateTime end = await _seasonEnd(seasonId, start);
     final CompetitionConfig config = await _configForTournament(
       tournamentId,
       start.year,
@@ -238,15 +275,20 @@ class FixtureSchedulingService {
         awayTeamId: away,
         clubDates: clubDates,
         seasonStart: start,
-        seasonEnd: start.add(const Duration(days: 330)),
+        seasonEnd: end,
         minRestDays: minRestDays,
         preferredRestDays: preferredRestDays,
         unavailableDates: config.unavailableDates,
-        allowedWeekdays: const <int>[
-          DateTime.tuesday,
-          DateTime.wednesday,
-          DateTime.thursday,
-        ],
+        stadiumId: stadiumId,
+        stadiumDates: stadiumDates,
+        forwardOnly: true,
+        allowedWeekdays: config.allowedWeekdays.isNotEmpty
+            ? config.allowedWeekdays
+            : const <int>[
+                DateTime.tuesday,
+                DateTime.wednesday,
+                DateTime.thursday,
+              ],
       );
     } else {
       // An explicitly requested date must still be conflict-free.
@@ -257,8 +299,10 @@ class FixtureSchedulingService {
         clubDates,
         minRestDays,
         start,
-        start.add(const Duration(days: 330)),
+        end,
         config.unavailableDates,
+        stadiumId,
+        stadiumDates,
       );
       if (!valid) {
         final DateTime? fallback = findAvailableDate(
@@ -267,15 +311,20 @@ class FixtureSchedulingService {
           awayTeamId: away,
           clubDates: clubDates,
           seasonStart: start,
-          seasonEnd: start.add(const Duration(days: 330)),
+          seasonEnd: end,
           minRestDays: minRestDays,
           preferredRestDays: preferredRestDays,
           unavailableDates: config.unavailableDates,
-          allowedWeekdays: const <int>[
-            DateTime.tuesday,
-            DateTime.wednesday,
-            DateTime.thursday,
-          ],
+          stadiumId: stadiumId,
+          stadiumDates: stadiumDates,
+          forwardOnly: true,
+          allowedWeekdays: config.allowedWeekdays.isNotEmpty
+              ? config.allowedWeekdays
+              : const <int>[
+                  DateTime.tuesday,
+                  DateTime.wednesday,
+                  DateTime.thursday,
+                ],
         );
         if (fallback == null) {
           return FixtureRescheduleResult(
@@ -352,6 +401,9 @@ class FixtureSchedulingService {
     required int minRestDays,
     int preferredRestDays = 3,
     List<DateTime> unavailableDates = const <DateTime>[],
+    int stadiumId = 0,
+    Map<int, List<DateTime>>? stadiumDates,
+    bool forwardOnly = false,
     List<int>? allowedWeekdays,
   }) {
     final Set<String> unavailable = unavailableDates.map(iso).toSet();
@@ -361,7 +413,12 @@ class FixtureSchedulingService {
       if (allowedWeekdays != null && !allowedWeekdays.contains(date.weekday)) {
         return false;
       }
-      return !_hasClash(clubDates, homeTeamId, awayTeamId, date, rest);
+      return !_hasClash(clubDates, homeTeamId, awayTeamId, date, rest) &&
+          !_hasStadiumClash(
+            stadiumDates ?? const <int, List<DateTime>>{},
+            stadiumId,
+            date,
+          );
     }
 
     for (int pass = 0; pass < 2; pass++) {
@@ -371,6 +428,7 @@ class FixtureSchedulingService {
       for (int offset = 0; offset <= 180; offset++) {
         final DateTime forward = preferred.add(Duration(days: offset));
         if (fits(forward, rest)) return forward;
+        if (forwardOnly) continue;
         if (offset == 0) continue;
         final DateTime backward = preferred.subtract(Duration(days: offset));
         if (fits(backward, rest)) return backward;
@@ -464,6 +522,17 @@ class FixtureSchedulingService {
         .map(FixtureMatch.fromMap)
         .toList();
     final List<FixtureViolation> violations = <FixtureViolation>[];
+    final List<Map<String, Object?>> seasonRows = await db.query(
+      t.seasons,
+      columns: <String>['start_year'],
+      where: 'season_id = ?',
+      whereArgs: <Object?>[seasonId],
+      limit: 1,
+    );
+    final int? seasonStartYear = seasonRows.isEmpty
+        ? null
+        : seasonRows.first['start_year'] as int?;
+    final Map<int, int> restDaysByCompetition = <int, int>{};
     final Set<int> tournamentIds = <int>{
       for (final FixtureMatch m in fixtures) m.tournamentId,
     };
@@ -480,9 +549,11 @@ class FixtureSchedulingService {
       );
       if (tourRows.isEmpty) continue;
       final Tournament tournament = Tournament.fromMap(tourRows.first);
-      final CompetitionConfig config = CompetitionConfig.forTournament(
+      final CompetitionConfig config = await resolveConfig(
         tournament,
+        seasonStartYear: seasonStartYear,
       );
+      restDaysByCompetition[tournamentId] = config.minRestDays;
       final List<int> clubs = <int>[
         for (final FixtureMatch m in tournamentFixtures) ...<int>[
           m.homeTeamId,
@@ -540,6 +611,47 @@ class FixtureSchedulingService {
             doubleRound: config.doubleRoundRobin,
           ).violations,
         );
+      } else if (config.format == CompetitionFormat.groupStage) {
+        final Map<int, List<FixtureMatch>> groups =
+            <int, List<FixtureMatch>>{};
+        for (final FixtureMatch fixture in tournamentFixtures) {
+          if (fixture.groupId == null) continue;
+          groups
+              .putIfAbsent(fixture.groupId!, () => <FixtureMatch>[])
+              .add(fixture);
+        }
+        for (final MapEntry<int, List<FixtureMatch>> group in groups.entries) {
+          final List<int> groupClubs = <int>{
+            for (final FixtureMatch fixture in group.value)
+              fixture.homeTeamId,
+            for (final FixtureMatch fixture in group.value)
+              fixture.awayTeamId,
+          }.toList();
+          violations.addAll(
+            FixtureValidator.validateLeague(
+              competitionId: tournamentId,
+              seasonId: seasonId,
+              fixtures: group.value,
+              clubIds: groupClubs,
+              doubleRound: config.groupDoubleRoundRobin,
+              codePrefix: 'group_${group.key}',
+            ).violations,
+          );
+        }
+        final List<FixtureMatch> knockoutFixtures = tournamentFixtures
+            .where((FixtureMatch fixture) => fixture.groupId == null)
+            .toList();
+        if (knockoutFixtures.isNotEmpty) {
+          violations.addAll(
+            FixtureValidator.validateKnockout(
+              competitionId: tournamentId,
+              seasonId: seasonId,
+              fixtures: knockoutFixtures,
+              expectedLegs: config.knockoutLegs,
+              finalSingleMatch: config.finalSingleMatch,
+            ).violations,
+          );
+        }
       } else {
         final List<FixtureMatch> knockoutFixtures = tournamentFixtures
             .where((FixtureMatch m) => m.groupId == null)
@@ -562,6 +674,7 @@ class FixtureSchedulingService {
       FixtureValidator.validateCalendar(
         fixtures: fixtures,
         minRestDays: 2,
+        minRestDaysByCompetition: restDaysByCompetition,
       ).violations,
     );
     return FixtureValidationReport(violations);
@@ -577,9 +690,11 @@ class FixtureSchedulingService {
       t.matches,
       columns: <String>['match_id', 'home_team_id', 'away_team_id', 'date'],
       where: seasonId == 0
-          ? 'date IS NOT NULL'
-          : 'season_id = ? AND date IS NOT NULL',
-      whereArgs: seasonId == 0 ? null : <Object?>[seasonId],
+          ? 'date IS NOT NULL AND status != ?'
+          : 'season_id = ? AND date IS NOT NULL AND status != ?',
+      whereArgs: seasonId == 0
+          ? <Object?>[t.matchCancelled]
+          : <Object?>[seasonId, t.matchCancelled],
     );
     final Map<int, List<DateTime>> result = <int, List<DateTime>>{};
     for (final Map<String, Object?> row in rows) {
@@ -590,6 +705,32 @@ class FixtureSchedulingService {
       if (date == null) continue;
       _addClubDate(result, row['home_team_id'] as int, date);
       _addClubDate(result, row['away_team_id'] as int, date);
+    }
+    return result;
+  }
+
+  Future<Map<int, List<DateTime>>> _stadiumDates(
+    int seasonId, {
+    int? excludingMatchId,
+  }) async {
+    final List<Map<String, Object?>> rows = await db.query(
+      t.matches,
+      columns: <String>['match_id', 'stadium_id', 'date'],
+      where: seasonId == 0
+          ? 'date IS NOT NULL AND status != ?'
+          : 'season_id = ? AND date IS NOT NULL AND status != ?',
+      whereArgs: seasonId == 0
+          ? <Object?>[t.matchCancelled]
+          : <Object?>[seasonId, t.matchCancelled],
+    );
+    final Map<int, List<DateTime>> result = <int, List<DateTime>>{};
+    for (final Map<String, Object?> row in rows) {
+      if (excludingMatchId != null && row['match_id'] == excludingMatchId) {
+        continue;
+      }
+      final DateTime? date = DateTime.tryParse('${row['date']}');
+      if (date == null) continue;
+      _addStadiumDate(result, row['stadium_id'] as int? ?? 0, date);
     }
     return result;
   }
@@ -609,6 +750,21 @@ class FixtureSchedulingService {
     return DateTime(year, 7, 1);
   }
 
+  Future<DateTime> _seasonEnd(int seasonId, DateTime seasonStart) async {
+    if (seasonId == 0) return seasonStart.add(const Duration(days: 330));
+    final List<Map<String, Object?>> rows = await db.query(
+      t.seasons,
+      columns: <String>['end_year'],
+      where: 'season_id = ?',
+      whereArgs: <Object?>[seasonId],
+      limit: 1,
+    );
+    if (rows.isEmpty || rows.first['end_year'] == null) {
+      return seasonStart.add(const Duration(days: 330));
+    }
+    return DateTime(rows.first['end_year'] as int, 6, 30);
+  }
+
   void _addClubDate(
     Map<int, List<DateTime>> clubDates,
     int clubId,
@@ -619,6 +775,30 @@ class FixtureSchedulingService {
         : DateTime.tryParse('${date ?? ''}');
     if (parsed == null) return;
     clubDates.putIfAbsent(clubId, () => <DateTime>[]).add(parsed);
+  }
+
+  void _addStadiumDate(
+    Map<int, List<DateTime>> stadiumDates,
+    int stadiumId,
+    Object? date,
+  ) {
+    if (stadiumId <= 0) return;
+    _addClubDate(stadiumDates, stadiumId, date);
+  }
+
+  bool _hasStadiumClash(
+    Map<int, List<DateTime>> stadiumDates,
+    int stadiumId,
+    DateTime date,
+  ) {
+    if (stadiumId <= 0) return false;
+    return stadiumDates[stadiumId]?.any(
+          (DateTime existing) =>
+              existing.year == date.year &&
+              existing.month == date.month &&
+              existing.day == date.day,
+        ) ??
+        false;
   }
 
   bool _hasClash(
@@ -652,10 +832,13 @@ class FixtureSchedulingService {
     DateTime seasonStart,
     DateTime seasonEnd,
     List<DateTime> unavailableDates,
+    int stadiumId,
+    Map<int, List<DateTime>> stadiumDates,
   ) {
     if (date.isBefore(seasonStart) || date.isAfter(seasonEnd)) return false;
     if (_isUnavailable(date, unavailableDates)) return false;
-    return !_hasClash(clubDates, home, away, date, minRestDays);
+    return !_hasClash(clubDates, home, away, date, minRestDays) &&
+        !_hasStadiumClash(stadiumDates, stadiumId, date);
   }
 
   bool _isUnavailable(DateTime date, List<DateTime> unavailableDates) {
