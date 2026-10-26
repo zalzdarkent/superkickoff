@@ -45,7 +45,9 @@ class CrestAvatar extends StatelessWidget {
     final String? b64 = effectiveLogoBase64;
     if (b64 != null && b64.isNotEmpty) {
       try {
-        final Uint8List bytes = base64Decode(b64);
+        final String cleanB64 =
+            b64.contains(',') ? b64.substring(b64.indexOf(',') + 1) : b64;
+        final Uint8List bytes = base64Decode(cleanB64.trim());
         return SizedBox(
           width: radius * 2,
           height: radius * 2,
@@ -129,7 +131,9 @@ class TournamentAvatar extends StatelessWidget {
     final String? b64 = effectiveLogoBase64;
     if (b64 != null && b64.isNotEmpty) {
       try {
-        final Uint8List bytes = base64Decode(b64);
+        final String cleanB64 =
+            b64.contains(',') ? b64.substring(b64.indexOf(',') + 1) : b64;
+        final Uint8List bytes = base64Decode(cleanB64.trim());
         return SizedBox(
           width: radius * 2,
           height: radius * 2,

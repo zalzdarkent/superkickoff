@@ -28,9 +28,11 @@ class LeagueLogoService {
         final int? tournamentId = int.tryParse(entry.key);
         final String? b64 = entry.value as String?;
         if (tournamentId != null && b64 != null && b64.isNotEmpty) {
+          final String clean =
+              b64.contains(',') ? b64.substring(b64.indexOf(',') + 1) : b64;
           batch.rawUpdate(
-            'UPDATE ${t.tournaments} SET logo_base64 = ? WHERE tournament_id = ? AND (logo_base64 IS NULL OR LENGTH(logo_base64) = 0)',
-            <Object?>[b64, tournamentId],
+            'UPDATE ${t.tournaments} SET logo_base64 = ? WHERE tournament_id = ? AND (logo_base64 IS NULL OR LENGTH(logo_base64) = 0 OR logo_base64 LIKE "data:image%")',
+            <Object?>[clean, tournamentId],
           );
           count++;
         }
