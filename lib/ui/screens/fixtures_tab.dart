@@ -103,7 +103,11 @@ class _FixturesTabState extends State<FixturesTab> {
     final Map<int, List<FixtureMatch>> knockoutMatches =
         <int, List<FixtureMatch>>{};
     for (final FixtureMatch match in list) {
-      if (match.tournamentId == leagueId || match.groupId != null) continue;
+      if (match.tournamentId == leagueId ||
+          match.groupId != null ||
+          match.phase == 0) {
+        continue;
+      }
       knockoutMatches
           .putIfAbsent(match.tournamentId, () => <FixtureMatch>[])
           .add(match);
@@ -123,6 +127,7 @@ class _FixturesTabState extends State<FixturesTab> {
     bool isCupTie(FixtureMatch m) =>
         m.tournamentId != leagueId &&
         m.groupId == null &&
+        m.phase > 0 &&
         m.tournamentId != 9999;
     final List<KnockoutTie> allTies = <KnockoutTie>[
       for (final FixtureMatch m in list)
@@ -137,6 +142,8 @@ class _FixturesTabState extends State<FixturesTab> {
       final String stage = m.groupId != null
           ? 'Group ${String.fromCharCode(64 + m.groupId!)} · '
                 'Matchday ${m.round}'
+          : m.phase == 0
+          ? 'League Phase · Matchday ${m.round}'
           : knockoutRoundName(m.phase, totalRounds[m.tournamentId] ?? 1);
       final String key = m.tournamentId == 9999
           ? 'Pre-Season Friendly · Match ${m.round}'

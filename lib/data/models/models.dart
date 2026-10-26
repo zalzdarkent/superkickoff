@@ -283,6 +283,12 @@ class FixtureMatch {
     this.penaltyAwayGoals,
     this.leg = 1,
     this.seasonId = 0,
+    this.kickoffTime,
+    this.originalDate,
+    this.rescheduleReason,
+    this.neutralVenue = false,
+    this.extraTime = false,
+    this.awayGoalsRule = false,
   });
 
   final int matchId;
@@ -309,6 +315,24 @@ class FixtureMatch {
   /// Leg of the tie (1 or 2). Defaults to 1 for single-leg matches.
   final int leg;
 
+  /// Optional kickoff time (HH:mm) separate from the match date.
+  final String? kickoffTime;
+
+  /// Date the fixture originally had before a postponement/reschedule.
+  final String? originalDate;
+
+  /// Why the fixture was moved.
+  final String? rescheduleReason;
+
+  /// Final or competition-specific fixture staged away from the home ground.
+  final bool neutralVenue;
+
+  /// Competition allows extra time when a tie is level.
+  final bool extraTime;
+
+  /// Away-goals rule is explicitly enabled for this competition.
+  final bool awayGoalsRule;
+
   bool get isPlayed => status == DbMatch.matchFinished;
   bool get isScheduled => status == DbMatch.matchScheduled;
 
@@ -330,6 +354,12 @@ class FixtureMatch {
     homeGoals: m['home_goals'] as int?,
     awayGoals: m['away_goals'] as int?,
     winnerId: m['winner_id'] as int?,
+    kickoffTime: m['kickoff_time'] as String?,
+    originalDate: m['original_date'] as String?,
+    rescheduleReason: m['reschedule_reason'] as String?,
+    neutralVenue: ((m['neutral_venue'] as int?) ?? 0) == 1,
+    extraTime: ((m['extra_time'] as int?) ?? 0) == 1,
+    awayGoalsRule: ((m['away_goals_rule'] as int?) ?? 0) == 1,
   );
 }
 

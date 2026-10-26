@@ -253,6 +253,136 @@ class AppDatabase {
         pre_season_date TEXT
       )
     ''');
+    // ---------------------------------------------------- fixture scheduling
+    // Persisted competition rules. CompetitionConfig derives safe defaults from
+    // the bundled tournament data; this table stores explicit/season-specific
+    // rules without touching the immutable reference database.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS competition_configs (
+        tournament_id INTEGER NOT NULL,
+        season_start_year INTEGER NOT NULL DEFAULT 0,
+        name TEXT NOT NULL DEFAULT '',
+        type TEXT NOT NULL DEFAULT 'league',
+        format TEXT NOT NULL DEFAULT 'doubleRoundRobin',
+        participant_count INTEGER,
+        double_round_robin INTEGER NOT NULL DEFAULT 1,
+        matchday_interval_days INTEGER NOT NULL DEFAULT 7,
+        min_rest_days INTEGER NOT NULL DEFAULT 2,
+        group_size INTEGER NOT NULL DEFAULT 4,
+        group_count INTEGER NOT NULL DEFAULT 0,
+        group_double_round_robin INTEGER NOT NULL DEFAULT 1,
+        league_phase_opponents INTEGER NOT NULL DEFAULT 0,
+        league_phase_home_matches INTEGER NOT NULL DEFAULT 0,
+        league_phase_away_matches INTEGER NOT NULL DEFAULT 0,
+        league_phase_qualifiers INTEGER NOT NULL DEFAULT 0,
+        knockout_legs INTEGER NOT NULL DEFAULT 1,
+        final_single_match INTEGER NOT NULL DEFAULT 1,
+        neutral_final INTEGER NOT NULL DEFAULT 0,
+        extra_time INTEGER NOT NULL DEFAULT 1,
+        penalties INTEGER NOT NULL DEFAULT 1,
+        away_goals INTEGER NOT NULL DEFAULT 0,
+        use_byes INTEGER NOT NULL DEFAULT 1,
+        trim_to_power_of_two INTEGER NOT NULL DEFAULT 0,
+        field_size INTEGER,
+        promotion_slots INTEGER NOT NULL DEFAULT 0,
+        relegation_slots INTEGER NOT NULL DEFAULT 0,
+        unavailable_dates TEXT NOT NULL DEFAULT '[]',
+        PRIMARY KEY (tournament_id, season_start_year)
+      )
+    ''');
+    final List<Map<String, Object?>> configColumns = await db.rawQuery(
+      'PRAGMA table_info(competition_configs)',
+    );
+    if (!configColumns.any(
+      (Map<String, Object?> column) => column['name'] == 'unavailable_dates',
+    )) {
+      await db.execute(
+        "ALTER TABLE competition_configs ADD COLUMN "
+        "unavailable_dates TEXT NOT NULL DEFAULT '[]'",
+      );
+    }
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS fixture_reschedules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_id INTEGER NOT NULL,
+        old_date TEXT,
+        new_date TEXT NOT NULL,
+        reason TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS knockout_byes (
+        season_id INTEGER NOT NULL,
+        tournament_id INTEGER NOT NULL,
+        phase INTEGER NOT NULL,
+        team_id INTEGER NOT NULL,
+        PRIMARY KEY (season_id, tournament_id, phase, team_id)
+      )
+    ''');
+    // New match metadata. Existing saves keep every row and receive NULL/0
+    // defaults for the new columns.
+    final List<Map<String, Object?>> matchColumns = await db.rawQuery(
+      'PRAGMA table_info(${t.matches})',
+    );
+    bool hasMatchColumn(String name) =>
+        matchColumns.any((Map<String, Object?> c) => c['name'] == name);
+    if (!hasMatchColumn('kickoff_time')) {
+      await db.execute('ALTER TABLE ${t.matches} ADD COLUMN kickoff_time TEXT');
+    }
+    if (!hasMatchColumn('original_date')) {
+      await db.execute(
+        'ALTER TABLE ${t.matches} ADD COLUMN original_date TEXT',
+      );
+    }
+    if (!hasMatchColumn('reschedule_reason')) {
+      await db.execute(
+        'ALTER TABLE ${t.matches} ADD COLUMN reschedule_reason TEXT',
+      );
+    }
+    if (!hasMatchColumn('neutral_venue')) {
+      await db.execute(
+        'ALTER TABLE ${t.matches} ADD COLUMN neutral_venue INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    if (!hasMatchColumn('extra_time')) {
+      await db.execute(
+        'ALTER TABLE ${t.matches} ADD COLUMN extra_time INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    if (!hasMatchColumn('away_goals_rule')) {
+      await db.execute(
+        'ALTER TABLE ${t.matches} ADD COLUMN away_goals_rule INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_matches_season_date '
+      'ON ${t.matches}(season_id, date)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_matches_tournament_phase '
+      'ON ${t.matches}(tournament_id, phase, round)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_matches_status_date '
+      'ON ${t.matches}(status, date)',
+    );
+    // A fixture may only exist once per competition/season/round/leg. The
+    // expression index also separates group fixtures. If a legacy save already
+    // contains duplicates the unique index is skipped, and the validator will
+    // report them instead of deleting data.
+    try {
+      await db.execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS ux_matches_fixture '
+        'ON ${t.matches}(season_id, tournament_id, phase, leg, round, '
+        'home_team_id, away_team_id, IFNULL(group_id, -1))',
+      );
+    } catch (_) {
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_matches_fixture_lookup '
+        'ON ${t.matches}(season_id, tournament_id, phase, leg, round)',
+      );
+    }
     try {
       await db.execute('ALTER TABLE ${t.playerAwards} ADD COLUMN rating REAL');
     } catch (_) {}

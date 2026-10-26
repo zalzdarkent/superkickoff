@@ -4,18 +4,26 @@ import 'package:sqflite/sqflite.dart';
 
 import '../data/db/schema.dart' as t;
 import '../data/models/models.dart';
+import 'competition_config.dart';
+import 'fixture_calendar.dart';
+import 'fixture_scheduler.dart';
+
+export 'fixture_scheduler.dart' show FixtureSlot;
 
 /// Builds a new career season:
 ///  * season row + tournament links
 ///  * season_teams registration for every participating club
-///  * double round-robin league fixtures with weekly dates
-///  * first national-cup knockout round (mid-week dates, later rounds are
-///    generated lazily by [scheduleCupRound] once the previous phase ends)
+///  * mathematically correct league fixtures with balanced home/away rhythm
+///  * competition-specific group stages, league phases and knockout brackets
+///  * a single global calendar that resolves clashes and rest periods
 class SeasonGenerator {
-  SeasonGenerator(this.db, {Random? random}) : _rng = random ?? Random();
+  SeasonGenerator(this.db, {Random? random})
+    : _rng = random ?? Random(),
+      _calendar = FixtureSchedulingService(db);
 
   final Database db;
   final Random _rng;
+  final FixtureSchedulingService _calendar;
 
   DateTime _startDate = DateTime(2025, 8, 9);
 
@@ -31,7 +39,9 @@ class SeasonGenerator {
 
     final List<Tournament> allDomesticLeagues = <Tournament>[
       league,
-      ...otherLeagues.where((Tournament l) => l.tournamentId != league.tournamentId),
+      ...otherLeagues.where(
+        (Tournament l) => l.tournamentId != league.tournamentId,
+      ),
     ];
 
     final Season season = await _insertSeason(startYear);
@@ -41,6 +51,7 @@ class SeasonGenerator {
         'tournament_id': tour.tournamentId,
         'status': t.seasonTournamentActive,
       });
+      await _persistConfig(tour, startYear);
     }
     if (cup != null) {
       await db.insert(t.seasonTournaments, <String, Object?>{
@@ -48,6 +59,7 @@ class SeasonGenerator {
         'tournament_id': cup.tournamentId,
         'status': t.seasonTournamentActive,
       });
+      await _persistConfig(cup, startYear);
     }
     for (final Tournament tour in internationals) {
       await db.insert(t.seasonTournaments, <String, Object?>{
@@ -55,6 +67,7 @@ class SeasonGenerator {
         'tournament_id': tour.tournamentId,
         'status': t.seasonTournamentActive,
       });
+      await _persistConfig(tour, startYear);
     }
 
     // ------------------------------------------------ participants
@@ -95,7 +108,17 @@ class SeasonGenerator {
       final Map<int, Team> byId = <int, Team>{
         for (final Team tm in invited) tm.teamId: tm,
       };
-      final List<int> entrants = seedByIdes(invited);
+      final CompetitionConfig tourConfig = await _configForTournament(
+        tour.tournamentId,
+        seasonStartYear: startYear,
+      );
+      // A league phase uses every qualified club; trimming to a power of two
+      // would silently drop clubs from the table. Knockout-only competitions
+      // still pick a bracket-sized field.
+      final List<int> entrants =
+          tourConfig.format == CompetitionFormat.leaguePhase
+          ? _seedIdsByPower(invited)
+          : seedByIdes(invited);
       internationalEntrants[tour.tournamentId] = entrants;
       if (!isSuperOrGlobal) {
         continentalInvites.addAll(entrants);
@@ -127,14 +150,20 @@ class SeasonGenerator {
         divTeams = divTeams.take(maxDivTeams).toList();
       }
       final int teamCount = divTeams.length;
-      final int r = teamCount >= 2 ? (teamCount - 1) * 2 : 0;
+      final CompetitionConfig config = await _configForTournament(
+        lg.tournamentId,
+        seasonStartYear: startYear,
+      );
+      final bool doubleRound = config.doubleRoundRobin;
+      final int roundsPerLeg = teamCount.isEven ? teamCount - 1 : teamCount;
+      final int r = teamCount >= 2 ? roundsPerLeg * (doubleRound ? 2 : 1) : 0;
       if (lg.tournamentId == league.tournamentId) {
         userLeagueRounds = r;
       }
       if (teamCount >= 2) {
-        final List<FixtureSlot> slots = doubleRoundRobin(
+        final List<FixtureSlot> slots = RoundRobinScheduler.schedule(
           divTeams.map((Team tm) => tm.teamId).toList(),
-          _rng,
+          doubleRound: doubleRound,
         );
         for (final FixtureSlot slot in slots) {
           matchRows.add(
@@ -146,7 +175,13 @@ class SeasonGenerator {
               round: slot.round,
               phase: 1,
               leg: slot.leg,
-              date: _iso(_leagueDate(slot.round)),
+              date: _iso(
+                _startDate.add(
+                  Duration(
+                    days: config.matchdayIntervalDays * (slot.round - 1),
+                  ),
+                ),
+              ),
             ),
           );
         }
@@ -156,20 +191,32 @@ class SeasonGenerator {
     // ------------------------------------------------ cup first round
     int cupPhases = 0;
     if (cup != null && cupTeams.length >= 4) {
-      final List<int> surviving = seedByIdes(cupTeams);
-      cupPhases = knockoutRounds(surviving.length);
+      final CompetitionConfig cupConfig = await _configForTournament(
+        cup.tournamentId,
+        seasonStartYear: startYear,
+      );
+      final List<int> seeded = _seedIdsByPower(cupTeams);
+      final KnockoutPlan plan = KnockoutScheduler.planOpeningRound(
+        seeded,
+        useByes: cupConfig.useByes,
+        trimToPowerOfTwo: cupConfig.trimToPowerOfTwo,
+        fieldSize: cupConfig.fieldSize,
+      );
+      cupPhases = plan.roundsToFinal;
       final DateTime cupDate = _cupDate(1, userLeagueRounds);
       await scheduleCupRound(
         season.seasonId,
         cup.tournamentId,
-        surviving,
+        seeded,
         phase: 1,
         date: cupDate,
         allTeams: allTeams,
+        pairs: plan.pairs,
+        byes: plan.byes,
       );
     }
 
-    // ------------------------------------ continental group stage / round 1
+    // ----------------------- continental league phase / group stage / round 1
     int internationalIndex = 0;
     int superCupIndex = 0;
     for (final MapEntry<int, List<int>> entry
@@ -178,24 +225,14 @@ class SeasonGenerator {
       final DateTime start = isSuperCup
           ? _startDate.subtract(Duration(days: 4 + (superCupIndex++ * 3)))
           : _internationalDate(internationalIndex++);
-      if (entry.value.length >= 8) {
-        await scheduleGroupStage(
-          season.seasonId,
-          entry.key,
-          entry.value,
-          start: start,
-          allTeams: allTeams,
-        );
-      } else {
-        await scheduleCupRound(
-          season.seasonId,
-          entry.key,
-          entry.value,
-          phase: 1,
-          date: start,
-          allTeams: allTeams,
-        );
-      }
+      await _scheduleContinentalOpening(
+        seasonId: season.seasonId,
+        tournamentId: entry.key,
+        entrants: entry.value,
+        start: start,
+        allTeams: allTeams,
+        seasonStartYear: startYear,
+      );
     }
 
     await _insertMatches(matchRows);
@@ -259,7 +296,14 @@ class SeasonGenerator {
       final Map<int, Team> byId = <int, Team>{
         for (final Team tm in invited) tm.teamId: tm,
       };
-      final List<int> entrants = seedByIdes(invited);
+      final CompetitionConfig tourConfig = await _configForTournament(
+        tour.tournamentId,
+        seasonStartYear: season.startYear,
+      );
+      final List<int> entrants =
+          tourConfig.format == CompetitionFormat.leaguePhase
+          ? _seedIdsByPower(invited)
+          : seedByIdes(invited);
       if (!isSuperOrGlobal) {
         continentalInvites.addAll(entrants);
       }
@@ -306,24 +350,14 @@ class SeasonGenerator {
       final DateTime date = isSuperCup
           ? _startDate.subtract(Duration(days: 4 + (superCupIndex++ * 3)))
           : _nextThursday(base.add(Duration(days: 7 * (added * 6 + 1))));
-      if (entrants.length >= 8) {
-        await scheduleGroupStage(
-          season.seasonId,
-          tour.tournamentId,
-          entrants,
-          start: date,
-          allTeams: teamCache,
-        );
-      } else {
-        await scheduleCupRound(
-          season.seasonId,
-          tour.tournamentId,
-          entrants,
-          phase: 1,
-          date: date,
-          allTeams: teamCache,
-        );
-      }
+      await _scheduleContinentalOpening(
+        seasonId: season.seasonId,
+        tournamentId: tour.tournamentId,
+        entrants: entrants,
+        start: date,
+        allTeams: teamCache,
+        seasonStartYear: season.startYear,
+      );
       added++;
     }
     await resolveFixtureClashes(season.seasonId);
@@ -392,9 +426,14 @@ class SeasonGenerator {
         'status': t.seasonTournamentActive,
       });
 
-      final List<FixtureSlot> slots = doubleRoundRobin(
+      await _persistConfig(tour, season.startYear);
+      final CompetitionConfig config = await _configForTournament(
+        tour.tournamentId,
+        seasonStartYear: season.startYear,
+      );
+      final List<FixtureSlot> slots = RoundRobinScheduler.schedule(
         divTeams.map((Team tm) => tm.teamId).toList(),
-        _rng,
+        doubleRound: config.doubleRoundRobin,
       );
       for (final FixtureSlot slot in slots) {
         matchRows.add(
@@ -406,7 +445,11 @@ class SeasonGenerator {
             round: slot.round,
             phase: 1,
             leg: slot.leg,
-            date: _iso(_leagueDate(slot.round)),
+            date: _iso(
+              _startDate.add(
+                Duration(days: config.matchdayIntervalDays * (slot.round - 1)),
+              ),
+            ),
           ),
         );
       }
@@ -434,14 +477,19 @@ class SeasonGenerator {
             final Team? away = teamCache[awayId];
             if (home != null && away != null) {
               final double homeAdv = 1.1;
-              final double homeRoll = _rng.nextDouble() * (home.power * homeAdv);
+              final double homeRoll =
+                  _rng.nextDouble() * (home.power * homeAdv);
               final double awayRoll = _rng.nextDouble() * away.power;
               final int homeGoals = homeRoll > awayRoll + 15
                   ? 2 + _rng.nextInt(3)
-                  : (homeRoll > awayRoll ? 1 + _rng.nextInt(2) : _rng.nextInt(2));
+                  : (homeRoll > awayRoll
+                        ? 1 + _rng.nextInt(2)
+                        : _rng.nextInt(2));
               final int awayGoals = awayRoll > homeRoll + 15
                   ? 2 + _rng.nextInt(3)
-                  : (awayRoll > homeRoll ? 1 + _rng.nextInt(2) : _rng.nextInt(2));
+                  : (awayRoll > homeRoll
+                        ? 1 + _rng.nextInt(2)
+                        : _rng.nextInt(2));
               final int? winnerId = homeGoals > awayGoals
                   ? homeId
                   : (awayGoals > homeGoals ? awayId : null);
@@ -515,21 +563,28 @@ class SeasonGenerator {
   }
 
   /// Builds a group stage: clubs are spread snake-style over groups of four,
-  /// then play a double round robin. The top two of every group advance to
-  /// the knockout rounds, which [generateCareer] leaves for later.
+  /// then play a single or double round robin according to the competition
+  /// configuration. The top two of every group advance to the knockout rounds,
+  /// which [generateCareer] leaves for later.
   Future<int> scheduleGroupStage(
     int seasonId,
     int tournamentId,
     List<int> entrants, {
     required DateTime start,
     required Map<int, Team> allTeams,
+    CompetitionConfig? config,
   }) async {
-    final List<int> sorted = entrants.toSet().toList()
-      ..sort(
-        (int a, int b) =>
-            (allTeams[b]?.power ?? 0).compareTo(allTeams[a]?.power ?? 0),
-      );
-    final int groupCount = sorted.length ~/ 4;
+    final CompetitionConfig cfg =
+        config ?? await configForSeason(tournamentId, seasonId);
+    final int groupSize = max(2, cfg.groupSize);
+    final List<int> sorted = _seedIdsByPower(<Team>[
+      for (final int id in entrants)
+        if (allTeams[id] != null) allTeams[id]!,
+    ]);
+    final int naturalGroups = sorted.length ~/ groupSize;
+    final int groupCount = cfg.groupCount > 0
+        ? min(cfg.groupCount, naturalGroups)
+        : naturalGroups;
     if (groupCount < 1) return 0;
     final List<List<int>> groups = List<List<int>>.generate(
       groupCount,
@@ -544,7 +599,10 @@ class SeasonGenerator {
 
     final List<Map<String, Object?>> rows = <Map<String, Object?>>[];
     for (int g = 0; g < groups.length; g++) {
-      final List<FixtureSlot> slots = doubleRoundRobin(groups[g], _rng);
+      final List<FixtureSlot> slots = RoundRobinScheduler.schedule(
+        groups[g],
+        doubleRound: cfg.groupDoubleRoundRobin,
+      );
       for (final FixtureSlot slot in slots) {
         final Team? home = allTeams[slot.home];
         final Team? away = allTeams[slot.away];
@@ -558,7 +616,11 @@ class SeasonGenerator {
             round: slot.round,
             phase: 0,
             leg: slot.leg,
-            date: _iso(start.add(Duration(days: 7 * (slot.round - 1)))),
+            date: _iso(
+              start.add(
+                Duration(days: cfg.matchdayIntervalDays * (slot.round - 1)),
+              ),
+            ),
             groupId: g + 1,
           ),
         );
@@ -568,9 +630,179 @@ class SeasonGenerator {
     return groups.length;
   }
 
+  /// Builds a UEFA-style league phase: every club plays a fixed number of
+  /// distinct opponents with an exact home/away split. Matches use `phase = 0`
+  /// so they are treated as a table stage, never as a knockout tie.
+  Future<int> scheduleLeaguePhase(
+    int seasonId,
+    int tournamentId,
+    List<int> entrants, {
+    required DateTime start,
+    required Map<int, Team> allTeams,
+    CompetitionConfig? config,
+  }) async {
+    final CompetitionConfig cfg =
+        config ?? await configForSeason(tournamentId, seasonId);
+    final List<int> seeded = _seedIdsByPower(<Team>[
+      for (final int id in entrants)
+        if (allTeams[id] != null) allTeams[id]!,
+    ]);
+    if (seeded.length < 2) return 0;
+    final Map<int, int> associationOf = <int, int>{
+      for (final int id in seeded) id: allTeams[id]?.countryId ?? 0,
+    };
+    final LeaguePhaseSchedule plan = LeaguePhaseScheduler.generate(
+      seeded,
+      opponents: cfg.leaguePhaseOpponents,
+      homeMatches: cfg.leaguePhaseHomeMatches,
+      associationOf: associationOf,
+    );
+    final List<Map<String, Object?>> rows = <Map<String, Object?>>[];
+    for (final FixtureSlot slot in plan.fixtures) {
+      final Team? home = allTeams[slot.home];
+      final Team? away = allTeams[slot.away];
+      if (home == null || away == null || slot.home == slot.away) continue;
+      rows.add(
+        _matchRow(
+          seasonId,
+          tournamentId,
+          home,
+          away,
+          round: slot.round,
+          phase: 0,
+          leg: 1,
+          date: _iso(
+            start.add(
+              Duration(days: cfg.matchdayIntervalDays * (slot.round - 1)),
+            ),
+          ),
+        ),
+      );
+    }
+    await _insertMatches(rows);
+    return rows.length;
+  }
+
+  /// Chooses the correct opening structure for a continental or special
+  /// competition from its [CompetitionConfig].
+  Future<void> _scheduleContinentalOpening({
+    required int seasonId,
+    required int tournamentId,
+    required List<int> entrants,
+    required DateTime start,
+    required Map<int, Team> allTeams,
+    required int seasonStartYear,
+  }) async {
+    final CompetitionConfig config = await configForSeason(
+      tournamentId,
+      seasonId,
+      seasonStartYear: seasonStartYear,
+    );
+    if (config.format == CompetitionFormat.leaguePhase) {
+      await scheduleLeaguePhase(
+        seasonId,
+        tournamentId,
+        entrants,
+        start: start,
+        allTeams: allTeams,
+        config: config,
+      );
+      return;
+    }
+    if (config.format == CompetitionFormat.groupStage &&
+        entrants.length >= config.groupSize * 2) {
+      await scheduleGroupStage(
+        seasonId,
+        tournamentId,
+        entrants,
+        start: start,
+        allTeams: allTeams,
+        config: config,
+      );
+      return;
+    }
+    final List<int> seeded = _seedIdsByPower(<Team>[
+      for (final int id in entrants)
+        if (allTeams[id] != null) allTeams[id]!,
+    ]);
+    final KnockoutPlan plan = KnockoutScheduler.planOpeningRound(
+      seeded,
+      useByes: config.useByes,
+      trimToPowerOfTwo: config.trimToPowerOfTwo,
+      fieldSize: config.fieldSize,
+    );
+    await scheduleCupRound(
+      seasonId,
+      tournamentId,
+      seeded,
+      phase: 1,
+      date: start,
+      allTeams: allTeams,
+      pairs: plan.pairs,
+      byes: plan.byes,
+    );
+  }
+
+  /// Resolves a tournament row to its central competition configuration.
+  Future<CompetitionConfig> _configForTournament(
+    int tournamentId, {
+    int? seasonStartYear,
+  }) async {
+    final List<Map<String, Object?>> rows = await db.query(
+      t.tournaments,
+      where: 'tournament_id = ?',
+      whereArgs: <Object?>[tournamentId],
+      limit: 1,
+    );
+    if (rows.isEmpty) {
+      return CompetitionConfig(
+        tournamentId: tournamentId,
+        name: 'Tournament $tournamentId',
+        type: CompetitionType.international,
+        format: CompetitionFormat.knockout,
+        seasonStartYear: seasonStartYear,
+      );
+    }
+    return _calendar.resolveConfig(
+      Tournament.fromMap(rows.first),
+      seasonStartYear: seasonStartYear,
+    );
+  }
+
+  Future<CompetitionConfig> configForSeason(
+    int tournamentId,
+    int seasonId, {
+    int? seasonStartYear,
+  }) async {
+    int? startYear = seasonStartYear;
+    if (startYear == null) {
+      final List<Map<String, Object?>> rows = await db.query(
+        t.seasons,
+        columns: <String>['start_year'],
+        where: 'season_id = ?',
+        whereArgs: <Object?>[seasonId],
+        limit: 1,
+      );
+      startYear = rows.isEmpty ? null : rows.first['start_year'] as int?;
+    }
+    return _configForTournament(tournamentId, seasonStartYear: startYear);
+  }
+
+  Future<void> _persistConfig(Tournament tour, int startYear) async {
+    final CompetitionConfig? existing = await _calendar.loadConfig(
+      tour.tournamentId,
+      seasonStartYear: startYear,
+    );
+    if (existing != null) return;
+    await _calendar.persistConfig(
+      CompetitionConfig.forTournament(tour, seasonStartYear: startYear),
+    );
+  }
+
   /// Schedules the NEXT knockout round once a cup phase fully finished.
   /// [survivors] are the winning team ids (byes included). When [pairs] is
   /// provided, explicit match pairings are scheduled instead of power-seeding.
+  /// [byes] are clubs that advance directly to the following phase.
   /// Returns the number of matches scheduled.
   Future<int> scheduleCupRound(
     int seasonId,
@@ -580,32 +812,39 @@ class SeasonGenerator {
     required DateTime date,
     required Map<int, Team> allTeams,
     List<(int, int)>? pairs,
+    List<int> byes = const <int>[],
   }) async {
-    final List<Map<String, Object?>> tourRows = await db.query(
-      t.tournaments,
-      columns: <String>['rounds'],
-      where: 'tournament_id = ?',
-      whereArgs: <Object?>[cupTournamentId],
-      limit: 1,
+    final CompetitionConfig config = await configForSeason(
+      cupTournamentId,
+      seasonId,
     );
-    final int roundsSetting = tourRows.isEmpty
-        ? 1
-        : ((tourRows.first['rounds'] as int?) ?? 1);
-    final int tieCount = pairs != null ? pairs.length : (survivors.length ~/ 2);
-    // Knockout rounds before the final are 2-legged if the tournament setting is rounds == 2.
-    final bool twoLegged = roundsSetting == 2 && tieCount > 1;
+    final List<int> seeded = _seedIdsByPower(<Team>[
+      for (final int id in survivors)
+        if (allTeams[id] != null) allTeams[id]!,
+    ]);
 
-    final List<(int, int)> matchPairs = pairs ?? <(int, int)>[];
-    if (pairs == null) {
-      final List<int> ids = List<int>.of(survivors)
-        ..sort(
-          (int a, int b) =>
-              (allTeams[b]?.power ?? 0).compareTo(allTeams[a]?.power ?? 0),
-        );
-      while (ids.length > 1) {
-        matchPairs.add((ids.removeAt(0), ids.removeLast()));
-      }
+    List<(int, int)> matchPairs;
+    List<int> advancingByes = List<int>.of(byes);
+    if (pairs != null) {
+      matchPairs = pairs;
+    } else {
+      final KnockoutPlan plan = KnockoutScheduler.pairNextRound(seeded);
+      matchPairs = plan.pairs;
+      advancingByes.addAll(plan.byes);
     }
+
+    final Set<int> paired = <int>{
+      for (final (int a, int b) in matchPairs) ...<int>[a, b],
+    };
+    advancingByes = <int>[
+      for (final int id in advancingByes.toSet())
+        if (!paired.contains(id)) id,
+    ];
+
+    final bool isFinal = matchPairs.length <= 1;
+    final int legs = (isFinal && config.finalSingleMatch)
+        ? 1
+        : config.knockoutLegs;
 
     final List<Map<String, Object?>> rows = <Map<String, Object?>>[];
     for (final (int a, int b) in matchPairs) {
@@ -613,6 +852,7 @@ class SeasonGenerator {
       final Team? homeTeam = allTeams[a];
       final Team? awayTeam = allTeams[b];
       if (homeTeam == null || awayTeam == null) continue;
+      final bool neutral = isFinal && config.neutralFinal;
       rows.add(
         _matchRow(
           seasonId,
@@ -623,10 +863,13 @@ class SeasonGenerator {
           phase: phase,
           leg: 1,
           date: _iso(date),
+          neutralVenue: neutral,
+          extraTime: config.extraTime,
+          awayGoalsRule: config.awayGoals,
         ),
       );
-      if (twoLegged) {
-        // Return leg (Leg 2) played ~7 days later with reversed venues.
+      if (legs == 2) {
+        // Return leg played ~7 days later with reversed venues.
         rows.add(
           _matchRow(
             seasonId,
@@ -637,12 +880,59 @@ class SeasonGenerator {
             phase: phase,
             leg: 2,
             date: _iso(date.add(const Duration(days: 7))),
+            neutralVenue: false,
+            extraTime: config.extraTime,
+            awayGoalsRule: config.awayGoals,
           ),
         );
       }
     }
+    await _recordByes(seasonId, cupTournamentId, phase, advancingByes);
     await _insertMatches(rows);
     return rows.length;
+  }
+
+  /// Clubs that received a bye in [phase] and therefore advance without
+  /// playing. Used by the knockout progression code.
+  Future<List<int>> byesForPhase(
+    int seasonId,
+    int tournamentId,
+    int phase,
+  ) async {
+    try {
+      final List<Map<String, Object?>> rows = await db.query(
+        'knockout_byes',
+        columns: <String>['team_id'],
+        where: 'season_id = ? AND tournament_id = ? AND phase = ?',
+        whereArgs: <Object?>[seasonId, tournamentId, phase],
+      );
+      return <int>[
+        for (final Map<String, Object?> row in rows) row['team_id'] as int,
+      ];
+    } catch (_) {
+      return <int>[];
+    }
+  }
+
+  Future<void> _recordByes(
+    int seasonId,
+    int tournamentId,
+    int phase,
+    List<int> byes,
+  ) async {
+    if (byes.isEmpty) return;
+    for (final int teamId in byes) {
+      try {
+        await db.insert('knockout_byes', <String, Object?>{
+          'season_id': seasonId,
+          'tournament_id': tournamentId,
+          'phase': phase,
+          'team_id': teamId,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      } catch (_) {
+        // Older saves may not have the byes table yet.
+      }
+    }
   }
 
   // ---------------------------------------------------------------- helpers
@@ -977,6 +1267,9 @@ class SeasonGenerator {
     required int leg,
     required String date,
     int? groupId,
+    bool neutralVenue = false,
+    bool extraTime = false,
+    bool awayGoalsRule = false,
   }) {
     return <String, Object?>{
       'tournament_id': tournamentId,
@@ -993,6 +1286,12 @@ class SeasonGenerator {
       'home_goals': null,
       'away_goals': null,
       'winner_id': null,
+      'kickoff_time': null,
+      'original_date': null,
+      'reschedule_reason': null,
+      'neutral_venue': neutralVenue ? 1 : 0,
+      'extra_time': extraTime ? 1 : 0,
+      'away_goals_rule': awayGoalsRule ? 1 : 0,
     };
   }
 
@@ -1003,9 +1302,6 @@ class SeasonGenerator {
       }
     });
   }
-
-  DateTime _leagueDate(int round) =>
-      _startDate.add(Duration(days: 7 * (round - 1)));
 
   /// Cup is on Wednesdays, interleaved: phase 1 mid-week before half-time.
   DateTime _cupDate(int phase, int leagueRounds) {
@@ -1026,16 +1322,26 @@ class SeasonGenerator {
   /// Seeds the cup by club power and trims the field to the largest power of
   /// two that fits, which keeps every knockout round evenly paired.
   List<int> seedByIdes(List<Team> teams) {
-    final Map<int, Team> unique = <int, Team>{
-      for (final Team tm in teams) tm.teamId: tm,
-    };
-    final List<Team> sorted = unique.values.toList()
-      ..sort((Team a, Team b) => b.power.compareTo(a.power));
+    final List<int> sorted = _seedIdsByPower(teams);
     int bracket = 1;
     while (bracket * 2 <= sorted.length) {
       bracket *= 2;
     }
-    return sorted.take(bracket).map((Team tm) => tm.teamId).toList();
+    return sorted.take(bracket).toList();
+  }
+
+  /// Unique club ids ordered by descending power (deterministic seeding).
+  List<int> _seedIdsByPower(List<Team> teams) {
+    final Map<int, Team> unique = <int, Team>{
+      for (final Team tm in teams) tm.teamId: tm,
+    };
+    final List<Team> sorted = unique.values.toList()
+      ..sort((Team a, Team b) {
+        final int byPower = b.power.compareTo(a.power);
+        if (byPower != 0) return byPower;
+        return a.teamId.compareTo(b.teamId);
+      });
+    return sorted.map((Team tm) => tm.teamId).toList();
   }
 
   /// How many knockout rounds until one winner remains: n -> ceil(n/2).
@@ -1119,81 +1425,12 @@ class SeasonGenerator {
     }
   }
 
-  /// Resolves any scheduling clash where a team has multiple matches on the
-  /// same date, shifting the later match to the nearest available mid-week date
-  /// (Tuesdays, Wednesdays, or Thursdays) where neither club has a fixture.
-  Future<int> resolveFixtureClashes(int seasonId) async {
-    final List<Map<String, Object?>> matches = await db.rawQuery(
-      '''
-      SELECT match_id, tournament_id, home_team_id, away_team_id, date
-      FROM matches
-      WHERE season_id = ? AND date IS NOT NULL AND status = ?
-      ORDER BY date ASC, match_id ASC
-    ''',
-      <Object?>[seasonId, t.matchScheduled],
-    );
-
-    final Map<int, Set<String>> teamDates = <int, Set<String>>{};
-    final List<Map<String, Object?>> played = await db.rawQuery(
-      '''
-      SELECT home_team_id, away_team_id, date FROM matches
-      WHERE season_id = ? AND date IS NOT NULL AND status = ?
-    ''',
-      <Object?>[seasonId, t.matchFinished],
-    );
-    for (final Map<String, Object?> r in played) {
-      final String d = r['date'] as String;
-      final int h = r['home_team_id'] as int;
-      final int a = r['away_team_id'] as int;
-      teamDates.putIfAbsent(h, () => <String>{}).add(d);
-      teamDates.putIfAbsent(a, () => <String>{}).add(d);
-    }
-
-    int moved = 0;
-    for (final Map<String, Object?> m in matches) {
-      final int matchId = m['match_id'] as int;
-      final int home = m['home_team_id'] as int;
-      final int away = m['away_team_id'] as int;
-      final String originalDate = m['date'] as String;
-
-      final bool homeClash = teamDates[home]?.contains(originalDate) ?? false;
-      final bool awayClash = teamDates[away]?.contains(originalDate) ?? false;
-
-      if (!homeClash && !awayClash) {
-        teamDates.putIfAbsent(home, () => <String>{}).add(originalDate);
-        teamDates.putIfAbsent(away, () => <String>{}).add(originalDate);
-        continue;
-      }
-
-      // Conflict found! Find the earliest mid-week date where neither team has a match.
-      DateTime candidate =
-          DateTime.tryParse(originalDate) ?? DateTime(2025, 8, 9);
-      while (true) {
-        candidate = candidate.add(const Duration(days: 1));
-        final int wd = candidate.weekday;
-        if (wd == DateTime.tuesday ||
-            wd == DateTime.wednesday ||
-            wd == DateTime.thursday) {
-          final String iso = _iso(candidate);
-          final bool hFree = !(teamDates[home]?.contains(iso) ?? false);
-          final bool aFree = !(teamDates[away]?.contains(iso) ?? false);
-          if (hFree && aFree) {
-            await db.update(
-              t.matches,
-              <String, Object?>{'date': iso},
-              where: 'match_id = ?',
-              whereArgs: <Object?>[matchId],
-            );
-            teamDates.putIfAbsent(home, () => <String>{}).add(iso);
-            teamDates.putIfAbsent(away, () => <String>{}).add(iso);
-            moved++;
-            break;
-          }
-        }
-      }
-    }
-    return moved;
-  }
+  /// Resolves scheduling clashes through the unified calendar service.
+  /// Completed fixtures are fixed; every other fixture is checked for
+  /// same-day conflicts and the configured rest period, then moved to the
+  /// nearest valid date with an audit trail.
+  Future<int> resolveFixtureClashes(int seasonId) =>
+      _calendar.resolveSeasonConflicts(seasonId);
 
   String _iso(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-'
@@ -1224,50 +1461,10 @@ class CareerPlan {
   final List<int> internationalTournamentIds;
 }
 
-/// One direction of a round-robin match: home/away pair + round + leg.
-class FixtureSlot {
-  FixtureSlot(this.round, this.leg, this.home, this.away);
-
-  final int round;
-  final int leg;
-  final int home;
-  final int away;
-}
-
-/// Classic circle-method double round robin (n-1 rounds, mirrored legs).
-/// Handles odd team counts with a bye placeholder (-1).
-List<FixtureSlot> doubleRoundRobin(List<int> teamIds, [Random? random]) {
-  final List<int> ids = List<int>.of(teamIds);
-  if (ids.length < 2) return <FixtureSlot>[];
-  ids.shuffle(random);
-  if (ids.length.isOdd) ids.add(-1);
-
-  final int half = ids.length - 1;
-  final List<FixtureSlot> legs = <FixtureSlot>[];
-
-  for (int round = 1; round <= half; round++) {
-    for (int i = 0; i < ids.length ~/ 2; i++) {
-      final int a = ids[i];
-      final int b = ids[ids.length - 1 - i];
-      if (a == -1 || b == -1) continue;
-      // Alternate fixture orientation so home/away split evenly.
-      final bool swap = (round + i) % 2 == 0;
-      final int home = swap ? b : a;
-      final int away = swap ? a : b;
-      legs.add(FixtureSlot(round, 1, home, away));
-    }
-    // Rotate all but the first.
-    final int last = ids.removeLast();
-    ids.insert(1, last);
-  }
-
-  // Mirrored second half.
-  final List<FixtureSlot> all = <FixtureSlot>[...legs];
-  for (final FixtureSlot slot in legs) {
-    all.add(FixtureSlot(slot.round + half, 2, slot.away, slot.home));
-  }
-  return all;
-}
+/// Backwards-compatible wrapper around [RoundRobinScheduler]. Kept because
+/// existing callers (and tests) import this helper from the season generator.
+List<FixtureSlot> doubleRoundRobin(List<int> teamIds, [Random? random]) =>
+    RoundRobinScheduler.schedule(teamIds, doubleRound: true, random: random);
 
 /// Feeder cups (priority order) and field size of a champions-only cup.
 class _ChampionsFeed {

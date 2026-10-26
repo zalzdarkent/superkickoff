@@ -1,0 +1,566 @@
+{
+  "android/app/build.gradle.kts": {
+    "mtime": 1792714869.126402,
+    "seen": 1792715294.805342,
+    "ast_hash": "6d1361c1e4da67c55237cd61976c7390",
+    "semantic_hash": "6d1361c1e4da67c55237cd61976c7390"
+  },
+  "android/app/src/main/kotlin/com/example/superkickoff/MainActivity.kt": {
+    "mtime": 1792714869.126485,
+    "seen": 1792715294.8053465,
+    "ast_hash": "a48786a1286e43a4d6be228957fabd06",
+    "semantic_hash": "a48786a1286e43a4d6be228957fabd06"
+  },
+  "android/build.gradle.kts": {
+    "mtime": 1792714869.1265244,
+    "seen": 1792715294.8053484,
+    "ast_hash": "f11f360aed44d4f6871b398346af14f0",
+    "semantic_hash": "f11f360aed44d4f6871b398346af14f0"
+  },
+  "android/settings.gradle.kts": {
+    "mtime": 1792714869.127265,
+    "seen": 1792715294.8053493,
+    "ast_hash": "67a2bc8728c5df57688a38831602605d",
+    "semantic_hash": "67a2bc8728c5df57688a38831602605d"
+  },
+  "ios/Runner/AppDelegate.swift": {
+    "mtime": 1792714869.1515546,
+    "seen": 1792715294.80535,
+    "ast_hash": "2bd8469f2a4b701ff582f6574e58b13c",
+    "semantic_hash": "2bd8469f2a4b701ff582f6574e58b13c"
+  },
+  "ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json": {
+    "mtime": 1792714869.1515794,
+    "seen": 1792715294.8053505,
+    "ast_hash": "c3cdf9688b604d14f2e76a8287e16167",
+    "semantic_hash": "c3cdf9688b604d14f2e76a8287e16167"
+  },
+  "ios/Runner/Assets.xcassets/LaunchImage.imageset/Contents.json": {
+    "mtime": 1792714869.1516078,
+    "seen": 1792715294.8053517,
+    "ast_hash": "770f4f65e02ca2fc57f46f4f4148d15d",
+    "semantic_hash": "770f4f65e02ca2fc57f46f4f4148d15d"
+  },
+  "ios/Runner/Runner-Bridging-Header.h": {
+    "mtime": 1792714869.15178,
+    "seen": 1792715294.8053522,
+    "ast_hash": "e07862ac930ed4d8479185d52c6cc66d",
+    "semantic_hash": "e07862ac930ed4d8479185d52c6cc66d"
+  },
+  "ios/Runner/SceneDelegate.swift": {
+    "mtime": 1792714869.15178,
+    "seen": 1792715294.8053527,
+    "ast_hash": "748d701e783e68faf618c00464257a19",
+    "semantic_hash": "748d701e783e68faf618c00464257a19"
+  },
+  "ios/RunnerTests/RunnerTests.swift": {
+    "mtime": 1792714869.15178,
+    "seen": 1792715294.8053532,
+    "ast_hash": "a225a382d14d7b16b6f602a5c1d49331",
+    "semantic_hash": "a225a382d14d7b16b6f602a5c1d49331"
+  },
+  "lib/core/format.dart": {
+    "mtime": 1792714869.1518302,
+    "seen": 1792715294.8053536,
+    "ast_hash": "089253d44e8c5f18d1764821fd6c1bec",
+    "semantic_hash": "089253d44e8c5f18d1764821fd6c1bec"
+  },
+  "lib/data/db/app_database.dart": {
+    "mtime": 1792714869.1518493,
+    "seen": 1792715294.8053546,
+    "ast_hash": "a461f426ae9d3b2ac80cb59920690cf0",
+    "semantic_hash": "a461f426ae9d3b2ac80cb59920690cf0"
+  },
+  "lib/data/db/schema.dart": {
+    "mtime": 1792714869.151892,
+    "seen": 1792715294.8053553,
+    "ast_hash": "e040ac287d7e915daa1d206336ec5ae0",
+    "semantic_hash": "e040ac287d7e915daa1d206336ec5ae0"
+  },
+  "lib/data/models/models.dart": {
+    "mtime": 1792714869.151892,
+    "seen": 1792715294.8053558,
+    "ast_hash": "373f658e18dde161c9ef46f3f678721e",
+    "semantic_hash": "373f658e18dde161c9ef46f3f678721e"
+  },
+  "lib/data/repositories/match_repository.dart": {
+    "mtime": 1792714869.151892,
+    "seen": 1792715294.8053563,
+    "ast_hash": "6e81345f9b331c7891809ad48ac76c97",
+    "semantic_hash": "6e81345f9b331c7891809ad48ac76c97"
+  },
+  "lib/data/repositories/message_repository.dart": {
+    "mtime": 1792714869.1520183,
+    "seen": 1792715294.8053567,
+    "ast_hash": "244885016d6d08a42dee5f97d710cf7e",
+    "semantic_hash": "244885016d6d08a42dee5f97d710cf7e"
+  },
+  "lib/data/repositories/news_repository.dart": {
+    "mtime": 1792714869.1520183,
+    "seen": 1792715294.8053572,
+    "ast_hash": "e5e0cc3696785980b1a48c7550cab648",
+    "semantic_hash": "e5e0cc3696785980b1a48c7550cab648"
+  },
+  "lib/data/repositories/prize_repository.dart": {
+    "mtime": 1792714869.1520183,
+    "seen": 1792715294.805358,
+    "ast_hash": "ac1385a5338a6f5a1aeb57c9c37d12ba",
+    "semantic_hash": "ac1385a5338a6f5a1aeb57c9c37d12ba"
+  },
+  "lib/data/repositories/reference_repository.dart": {
+    "mtime": 1792714869.1520183,
+    "seen": 1792715294.8053584,
+    "ast_hash": "913d9beb846e5fa2b5abc926bdb592f0",
+    "semantic_hash": "913d9beb846e5fa2b5abc926bdb592f0"
+  },
+  "lib/data/repositories/scouting_repository.dart": {
+    "mtime": 1792714869.1520183,
+    "seen": 1792715294.805359,
+    "ast_hash": "617b4727ff76ff35cd431784dc94f88b",
+    "semantic_hash": "617b4727ff76ff35cd431784dc94f88b"
+  },
+  "lib/data/repositories/season_repository.dart": {
+    "mtime": 1792714869.1520183,
+    "seen": 1792715294.8053594,
+    "ast_hash": "c4adb0e78183ca85e8d1e8accda70b49",
+    "semantic_hash": "c4adb0e78183ca85e8d1e8accda70b49"
+  },
+  "lib/data/repositories/sponsorship_repository.dart": {
+    "mtime": 1792714869.1520183,
+    "seen": 1792715294.8053598,
+    "ast_hash": "d48f572768d897524fdf17adb07e502e",
+    "semantic_hash": "d48f572768d897524fdf17adb07e502e"
+  },
+  "lib/data/repositories/squad_repository.dart": {
+    "mtime": 1792714869.1520183,
+    "seen": 1792715294.8053606,
+    "ast_hash": "b78ef5e4b07ed49ef5a01b5c091d5765",
+    "semantic_hash": "b78ef5e4b07ed49ef5a01b5c091d5765"
+  },
+  "lib/data/repositories/transfer_repository.dart": {
+    "mtime": 1792714869.1520183,
+    "seen": 1792715294.8053615,
+    "ast_hash": "42fcb679cc24c2f0f98bc12f3d5e99bc",
+    "semantic_hash": "42fcb679cc24c2f0f98bc12f3d5e99bc"
+  },
+  "lib/game/career_service.dart": {
+    "mtime": 1792714869.1520183,
+    "seen": 1792715294.805362,
+    "ast_hash": "5c6f855d9e962c9d7f96e4650af5b3e7",
+    "semantic_hash": "5c6f855d9e962c9d7f96e4650af5b3e7"
+  },
+  "lib/game/formation.dart": {
+    "mtime": 1792714869.1524284,
+    "seen": 1792715294.8053625,
+    "ast_hash": "1695d2cd8076f5ca8f2e917d86e6215a",
+    "semantic_hash": "1695d2cd8076f5ca8f2e917d86e6215a"
+  },
+  "lib/game/match_engine.dart": {
+    "mtime": 1792714869.1524284,
+    "seen": 1792715294.8053632,
+    "ast_hash": "2b98aee53cbf4b8db0cfc6d3373bf923",
+    "semantic_hash": "2b98aee53cbf4b8db0cfc6d3373bf923"
+  },
+  "lib/game/news_engine.dart": {
+    "mtime": 1792714869.1524284,
+    "seen": 1792715294.8053637,
+    "ast_hash": "6b7b3d96f8e1d1136a05c5e9bc0e1e4f",
+    "semantic_hash": "6b7b3d96f8e1d1136a05c5e9bc0e1e4f"
+  },
+  "lib/game/prize_engine.dart": {
+    "mtime": 1792714869.1524284,
+    "seen": 1792715294.8053641,
+    "ast_hash": "d3fef914a6988c12d1f35e62c9aa5453",
+    "semantic_hash": "d3fef914a6988c12d1f35e62c9aa5453"
+  },
+  "lib/game/season_generator.dart": {
+    "mtime": 1792714869.1524284,
+    "seen": 1792715294.8053648,
+    "ast_hash": "532db2c7152ac12cd62fb20b2dca3cd1",
+    "semantic_hash": "532db2c7152ac12cd62fb20b2dca3cd1"
+  },
+  "lib/game/training.dart": {
+    "mtime": 1792714869.1524284,
+    "seen": 1792715294.8053653,
+    "ast_hash": "cc8173353b8eb840dc8beacc38ad66a9",
+    "semantic_hash": "cc8173353b8eb840dc8beacc38ad66a9"
+  },
+  "lib/main.dart": {
+    "mtime": 1792714869.1524284,
+    "seen": 1792715294.8053658,
+    "ast_hash": "05ec10d3f38d860ec89a8686b22c32fe",
+    "semantic_hash": "05ec10d3f38d860ec89a8686b22c32fe"
+  },
+  "lib/state/career_provider.dart": {
+    "mtime": 1792714869.1524284,
+    "seen": 1792715294.8053663,
+    "ast_hash": "acfe94179ffd0e08057acb5bb5b55a17",
+    "semantic_hash": "acfe94179ffd0e08057acb5bb5b55a17"
+  },
+  "lib/ui/screens/club_hub_sheet.dart": {
+    "mtime": 1792714869.1529021,
+    "seen": 1792715294.8053668,
+    "ast_hash": "697d675792b5d385eb4e25455efa73ca",
+    "semantic_hash": "697d675792b5d385eb4e25455efa73ca"
+  },
+  "lib/ui/screens/fixtures_tab.dart": {
+    "mtime": 1792714869.153299,
+    "seen": 1792715294.8053672,
+    "ast_hash": "c98901dcbb136f903dfdd8570af6e02f",
+    "semantic_hash": "c98901dcbb136f903dfdd8570af6e02f"
+  },
+  "lib/ui/screens/home_screen.dart": {
+    "mtime": 1792714869.153299,
+    "seen": 1792715294.8053677,
+    "ast_hash": "8c14a71ceaacbf8f4d9150cfeabdbd11",
+    "semantic_hash": "8c14a71ceaacbf8f4d9150cfeabdbd11"
+  },
+  "lib/ui/screens/inbox_tab.dart": {
+    "mtime": 1792714869.153299,
+    "seen": 1792715294.8053687,
+    "ast_hash": "675b5672ef703b9f45ee0c59d9d7d8ad",
+    "semantic_hash": "675b5672ef703b9f45ee0c59d9d7d8ad"
+  },
+  "lib/ui/screens/knockout_bracket_sheet.dart": {
+    "mtime": 1792714869.153299,
+    "seen": 1792715294.8053691,
+    "ast_hash": "acc0e6e35dca37fc2303f52f8ec9a2e9",
+    "semantic_hash": "acc0e6e35dca37fc2303f52f8ec9a2e9"
+  },
+  "lib/ui/screens/market_tab.dart": {
+    "mtime": 1792714869.153299,
+    "seen": 1792715294.8053696,
+    "ast_hash": "a7fc62548f165c5b6ab559bd023ea755",
+    "semantic_hash": "a7fc62548f165c5b6ab559bd023ea755"
+  },
+  "lib/ui/screens/match_screen.dart": {
+    "mtime": 1792714869.153299,
+    "seen": 1792715294.80537,
+    "ast_hash": "2eaad17a9d7faf130a73528ec043e82e",
+    "semantic_hash": "2eaad17a9d7faf130a73528ec043e82e"
+  },
+  "lib/ui/screens/match_stats_sheet.dart": {
+    "mtime": 1792714869.153299,
+    "seen": 1792715294.8053706,
+    "ast_hash": "e27a6de49046d687b3d131975259c936",
+    "semantic_hash": "e27a6de49046d687b3d131975259c936"
+  },
+  "lib/ui/screens/matchday_results_sheet.dart": {
+    "mtime": 1792714869.153299,
+    "seen": 1792715294.805371,
+    "ast_hash": "f85275ce780c7dfc3b48bd1bd74e13a9",
+    "semantic_hash": "f85275ce780c7dfc3b48bd1bd74e13a9"
+  },
+  "lib/ui/screens/news_tab.dart": {
+    "mtime": 1792714869.153299,
+    "seen": 1792715294.8053713,
+    "ast_hash": "52ff9600cf74df2c61c6d318b02036e6",
+    "semantic_hash": "52ff9600cf74df2c61c6d318b02036e6"
+  },
+  "lib/ui/screens/player_detail_sheet.dart": {
+    "mtime": 1792714869.153299,
+    "seen": 1792715294.8053725,
+    "ast_hash": "89e004458dc48482ff4270a82c6aff1c",
+    "semantic_hash": "89e004458dc48482ff4270a82c6aff1c"
+  },
+  "lib/ui/screens/season_history_sheet.dart": {
+    "mtime": 1792714869.153299,
+    "seen": 1792715294.805373,
+    "ast_hash": "5a037b09628dc6d55fb4cf7b1f6c20b2",
+    "semantic_hash": "5a037b09628dc6d55fb4cf7b1f6c20b2"
+  },
+  "lib/ui/screens/setup_screen.dart": {
+    "mtime": 1792714869.153299,
+    "seen": 1792715294.8053734,
+    "ast_hash": "773f78cbd5be13b19f5c65d86ef11cb1",
+    "semantic_hash": "773f78cbd5be13b19f5c65d86ef11cb1"
+  },
+  "lib/ui/screens/squad_tab.dart": {
+    "mtime": 1792714869.153299,
+    "seen": 1792715294.805374,
+    "ast_hash": "d81d4d3b433903b67f0ce19be01023d4",
+    "semantic_hash": "d81d4d3b433903b67f0ce19be01023d4"
+  },
+  "lib/ui/screens/standings_tab.dart": {
+    "mtime": 1792714869.153299,
+    "seen": 1792715294.8053746,
+    "ast_hash": "db012d2b9175dbe19323b6f5a87c6306",
+    "semantic_hash": "db012d2b9175dbe19323b6f5a87c6306"
+  },
+  "lib/ui/screens/start_screen.dart": {
+    "mtime": 1792714869.153299,
+    "seen": 1792715294.8053753,
+    "ast_hash": "30f02a0121b15f0b99addb708645ff05",
+    "semantic_hash": "30f02a0121b15f0b99addb708645ff05"
+  },
+  "lib/ui/screens/training_sheet.dart": {
+    "mtime": 1792714869.153299,
+    "seen": 1792715294.8053758,
+    "ast_hash": "56ea6f356a6055de0c9785c8fcbe6ebf",
+    "semantic_hash": "56ea6f356a6055de0c9785c8fcbe6ebf"
+  },
+  "lib/ui/theme.dart": {
+    "mtime": 1792714869.153299,
+    "seen": 1792715294.8053763,
+    "ast_hash": "6064c1255224d418cf3f15bf1408f97a",
+    "semantic_hash": "6064c1255224d418cf3f15bf1408f97a"
+  },
+  "lib/ui/widgets/common.dart": {
+    "mtime": 1792714869.153299,
+    "seen": 1792715294.8053768,
+    "ast_hash": "af23b40b7f8769417e8cd46b34c5cbfb",
+    "semantic_hash": "af23b40b7f8769417e8cd46b34c5cbfb"
+  },
+  "linux/flutter/generated_plugin_registrant.cc": {
+    "mtime": 1792714869.1541,
+    "seen": 1792715294.8053772,
+    "ast_hash": "d07afe003d5837167bdd357d593f20a0",
+    "semantic_hash": "d07afe003d5837167bdd357d593f20a0"
+  },
+  "linux/flutter/generated_plugin_registrant.h": {
+    "mtime": 1792714869.1541,
+    "seen": 1792715294.8053777,
+    "ast_hash": "d295462c9da9f7fef22dc86c34492318",
+    "semantic_hash": "d295462c9da9f7fef22dc86c34492318"
+  },
+  "linux/runner/main.cc": {
+    "mtime": 1792714869.1541407,
+    "seen": 1792715294.8053782,
+    "ast_hash": "0643b8609698e96b3abd63c210361a87",
+    "semantic_hash": "0643b8609698e96b3abd63c210361a87"
+  },
+  "linux/runner/my_application.cc": {
+    "mtime": 1792714869.1541407,
+    "seen": 1792715294.805379,
+    "ast_hash": "f1fc1d7c1e4cd976542b148a99da3dca",
+    "semantic_hash": "f1fc1d7c1e4cd976542b148a99da3dca"
+  },
+  "linux/runner/my_application.h": {
+    "mtime": 1792714869.1541407,
+    "seen": 1792715294.8053794,
+    "ast_hash": "326a85d68857137fdfe8698a0c071baf",
+    "semantic_hash": "326a85d68857137fdfe8698a0c071baf"
+  },
+  "macos/Flutter/GeneratedPluginRegistrant.swift": {
+    "mtime": 1792714869.1541948,
+    "seen": 1792715294.8053799,
+    "ast_hash": "c2aa53d101a6bfaf3e29ecf915a1516f",
+    "semantic_hash": "c2aa53d101a6bfaf3e29ecf915a1516f"
+  },
+  "macos/Runner/AppDelegate.swift": {
+    "mtime": 1792714869.1544213,
+    "seen": 1792715294.8053803,
+    "ast_hash": "2a7411ae3e7c6715525b94b6f8d2e80b",
+    "semantic_hash": "2a7411ae3e7c6715525b94b6f8d2e80b"
+  },
+  "macos/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json": {
+    "mtime": 1792714869.1544464,
+    "seen": 1792715294.805381,
+    "ast_hash": "5bd47c3ef1d1a261037c87fb3ddb9cfd",
+    "semantic_hash": "5bd47c3ef1d1a261037c87fb3ddb9cfd"
+  },
+  "macos/Runner/MainFlutterWindow.swift": {
+    "mtime": 1792714869.1549425,
+    "seen": 1792715294.8053815,
+    "ast_hash": "4a747b1f256d62a2bbb79bd976891eb5",
+    "semantic_hash": "4a747b1f256d62a2bbb79bd976891eb5"
+  },
+  "macos/RunnerTests/RunnerTests.swift": {
+    "mtime": 1792714869.1549425,
+    "seen": 1792715294.8053823,
+    "ast_hash": "97d3a20fd20a063c192e886d1822b4a8",
+    "semantic_hash": "97d3a20fd20a063c192e886d1822b4a8"
+  },
+  "test/career_flow_test.dart": {
+    "mtime": 1792714869.1549425,
+    "seen": 1792715294.8053827,
+    "ast_hash": "a951ecbdeda86c5230b6a5e35fe299d4",
+    "semantic_hash": "a951ecbdeda86c5230b6a5e35fe299d4"
+  },
+  "test/continental_competitions_test.dart": {
+    "mtime": 1792714869.1550922,
+    "seen": 1792715294.8053832,
+    "ast_hash": "f09c43dd6a6d1a25c8b33c26a019f3f4",
+    "semantic_hash": "f09c43dd6a6d1a25c8b33c26a019f3f4"
+  },
+  "test/fixtures_label_test.dart": {
+    "mtime": 1792714869.1550922,
+    "seen": 1792715294.8053837,
+    "ast_hash": "0828aea245169647c14906cb6d185733",
+    "semantic_hash": "0828aea245169647c14906cb6d185733"
+  },
+  "test/fixtures_scroll_and_title_decider_test.dart": {
+    "mtime": 1792714869.1550922,
+    "seen": 1792715294.805384,
+    "ast_hash": "9659618bce35e0fdbe7c8a85be80ece7",
+    "semantic_hash": "9659618bce35e0fdbe7c8a85be80ece7"
+  },
+  "test/indonesian_team_abbreviations_test.dart": {
+    "mtime": 1792714869.1550922,
+    "seen": 1792715294.8053844,
+    "ast_hash": "2d0d56e15ce49b133ea2d2757e9d9c20",
+    "semantic_hash": "2d0d56e15ce49b133ea2d2757e9d9c20"
+  },
+  "test/insights_test.dart": {
+    "mtime": 1792714869.1550922,
+    "seen": 1792715294.8053849,
+    "ast_hash": "127e22773187e8b62c3dcbf958b93182",
+    "semantic_hash": "127e22773187e8b62c3dcbf958b93182"
+  },
+  "test/loans_and_two_legs_e2e_test.dart": {
+    "mtime": 1792714869.1550922,
+    "seen": 1792715294.8053856,
+    "ast_hash": "0312eb9b21e6274ab4e978d85b898fc7",
+    "semantic_hash": "0312eb9b21e6274ab4e978d85b898fc7"
+  },
+  "test/match_engine_test.dart": {
+    "mtime": 1792714869.1550922,
+    "seen": 1792715294.805386,
+    "ast_hash": "8b805f0f7c38bbc80b3be1a41e4e1814",
+    "semantic_hash": "8b805f0f7c38bbc80b3be1a41e4e1814"
+  },
+  "test/news_engine_test.dart": {
+    "mtime": 1792714869.1550922,
+    "seen": 1792715294.8053868,
+    "ast_hash": "6deaba3e39634844d65681a9695df01b",
+    "semantic_hash": "6deaba3e39634844d65681a9695df01b"
+  },
+  "test/player_value_test.dart": {
+    "mtime": 1792714869.1550922,
+    "seen": 1792715294.805387,
+    "ast_hash": "15f35c7e2b99084ce952e95573596622",
+    "semantic_hash": "15f35c7e2b99084ce952e95573596622"
+  },
+  "test/prize_engine_test.dart": {
+    "mtime": 1792714869.1550922,
+    "seen": 1792715294.8053875,
+    "ast_hash": "7d7077a10d8dfd0cc140a66c1aa9595d",
+    "semantic_hash": "7d7077a10d8dfd0cc140a66c1aa9595d"
+  },
+  "test/season_generator_test.dart": {
+    "mtime": 1792714869.1550922,
+    "seen": 1792715294.805388,
+    "ast_hash": "baf854e24772f112dd06fc347b9416d7",
+    "semantic_hash": "baf854e24772f112dd06fc347b9416d7"
+  },
+  "test/sponsorship_scouting_friendly_test.dart": {
+    "mtime": 1792714869.1550922,
+    "seen": 1792715294.8053885,
+    "ast_hash": "7c9f7b75c72623e26cc3a3a1cbff5d80",
+    "semantic_hash": "7c9f7b75c72623e26cc3a3a1cbff5d80"
+  },
+  "test/squad_sorting_and_loan_test.dart": {
+    "mtime": 1792714869.1550922,
+    "seen": 1792715294.8053892,
+    "ast_hash": "00e8966e4319dde8ff08b8bc2530208a",
+    "semantic_hash": "00e8966e4319dde8ff08b8bc2530208a"
+  },
+  "test/team_budget_test.dart": {
+    "mtime": 1792714869.1550922,
+    "seen": 1792715294.8053896,
+    "ast_hash": "ecd0e6fe60fd2548117b833d62aed847",
+    "semantic_hash": "ecd0e6fe60fd2548117b833d62aed847"
+  },
+  "test/team_power_refresh_test.dart": {
+    "mtime": 1792714869.1550922,
+    "seen": 1792715294.8053904,
+    "ast_hash": "6008e19fa99e60adf7846fb268090add",
+    "semantic_hash": "6008e19fa99e60adf7846fb268090add"
+  },
+  "test/youth_academy_test.dart": {
+    "mtime": 1792714869.1550922,
+    "seen": 1792715294.8053908,
+    "ast_hash": "94824cb73a34b60e6da2bbe95ce5a7e6",
+    "semantic_hash": "94824cb73a34b60e6da2bbe95ce5a7e6"
+  },
+  "tools/migrate_db_english.py": {
+    "mtime": 1792714869.1550922,
+    "seen": 1792715294.8053913,
+    "ast_hash": "c26b8cfc8cf3a25840c19e1968609678",
+    "semantic_hash": "c26b8cfc8cf3a25840c19e1968609678"
+  },
+  "web/manifest.json": {
+    "mtime": 1792714869.1555552,
+    "seen": 1792715294.8053918,
+    "ast_hash": "51e28115d9a39ca8d2f4bb47c2847821",
+    "semantic_hash": "51e28115d9a39ca8d2f4bb47c2847821"
+  },
+  "windows/flutter/generated_plugin_registrant.cc": {
+    "mtime": 1792714869.155726,
+    "seen": 1792715294.8053923,
+    "ast_hash": "a8f91348d8d9090f22ec69d597c41e1f",
+    "semantic_hash": "a8f91348d8d9090f22ec69d597c41e1f"
+  },
+  "windows/flutter/generated_plugin_registrant.h": {
+    "mtime": 1792714869.155726,
+    "seen": 1792715294.805393,
+    "ast_hash": "0ea33875f9f8e118f9c2ded03e2e2835",
+    "semantic_hash": "0ea33875f9f8e118f9c2ded03e2e2835"
+  },
+  "windows/runner/flutter_window.cpp": {
+    "mtime": 1792714869.155754,
+    "seen": 1792715294.8053935,
+    "ast_hash": "9b92b95a9eecce25e3e9d356688d0cb6",
+    "semantic_hash": "9b92b95a9eecce25e3e9d356688d0cb6"
+  },
+  "windows/runner/flutter_window.h": {
+    "mtime": 1792714869.155754,
+    "seen": 1792715294.805394,
+    "ast_hash": "79bea736711adda00c49419a39a4a0b4",
+    "semantic_hash": "79bea736711adda00c49419a39a4a0b4"
+  },
+  "windows/runner/main.cpp": {
+    "mtime": 1792714869.155754,
+    "seen": 1792715294.8053944,
+    "ast_hash": "0dd66c81d7e8a8a3d00842833f92d6cc",
+    "semantic_hash": "0dd66c81d7e8a8a3d00842833f92d6cc"
+  },
+  "windows/runner/resource.h": {
+    "mtime": 1792714869.155754,
+    "seen": 1792715294.8053956,
+    "ast_hash": "c8f809a4f8d3f2f625e358fd90f72fee",
+    "semantic_hash": "c8f809a4f8d3f2f625e358fd90f72fee"
+  },
+  "windows/runner/utils.cpp": {
+    "mtime": 1792714869.155754,
+    "seen": 1792715294.8053963,
+    "ast_hash": "e56aa0d1b2e1b995000d67e8e069b83f",
+    "semantic_hash": "e56aa0d1b2e1b995000d67e8e069b83f"
+  },
+  "windows/runner/utils.h": {
+    "mtime": 1792714869.155754,
+    "seen": 1792715294.8053968,
+    "ast_hash": "c741fb9cddbf3a62f4688b6cca39ddcc",
+    "semantic_hash": "c741fb9cddbf3a62f4688b6cca39ddcc"
+  },
+  "windows/runner/win32_window.cpp": {
+    "mtime": 1792714869.155754,
+    "seen": 1792715294.8053973,
+    "ast_hash": "928e86a2be27eca688669dce6c9177d9",
+    "semantic_hash": "928e86a2be27eca688669dce6c9177d9"
+  },
+  "windows/runner/win32_window.h": {
+    "mtime": 1792714869.155754,
+    "seen": 1792715294.8053977,
+    "ast_hash": "5a4cf051798d7e6931ee0405a4523c8f",
+    "semantic_hash": "5a4cf051798d7e6931ee0405a4523c8f"
+  },
+  "PRD_Superkickoff_Clone.md": {
+    "mtime": 1792714869.12545,
+    "seen": 1792715294.8053982,
+    "ast_hash": "534ba7e3ccbe48abdbc4939aabcb8b65",
+    "semantic_hash": "534ba7e3ccbe48abdbc4939aabcb8b65"
+  },
+  "README.md": {
+    "mtime": 1792714869.12545,
+    "seen": 1792715294.805399,
+    "ast_hash": "d21d11de1ceebfb7ae4375148774eca9",
+    "semantic_hash": "d21d11de1ceebfb7ae4375148774eca9"
+  },
+  "pubspec.yaml": {
+    "mtime": 1792714869.1549425,
+    "seen": 1792715294.8053997,
+    "ast_hash": "37d3b1ad3c482c6e9c4d8d4fb34019cb",
+    "semantic_hash": "37d3b1ad3c482c6e9c4d8d4fb34019cb"
+  }
+}
