@@ -883,7 +883,7 @@ class PlayerCareerRow {
 
 /// A player award stored in player_awards.
 class PlayerAward {
-  PlayerAward({
+  const PlayerAward({
     required this.awardId,
     required this.playerId,
     required this.playerName,
@@ -892,6 +892,10 @@ class PlayerAward {
     required this.year,
     required this.seasonId,
     this.goals,
+    this.rating,
+    this.statSubtitle,
+    this.positionId,
+    this.teamId,
   });
 
   final int awardId;
@@ -902,13 +906,71 @@ class PlayerAward {
   final int year;
   final int seasonId;
   final int? goals;
+  final double? rating;
+  final String? statSubtitle;
+  final int? positionId;
+  final int? teamId;
 
   String get label => switch (type) {
-    t.awardTopScorer => 'Top scorer',
-    t.awardMvp => 'MVP',
-    t.awardYoungPlayer => 'Best young player',
+    t.awardBallonDor => "Ballon d'Or",
+    t.awardTopScorer => 'Golden Boot',
+    t.awardGoldenGlove => 'Golden Glove',
+    t.awardYoungPlayer => 'Best Young Player',
+    t.awardMvp => 'Player of the Season (MVP)',
+    t.awardManagerOfTheYear => 'Manager of the Year',
+    t.awardTeamOfTheYear => 'Team of the Year',
     _ => 'Award',
   };
+
+  String get shortLabel => switch (type) {
+    t.awardBallonDor => "Ballon d'Or",
+    t.awardTopScorer => 'Golden Boot',
+    t.awardGoldenGlove => 'Golden Glove',
+    t.awardYoungPlayer => 'Best Young',
+    t.awardMvp => 'MVP',
+    t.awardManagerOfTheYear => 'Manager of Year',
+    t.awardTeamOfTheYear => 'Team of Year',
+    _ => 'Award',
+  };
+}
+
+/// Aggregated gala summary for a season: individual award winners,
+/// Team of the Year (Once Ideal), and club honours.
+class SeasonGalaSummary {
+  const SeasonGalaSummary({
+    required this.seasonId,
+    required this.year,
+    required this.seasonName,
+    this.ballonDor,
+    this.goldenBoot,
+    this.goldenGlove,
+    this.youngPlayer,
+    this.mvp,
+    this.managerOfTheYear,
+    this.teamOfTheYear = const <PlayerAward>[],
+    this.clubTrophies = const <ClubTrophy>[],
+    this.userClubAwards = const <PlayerAward>[],
+  });
+
+  final int seasonId;
+  final int year;
+  final String seasonName;
+  final PlayerAward? ballonDor;
+  final PlayerAward? goldenBoot;
+  final PlayerAward? goldenGlove;
+  final PlayerAward? youngPlayer;
+  final PlayerAward? mvp;
+  final PlayerAward? managerOfTheYear;
+  final List<PlayerAward> teamOfTheYear;
+  final List<ClubTrophy> clubTrophies;
+  final List<PlayerAward> userClubAwards;
+
+  bool get isEmpty =>
+      ballonDor == null &&
+      goldenBoot == null &&
+      goldenGlove == null &&
+      youngPlayer == null &&
+      teamOfTheYear.isEmpty;
 }
 
 /// A transfer offer in negotiation.
@@ -933,6 +995,15 @@ class TransferOffer {
     this.messageId,
     this.isLoan = false,
     this.loanSeasons = 1,
+    this.agreementDate,
+    this.effectiveDate,
+    this.eligibleDate,
+    this.transferType = 'permanent',
+    this.loanMonths,
+    this.wageSplitRatio = 1.0,
+    this.loanStartDate,
+    this.loanEndDate,
+    this.cancellationReason,
   });
 
   final int offerId;
@@ -957,6 +1028,56 @@ class TransferOffer {
   /// Seasons the borrower keeps the player (1 or 2); loans only.
   final int loanSeasons;
 
+  final String? agreementDate;
+  final String? effectiveDate;
+  final String? eligibleDate;
+  final String transferType;
+  final int? loanMonths;
+  final double wageSplitRatio;
+  final String? loanStartDate;
+  final String? loanEndDate;
+  final String? cancellationReason;
+
+  bool get isScheduled => status == t.offerAwaitingWindow;
+  bool get isCompleted => status == t.offerCompleted;
+  bool get isRejected =>
+      status == t.offerRejected || status == t.offerPlayerRejected;
+  bool get isCancelled => status == t.offerCancelled;
+  bool get isFailed => status == t.offerFailed;
+  bool get isNegotiating =>
+      status == t.offerPending ||
+      status == t.offerCountered ||
+      status == t.offerContractNegotiation;
+
+  String get statusLabel {
+    switch (status) {
+      case t.offerPending:
+        return 'Offer Submitted';
+      case t.offerAccepted:
+        return 'Offer Accepted';
+      case t.offerRejected:
+        return 'Rejected';
+      case t.offerCountered:
+        return 'Negotiating (Countered)';
+      case t.offerContractNegotiation:
+        return 'Negotiating Contract';
+      case t.offerPlayerAccepted:
+        return 'Agreement Reached';
+      case t.offerPlayerRejected:
+        return 'Rejected by Player';
+      case t.offerCompleted:
+        return 'Completed';
+      case t.offerAwaitingWindow:
+        return 'Awaiting Transfer Window (Scheduled)';
+      case t.offerCancelled:
+        return 'Cancelled';
+      case t.offerFailed:
+        return 'Failed';
+      default:
+        return 'Unknown';
+    }
+  }
+
   factory TransferOffer.fromMap(Map<String, Object?> m) => TransferOffer(
     offerId: m['offer_id'] as int,
     playerId: m['player_id'] as int,
@@ -977,7 +1098,124 @@ class TransferOffer {
     messageId: m['message_id'] as int?,
     isLoan: (m['is_loan'] as int? ?? 0) == 1,
     loanSeasons: (m['loan_seasons'] as int?) ?? 1,
+    agreementDate: m['agreement_date'] as String?,
+    effectiveDate: m['effective_date'] as String?,
+    eligibleDate: m['eligible_date'] as String?,
+    transferType: (m['transfer_type'] as String?) ?? 'permanent',
+    loanMonths: m['loan_months'] as int?,
+    wageSplitRatio: (m['wage_split_ratio'] as num?)?.toDouble() ?? 1.0,
+    loanStartDate: m['loan_start_date'] as String?,
+    loanEndDate: m['loan_end_date'] as String?,
+    cancellationReason: m['cancellation_reason'] as String?,
   );
+}
+
+/// Transfer Window configuration and status for a league/country in a season.
+class TransferWindow {
+  TransferWindow({
+    required this.windowId,
+    required this.seasonId,
+    required this.countryId,
+    this.tournamentId = 0,
+    required this.windowType,
+    required this.startDate,
+    required this.endDate,
+    this.isOpen = false,
+    this.allowFreeAgentsOutside = true,
+  });
+
+  final int windowId;
+  final int seasonId;
+  final int countryId;
+  final int tournamentId;
+
+  /// 'summer' or 'winter'
+  final String windowType;
+  final String startDate;
+  final String endDate;
+  final bool isOpen;
+  final bool allowFreeAgentsOutside;
+
+  bool get isSummer => windowType.toLowerCase() == 'summer';
+  bool get isWinter => windowType.toLowerCase() == 'winter';
+
+  String get displayName =>
+      isSummer ? 'Summer Transfer Window' : 'Winter Transfer Window';
+
+  bool isWindowOpen(String currentDate) {
+    return currentDate.compareTo(startDate) >= 0 &&
+        currentDate.compareTo(endDate) <= 0;
+  }
+
+  bool isDeadlineDay(String currentDate) {
+    if (!isWindowOpen(currentDate)) return false;
+    final DateTime? current = DateTime.tryParse(currentDate);
+    final DateTime? end = DateTime.tryParse(endDate);
+    if (current == null || end == null) return currentDate == endDate;
+    return end.difference(current).inDays <= 0;
+  }
+
+  int daysUntilOpen(String currentDate) {
+    final DateTime? current = DateTime.tryParse(currentDate);
+    final DateTime? start = DateTime.tryParse(startDate);
+    if (current == null || start == null) return 0;
+    final int diff = start.difference(current).inDays;
+    return diff > 0 ? diff : 0;
+  }
+
+  int daysUntilDeadline(String currentDate) {
+    final DateTime? current = DateTime.tryParse(currentDate);
+    final DateTime? end = DateTime.tryParse(endDate);
+    if (current == null || end == null) return 0;
+    final int diff = end.difference(current).inDays;
+    return diff >= 0 ? diff : 0;
+  }
+
+  int get durationDays {
+    final DateTime? start = DateTime.tryParse(startDate);
+    final DateTime? end = DateTime.tryParse(endDate);
+    if (start == null || end == null) return 0;
+    return end.difference(start).inDays;
+  }
+
+  String statusBadgeText(String currentDate) {
+    if (isDeadlineDay(currentDate)) {
+      return 'DEADLINE DAY';
+    } else if (isWindowOpen(currentDate)) {
+      final int left = daysUntilDeadline(currentDate);
+      return 'TERBUKA (${left}d tersisa)';
+    } else if (currentDate.compareTo(startDate) < 0) {
+      final int until = daysUntilOpen(currentDate);
+      return 'Membuka dlm ${until}d';
+    } else {
+      return 'DITUTUP';
+    }
+  }
+
+  factory TransferWindow.fromMap(Map<String, Object?> m) => TransferWindow(
+    windowId: (m['window_id'] as int?) ?? 0,
+    seasonId: (m['season_id'] as int?) ?? 0,
+    countryId: (m['country_id'] as int?) ?? 0,
+    tournamentId: (m['tournament_id'] as int?) ?? 0,
+    windowType: (m['window_type'] as String?) ?? 'summer',
+    startDate: (m['start_date'] as String?) ?? '',
+    endDate: (m['end_date'] as String?) ?? '',
+    isOpen: ((m['is_open'] as int?) ?? 0) == 1,
+    allowFreeAgentsOutside:
+        ((m['allow_free_agents_outside'] as int?) ?? 1) == 1,
+  );
+
+  Map<String, Object?> toMap() => <String, Object?>{
+    if (windowId > 0) 'window_id': windowId,
+    'season_id': seasonId,
+    'country_id': countryId,
+    'tournament_id': tournamentId,
+    'window_type': windowType,
+    'start_date': startDate,
+    'end_date': endDate,
+    'is_open': isOpen ? 1 : 0,
+    'allow_free_agents_outside': allowFreeAgentsOutside ? 1 : 0,
+  };
 }
 
 /// An unassigned prospect graduated from the youth academy.
@@ -1207,7 +1445,7 @@ class CareerSeason {
 
 /// One trophy won by a club, derived from a completed competition.
 class ClubTrophy {
-  ClubTrophy({
+  const ClubTrophy({
     required this.tournamentId,
     required this.tournamentName,
     required this.organization,

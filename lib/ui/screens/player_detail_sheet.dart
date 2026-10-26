@@ -7,6 +7,7 @@ import '../../data/models/models.dart';
 import '../../state/career_provider.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'team_detail_sheet.dart';
 
 /// Opens the compact player profile (tabs instead of a long page).
 Future<void> showPlayerDetail(BuildContext context, int playerId) {
@@ -337,15 +338,48 @@ class _PlayerDetailSheetState extends State<PlayerDetailSheet>
                       ],
                     ),
                     const SizedBox(height: 3),
-                    Text(
-                      '${detail.clubName.isEmpty ? 'Free agent' : detail.clubName}'
-                      '${detail.countryName.isEmpty ? '' : ' \u00b7 ${detail.countryName}'}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppTheme.textDim,
-                      ),
+                    Row(
+                      children: <Widget>[
+                        if (detail.clubId != null && detail.clubId! > 0)
+                          GestureDetector(
+                            onTap: () => showTeamDetail(context, detail.clubId!),
+                            child: Text(
+                              detail.clubName,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.accent,
+                                decoration: TextDecoration.underline,
+                                decorationColor: Colors.white24,
+                              ),
+                            ),
+                          )
+                        else
+                          Text(
+                            detail.clubName.isEmpty ? 'Free agent' : detail.clubName,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textDim,
+                            ),
+                          ),
+                        if (detail.countryName.isNotEmpty) ...<Widget>[
+                          const Text(
+                            ' · ',
+                            style: TextStyle(color: AppTheme.textDim),
+                          ),
+                          Flexible(
+                            child: Text(
+                              detail.countryName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppTheme.textDim,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Stars(value: p.stars, size: 12),
@@ -775,14 +809,44 @@ class _PlayerDetailSheetState extends State<PlayerDetailSheet>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Text(
-                    '${r.fromTeamName} \u2192 ${r.toTeamName}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  Row(
+                    children: <Widget>[
+                      if (r.fromTeamId != null && r.fromTeamId! > 0)
+                        GestureDetector(
+                          onTap: () => showTeamDetail(context, r.fromTeamId!),
+                          child: Text(
+                            r.fromTeamName,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.accent,
+                            ),
+                          ),
+                        )
+                      else
+                        Text(
+                          r.fromTeamName,
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                      const Text(' → ', style: TextStyle(fontSize: 12)),
+                      if (r.toTeamId != null && r.toTeamId! > 0)
+                        GestureDetector(
+                          onTap: () => showTeamDetail(context, r.toTeamId!),
+                          child: Text(
+                            r.toTeamName,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.accent,
+                            ),
+                          ),
+                        )
+                      else
+                        Text(
+                          r.toTeamName,
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 2),
                   Text(

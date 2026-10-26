@@ -58,6 +58,21 @@ class ReferenceRepository {
         <Object?>[countryId, countryId, t.orgLeague],
       );
 
+  /// Returns all domestic league tournaments for a country, ordered by division.
+  Future<List<Tournament>> domesticLeagues(int countryId) async {
+    final rows = await db.rawQuery(
+      '''
+      SELECT tu.* FROM tournaments tu
+      JOIN tournament_countries tc ON tc.tournament_id = tu.tournament_id
+      WHERE tc.country_id = ? AND tu.organization = ?
+      GROUP BY tu.tournament_id
+      ORDER BY tu.division_id ASC, tu.name ASC
+    ''',
+      <Object?>[countryId, t.orgLeague],
+    );
+    return rows.map(Tournament.fromMap).toList();
+  }
+
   /// Continental zone of a league, taken from the continental cup its country plays in.
   Future<String> leagueRegion(int tournamentId) async {
     final rows = await db.rawQuery(

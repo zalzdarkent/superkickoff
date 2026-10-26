@@ -56,8 +56,10 @@ const String sponsorships = 'sponsorships';
 const String messages = 'messages';
 const String news = 'news';
 const String transferOffers = 'transfer_offers';
+const String transferWindows = 'transfer_windows';
 const String worldRankingHistory = 'world_ranking_history';
 const String careerHistory = 'career_history';
+const String careerState = 'career_state';
 const String managerProfile = 'manager_profile';
 const String offseasonState = 'offseason_state';
 const String boardObjectives = 'board_objectives';
@@ -96,6 +98,10 @@ const int statusDead = 3;
 const int awardTopScorer = 1;
 const int awardMvp = 2;
 const int awardYoungPlayer = 3;
+const int awardBallonDor = 4;
+const int awardGoldenGlove = 5;
+const int awardTeamOfTheYear = 6;
+const int awardManagerOfTheYear = 7;
 
 // -------------------------------------------- transfer_offers.status values
 const int offerPending = 1;
@@ -106,3 +112,7 @@ const int offerContractNegotiation = 5;
 const int offerPlayerAccepted = 6;
 const int offerPlayerRejected = 7;
 const int offerCompleted = 8;
+const int offerAwaitingWindow = 9;
+const int offerCancelled = 10;
+const int offerFailed = 11;
+

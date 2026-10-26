@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/models/models.dart';
 import '../theme.dart';
+import 'team_detail_sheet.dart';
 
 /// Displays the played and upcoming rounds of one cup's knockout bracket.
 Future<void> showKnockoutBracket(
@@ -191,6 +192,7 @@ class _MatchCard extends StatelessWidget {
               ),
             ),
           _teamRow(
+            context,
             first.homeTeamId,
             first.homeGoals,
             second?.awayGoals,
@@ -198,6 +200,7 @@ class _MatchCard extends StatelessWidget {
           ),
           const Divider(height: 7),
           _teamRow(
+            context,
             first.awayTeamId,
             first.awayGoals,
             second?.homeGoals,
@@ -213,21 +216,34 @@ class _MatchCard extends StatelessWidget {
     );
   }
 
-  Widget _teamRow(int teamId, int? leg1Goals, int? leg2Goals, int agg) {
+  Widget _teamRow(
+    BuildContext context,
+    int teamId,
+    int? leg1Goals,
+    int? leg2Goals,
+    int agg,
+  ) {
     final bool winner = tie.winnerId == teamId;
     final bool two = tie.twoLegged;
     String score(int? goals, bool played) => played ? '${goals ?? 0}' : '-';
     return Row(
       children: <Widget>[
         Expanded(
-          child: Text(
-            teams[teamId]?.name ?? '?',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: winner ? FontWeight.bold : FontWeight.normal,
-              color: winner ? AppTheme.accent : null,
+          child: InkWell(
+            onTap: () => showTeamDetail(context, teamId),
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+              child: Text(
+                teams[teamId]?.name ?? '?',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: winner ? FontWeight.bold : FontWeight.normal,
+                  color: winner ? AppTheme.accent : null,
+                ),
+              ),
             ),
           ),
         ),
@@ -275,16 +291,22 @@ class _ChampionColumn extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppTheme.warn.withAlpha(30),
-              borderRadius: BorderRadius.circular(7),
-            ),
-            child: Text(
-              champion?.name ?? 'TBD',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+          InkWell(
+            onTap: champion == null
+                ? null
+                : () => showTeamDetail(context, champion!.teamId),
+            borderRadius: BorderRadius.circular(7),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppTheme.warn.withAlpha(30),
+                borderRadius: BorderRadius.circular(7),
+              ),
+              child: Text(
+                champion?.name ?? 'TBD',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              ),
             ),
           ),
         ],

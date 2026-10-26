@@ -700,7 +700,19 @@ class MatchEngine {
             );
             homeGoals -= isHome ? 1 : 0;
             awayGoals -= isHome ? 0 : 1;
-            row.goals -= 1;
+            row.goals = max(0, row.goals - 1);
+            if (assister != null) {
+              final MatchPlayerRow? assistRow = rows[assister.playerId];
+              if (assistRow != null) {
+                assistRow.assists = max(0, assistRow.assists - 1);
+              }
+              events.removeWhere(
+                (MatchEvent ev) =>
+                    ev.type == MatchEvent.assist &&
+                    ev.minute == minute &&
+                    ev.playerId == assister.playerId,
+              );
+            }
           }
         }
       }

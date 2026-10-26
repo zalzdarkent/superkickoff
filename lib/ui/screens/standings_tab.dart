@@ -7,6 +7,7 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import 'player_detail_sheet.dart';
 import 'season_history_sheet.dart';
+import 'team_detail_sheet.dart';
 
 /// Competition table plus leaderboards. Every domestic and continental
 /// competition generated for this career can be selected here.
@@ -36,7 +37,10 @@ class _StandingsTabState extends State<StandingsTab> {
   Widget build(BuildContext context) {
     final CareerProvider game = context.watch<CareerProvider>();
     final List<Tournament> options = <Tournament>[
-      if (game.league != null) game.league!,
+      if (game.domesticLeagues.isNotEmpty)
+        ...game.domesticLeagues
+      else if (game.league != null)
+        game.league!,
       ...game.cups,
     ];
     if (options.isEmpty) {
@@ -84,9 +88,47 @@ class _StandingsTabState extends State<StandingsTab> {
                                 for (final Tournament tournament in options)
                                   DropdownMenuItem<int>(
                                     value: tournament.tournamentId,
-                                    child: Text(
-                                      tournament.name,
-                                      overflow: TextOverflow.ellipsis,
+                                    child: Row(
+                                      children: <Widget>[
+                                        Expanded(
+                                          child: Text(
+                                            tournament.name,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        if (tournament.isLeague &&
+                                            game.domesticLeagues.length > 1) ...<Widget>[
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppTheme.surface,
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: tournament.divisionId == 1
+                                                    ? AppTheme.accent
+                                                    : AppTheme.textDim
+                                                        .withValues(alpha: 0.4),
+                                                width: 0.8,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              'Div ${tournament.divisionId}',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w600,
+                                                color: tournament.divisionId == 1
+                                                    ? AppTheme.accent
+                                                    : AppTheme.textDim,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                   ),
                               ],
@@ -276,12 +318,17 @@ class _LeagueTableState extends State<_LeagueTable> {
   _QualRule? _getQualification(int index, int total) {
     if (!widget.tournament.isLeague) return null;
 
+    final bool hasLowerDiv = widget.game.domesticLeagues.any(
+      (Tournament t) => t.divisionId == widget.tournament.divisionId + 1,
+    );
+
     // Lower divisions
     if (widget.tournament.divisionId > 1) {
       if (index < widget.tournament.promotionSlots) {
         return const _QualRule('Promotion', 'PRO', AppTheme.accent);
       }
-      if (widget.tournament.relegationSpots > 0 &&
+      if (hasLowerDiv &&
+          widget.tournament.relegationSpots > 0 &&
           index >= total - widget.tournament.relegationSpots) {
         return const _QualRule('Relegation', 'REL', AppTheme.danger);
       }
@@ -289,7 +336,8 @@ class _LeagueTableState extends State<_LeagueTable> {
     }
 
     // Top Division Relegation
-    if (widget.tournament.relegationSpots > 0 &&
+    if (hasLowerDiv &&
+        widget.tournament.relegationSpots > 0 &&
         index >= total - widget.tournament.relegationSpots) {
       return const _QualRule('Relegation', 'REL', AppTheme.danger);
     }
@@ -491,16 +539,17 @@ class _LeagueTableState extends State<_LeagueTable> {
               : null)
         : _getQualification(index, widget.stats.standings.length);
     final Color barColor = qual?.color ?? Colors.transparent;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8.5),
-      decoration: BoxDecoration(
-        color: isUser ? AppTheme.accentDim.withAlpha(60) : null,
-        border: Border(
-          bottom: BorderSide(color: Colors.grey.shade900, width: 0.5),
+    return InkWell(
+      onTap: () => showTeamDetail(context, row.teamId),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8.5),
+        decoration: BoxDecoration(
+          color: isUser ? AppTheme.accentDim.withAlpha(60) : null,
+          border: Border(
+            bottom: BorderSide(color: Colors.grey.shade900, width: 0.5),
+          ),
         ),
-      ),
-      child: Row(
+        child: Row(
         children: <Widget>[
           SizedBox(
             width: _rankWidth,
@@ -553,8 +602,9 @@ class _LeagueTableState extends State<_LeagueTable> {
           _cell('${row.points}', width: _ptsWidth, bold: true),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 /// Shared leaderboard list for the four statistical tabs.
@@ -704,13 +754,18 @@ class _LeaderList extends StatelessWidget {
                                 ],
                               ],
                             ),
-                            Text(
-                              row.clubName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: AppTheme.textDim,
+                            GestureDetector(
+                              onTap: () => showTeamDetail(context, row.teamId),
+                              child: Text(
+                                row.clubName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppTheme.textDim,
+                                  decoration: TextDecoration.underline,
+                                  decorationColor: Colors.white24,
+                                ),
                               ),
                             ),
                           ],

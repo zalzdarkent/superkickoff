@@ -620,7 +620,11 @@ class _SquadTabState extends State<SquadTab> {
                           opacity: 0.3,
                           child: _playerChip(player, color),
                         ),
-                        child: _playerChip(player, color),
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => showPlayerDetail(context, player.playerId),
+                          child: _playerChip(player, color),
+                        ),
                       ),
               ),
             );
@@ -698,7 +702,11 @@ class _SquadTabState extends State<SquadTab> {
                               opacity: 0.3,
                               child: _benchChip(p),
                             ),
-                            child: _benchChip(p),
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => showPlayerDetail(context, p.playerId),
+                              child: _benchChip(p),
+                            ),
                           ),
                       ],
                     ),

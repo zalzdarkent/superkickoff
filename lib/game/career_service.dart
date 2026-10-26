@@ -20,6 +20,8 @@ import 'match_engine.dart';
 import 'offseason.dart';
 import 'prize_engine.dart';
 import 'season_generator.dart';
+import 'training.dart';
+import 'transfer_window_manager.dart';
 
 /// Orchestrates career progression on top of the repositories and the match
 /// engine: AI match-day simulation, weekly housekeeping, cup round
@@ -39,6 +41,7 @@ class CareerService {
     TransferRepository? transfers,
     SponsorshipRepository? sponsorships,
     ScoutingRepository? scouting,
+    TransferWindowManager? windowManager,
     Random? random,
     this.marketTickChance = 0.45,
   }) : _refs = refs,
@@ -50,6 +53,7 @@ class CareerService {
        _transfers = transfers,
        _sponsorships = sponsorships,
        _scouting = scouting,
+       _windowManager = windowManager ?? TransferWindowManager(db, messages: messages),
        _engine = engine,
        _gen = generator,
        _rng = random ?? Random();
@@ -64,9 +68,13 @@ class CareerService {
   final TransferRepository? _transfers;
   final SponsorshipRepository? _sponsorships;
   final ScoutingRepository? _scouting;
+  final TransferWindowManager _windowManager;
   final MatchEngine _engine;
   final SeasonGenerator _gen;
   final Random _rng;
+
+  TransferWindowManager get windowManager => _windowManager;
+  String? _lastHousekeepingDate;
 
   /// Cup tournaments already resolved to knockout status.
   final Set<int> _cupTournaments = <int>{};
@@ -418,6 +426,7 @@ class CareerService {
   Future<void> weeklyHousekeeping({
     required int seasonId,
     required int userTeamId,
+    String? currentDate,
   }) async {
     final Set<int> stillBanned = await _matchRepo.tickSuspensions();
     stillBanned.clear(); // ids already tracked in DB; provider re-reads
@@ -458,7 +467,63 @@ class CareerService {
     }
     await db.execute('UPDATE teams SET budget = MAX(budget, 20000)');
     await _runYouthAcademy(userTeamId, seasonId);
-    await _runMarketAi(userTeamId);
+
+    // Transfer window & scheduled transfer processing
+    final String? nextDate = await nextMatchDate(seasonId);
+    final String date = currentDate ?? nextDate ?? _todayIso();
+
+    final Season? currentSeason = await _seasons.currentSeason();
+    if (currentSeason != null) {
+      await _windowManager.ensureWindowsForSeason(
+        seasonId,
+        currentSeason.startYear,
+      );
+    }
+
+    if (_transfers != null) {
+      final List<ScheduledTransferResult> results =
+          await _transfers.processDueScheduledTransfers(date);
+      for (final ScheduledTransferResult res in results) {
+        if (res.offer.fromTeamId == userTeamId ||
+            res.offer.toTeamId == userTeamId) {
+          if (res.success) {
+            await _messages.insert(
+              title: 'Transfer Terjadwal Tuntas',
+              body:
+                  '${res.offer.playerName} resmi bergabung dengan ${res.offer.toTeamName} '
+                  'sesuai kesepakatan transfer terjadwal.',
+              teamId: userTeamId,
+              sender: 'Transfer Desk',
+              date: date,
+              transferOfferId: res.offer.offerId,
+            );
+          } else {
+            await _messages.insert(
+              title: 'Transfer Terjadwal Dibatalkan',
+              body:
+                  'Kepindahan ${res.offer.playerName} ke ${res.offer.toTeamName} gagal: ${res.error}.',
+              teamId: userTeamId,
+              sender: 'Transfer Desk',
+              date: date,
+              transferOfferId: res.offer.offerId,
+            );
+          }
+        }
+      }
+    }
+
+    if (_lastHousekeepingDate != null) {
+      await _windowManager.checkAndSendNotifications(
+        seasonId: seasonId,
+        userTeamId: userTeamId,
+        previousDate: _lastHousekeepingDate!,
+        currentDate: date,
+      );
+    }
+    _lastHousekeepingDate = date;
+
+    await _runMarketAi(userTeamId, seasonId: seasonId, currentDate: date);
+    await runAiTraining(userTeamId: userTeamId, seasonId: seasonId);
   }
 
   /// Academy graduates arrive every three in-game months.
@@ -573,9 +638,29 @@ class CareerService {
     );
   }
 
-  /// AI clubs occasionally buy listed players off the market.
-  Future<void> _runMarketAi(int userTeamId) async {
-    if (_rng.nextDouble() > marketTickChance) return;
+  /// AI clubs buy listed players or plan scheduled transfers.
+  Future<void> _runMarketAi(
+    int userTeamId, {
+    int? seasonId,
+    String? currentDate,
+  }) async {
+    final String date = currentDate ?? _todayIso();
+    final int effectiveSeasonId =
+        seasonId ?? (await _seasons.currentSeason())?.seasonId ?? 0;
+
+    // Check if user or clubs are in Deadline Day
+    final TransferWindow? activeWindow =
+        await _windowManager.activeWindowForTeam(
+          effectiveSeasonId,
+          userTeamId,
+          date,
+        );
+    final bool isDeadline = activeWindow?.isDeadlineDay(date) ?? false;
+    // On deadline day, AI activity is significantly higher (frenzy)
+    final double tickChance =
+        isDeadline ? min(0.95, marketTickChance * 2.5) : marketTickChance;
+
+    if (_rng.nextDouble() > tickChance) return;
     final List<Team> clubs = await _registeredClubs();
     if (clubs.length < 2) return;
     final List<Map<String, Object?>> listed = await _squads.marketPlayers(
@@ -583,28 +668,173 @@ class CareerService {
       limit: 12,
     );
     for (final Map<String, Object?> entry in listed) {
-      if (_rng.nextDouble() > 0.20) continue;
+      if (_rng.nextDouble() > 0.25) continue;
       final Player player = _playerFromRow(entry);
       final int sellerTeamId = entry['club_team_id'] as int? ?? 0;
       final Team buyer = clubs[_rng.nextInt(clubs.length)];
       if (buyer.teamId == sellerTeamId) continue;
       if (buyer.budget < player.value) continue;
-      final String? error = await _squads.buyMarketPlayer(
-        buyerTeamId: buyer.teamId,
-        player: player,
+
+      // Check destination club's registration window
+      final bool isOpen = await _windowManager.isWindowOpenForTeam(
+        effectiveSeasonId,
+        buyer.teamId,
+        date,
       );
-      if (error != null) continue;
-      if (sellerTeamId == userTeamId) {
-        await _messages.insert(
-          title: 'Player sold',
-          body:
-              '${player.name} has been sold to ${buyer.name} for ${_money(player.value)}.',
-          teamId: userTeamId,
-          sender: 'Transfer Desk',
+
+      if (isOpen) {
+        // Window is open: buy player immediately
+        final String? error = await _squads.buyMarketPlayer(
+          buyerTeamId: buyer.teamId,
+          player: player,
         );
+        if (error != null) continue;
+        if (sellerTeamId == userTeamId) {
+          await _messages.insert(
+            title: 'Player sold',
+            body:
+                '${player.name} has been sold to ${buyer.name} for ${_money(player.value)}.',
+            teamId: userTeamId,
+            sender: 'Transfer Desk',
+            date: date,
+          );
+        }
+      } else {
+        // Window is closed: AI plans a scheduled transfer for the next valid window
+        if (_transfers == null) continue;
+        final TransferWindow nextWindow =
+            await _windowManager.nextRegistrationWindowForTeam(
+              effectiveSeasonId,
+              buyer.teamId,
+              date,
+            );
+        final int offerId = await _transfers.createOffer(
+          playerId: player.playerId,
+          fromTeamId: sellerTeamId,
+          toTeamId: buyer.teamId,
+          offerAmount: player.value,
+          playerValue: player.value,
+          agreementDate: date,
+          effectiveDate: nextWindow.startDate,
+          eligibleDate: nextWindow.startDate,
+        );
+        await _transfers.scheduleTransfer(
+          offerId,
+          agreementDate: date,
+          effectiveDate: nextWindow.startDate,
+        );
+
+        if (sellerTeamId == userTeamId) {
+          await _messages.insert(
+            title: 'Transfer Terjadwal Disepakati',
+            body:
+                '${buyer.name} telah menyetujui transfer ${player.name} seharga ${_money(player.value)}. '
+                'Pemain tetap berada di klub Anda hingga jendela transfer dibuka pada ${nextWindow.startDate}.',
+            teamId: userTeamId,
+            sender: 'Transfer Desk',
+            date: date,
+            transferOfferId: offerId,
+          );
+        }
       }
       break; // at most one AI transfer per housekeeping week
     }
+  }
+
+  /// Automated weekly training for AI clubs participating in [seasonId].
+  /// Progress rate is tuned to be ~10% below the user club's maximum pace
+  /// (90% success rate per eligible player vs user's 100% guarantee),
+  /// ensuring AI squads progress naturally while preserving the user's
+  /// managerial edge.
+  /// Returns the number of AI players that improved during this session.
+  Future<int> runAiTraining({
+    required int userTeamId,
+    required int seasonId,
+  }) async {
+    final List<Map<String, Object?>> aiClubRows = await db.rawQuery(
+      '''
+      SELECT tm.team_id, tm.budget FROM season_teams st
+      JOIN teams tm ON tm.team_id = st.team_id
+      WHERE st.season_id = ? AND tm.team_id != ?
+    ''',
+      <Object?>[seasonId, userTeamId],
+    );
+    if (aiClubRows.isEmpty) return 0;
+
+    int totalImproved = 0;
+    final Set<int> improvedTeamIds = <int>{};
+
+    for (final Map<String, Object?> club in aiClubRows) {
+      final int teamId = club['team_id'] as int;
+      final int budget = (club['budget'] as int?) ?? 0;
+
+      // Select up to TrainingRules.maxPlayers (3) players with room to grow:
+      // Focus on younger players with highest growth room (potential - power)
+      final List<Map<String, Object?>> eligible = await db.rawQuery(
+        '''
+        SELECT p.player_id, p.power, p.potential, p.age, p.value
+        FROM players p
+        JOIN team_players tp ON tp.player_id = p.player_id
+        WHERE tp.team_id = ? AND p.status_id = ? AND p.power < p.potential
+        ORDER BY (p.potential - p.power) DESC, p.age ASC
+        LIMIT ?
+      ''',
+        <Object?>[teamId, t.statusActive, TrainingRules.maxPlayers],
+      );
+
+      if (eligible.isEmpty) continue;
+
+      bool teamImproved = false;
+      for (final Map<String, Object?> player in eligible) {
+        // AI progress rate is ~10% below user (90% chance vs user's 100%)
+        if (_rng.nextDouble() > 0.90) continue;
+
+        final int playerId = player['player_id'] as int;
+        final int power = (player['power'] as int?) ?? 50;
+        final int potential = (player['potential'] as int?) ?? power;
+        final int age = (player['age'] as int?) ?? 22;
+        final int value = (player['value'] as int?) ?? 0;
+
+        final int newPower = min(potential, power + TrainingRules.powerGain);
+        if (newPower <= power) continue;
+
+        final int newValue = SquadRepository.valueAfterOverallChange(
+          currentValue: value,
+          previousPower: power,
+          newPower: newPower,
+          age: age,
+        );
+
+        await db.update(
+          t.players,
+          <String, Object?>{
+            'power': newPower,
+            'value': newValue,
+          },
+          where: 'player_id = ?',
+          whereArgs: <Object?>[playerId],
+        );
+        teamImproved = true;
+        totalImproved++;
+      }
+
+      if (teamImproved) {
+        improvedTeamIds.add(teamId);
+        if (budget >= TrainingRules.cost) {
+          await db.execute(
+            'UPDATE teams SET budget = budget - ? WHERE team_id = ?',
+            <Object?>[TrainingRules.cost, teamId],
+          );
+        }
+      }
+    }
+
+    // Refresh overall team power in database for teams with upgraded players
+    for (final int teamId in improvedTeamIds) {
+      await _squads.refreshTeamPower(teamId);
+    }
+
+    return totalImproved;
   }
 
   Future<List<Team>> _registeredClubs() async {
@@ -1303,13 +1533,16 @@ class CareerService {
     }
 
     onProgress('Promotion and relegation...');
-    for (final Tournament tour in tournaments) {
-      if (!tour.isLeague) continue;
-      final List<StandingRow> table = await _seasons.standings(
-        current.seasonId,
-        tour.tournamentId,
+    final List<Tournament> leagueTours =
+        tournaments.where((Tournament t) => t.isLeague).toList();
+    final Team? userClubBefore = await _refs.teamById(userTeamId);
+    if (userClubBefore != null) {
+      await _applyCountryPromotionRelegation(
+        seasonId: current.seasonId,
+        countryId: userClubBefore.countryId,
+        leagues: leagueTours,
+        userTeamId: userTeamId,
       );
-      await _applyPromotionRelegation(tour, table);
     }
     final Team? teamAfter = await _refs.teamById(userTeamId);
     if (teamBefore != null && teamAfter != null) {
@@ -1839,11 +2072,17 @@ class CareerService {
       return current; // nothing more we can generate; provider decides.
     }
 
+    final List<Tournament> allDomestic = await _refs.domesticLeagues(
+      userTeam.countryId,
+    );
     final CareerPlan plan = await _gen.generateCareer(
       countryId: userTeam.countryId,
       league: nextLeague,
       cup: nextCup,
       internationals: await _refs.internationalCups(userTeam.countryId),
+      otherLeagues: allDomestic
+          .where((Tournament l) => l.tournamentId != nextLeague.tournamentId)
+          .toList(),
       startYear: current.startYear + 1,
     );
     final List<Team> seasonClubs = await _registeredClubs();
@@ -1854,6 +2093,10 @@ class CareerService {
       seasonId: plan.season.seasonId,
       userTeamId: userTeamId,
       allTeams: clubsMap,
+    );
+    await _windowManager.ensureWindowsForSeason(
+      plan.season.seasonId,
+      plan.season.startYear,
     );
     await _messages.insert(
       title: plan.season.name,
@@ -1955,66 +2198,123 @@ class CareerService {
     return rows.map(Tournament.fromMap).toList();
   }
 
-  Future<void> _applyPromotionRelegation(
-    Tournament tour,
-    List<StandingRow> table,
-  ) async {
-    if (table.isEmpty) return;
-    final countryRows = await db.query(
-      t.tournamentCountries,
-      columns: <String>['country_id'],
-      where: 'tournament_id = ?',
-      whereArgs: <Object?>[tour.tournamentId],
-      limit: 1,
-    );
-    if (countryRows.isEmpty) return;
-    final int countryId = countryRows.first['country_id'] as int;
+  Future<void> _applyCountryPromotionRelegation({
+    required int seasonId,
+    required int countryId,
+    required List<Tournament> leagues,
+    required int userTeamId,
+  }) async {
+    final List<Tournament> sorted = List<Tournament>.of(leagues)
+      ..sort(
+        (Tournament a, Tournament b) =>
+            a.divisionId.compareTo(b.divisionId),
+      );
+    if (sorted.isEmpty) return;
 
-    // Count the division below first: a league may only send clubs down when
-    // that division can send replacements up, otherwise it shrinks forever.
-    final int? lowerCount = Sqflite.firstIntValue(
-      await db.rawQuery(
-        'SELECT COUNT(*) FROM teams WHERE country_id = ? AND division = ?',
-        <Object?>[countryId, tour.divisionId + 1],
-      ),
-    );
-    final int lowerTeams = lowerCount ?? 0;
-    final int relegated = min(tour.relegationSpots, lowerTeams);
-    final int promoted = tour.divisionId > 1
-        ? min(tour.promotionSlots, lowerTeams - relegated)
-        : 0;
-    final int incoming = relegated + promoted;
-    if (incoming == 0) return;
+    final Map<int, List<StandingRow>> tables = <int, List<StandingRow>>{};
+    for (final Tournament tour in sorted) {
+      final List<StandingRow> table = await _seasons.standings(
+        seasonId,
+        tour.tournamentId,
+      );
+      if (table.isNotEmpty) {
+        tables[tour.divisionId] = table;
+      }
+    }
 
-    // Clubs from the division below were not simulated, so the strongest
-    // ones take the vacated places.
-    final lowerRows = await db.query(
-      t.teams,
-      columns: <String>['team_id'],
-      where: 'country_id = ? AND division = ?',
-      whereArgs: <Object?>[countryId, tour.divisionId + 1],
-      orderBy: 'power DESC',
-      limit: incoming,
-    );
-    for (final Map<String, Object?> row in lowerRows) {
-      await db.execute(
-        'UPDATE teams SET division = division - 1 WHERE team_id = ?',
-        <Object?>[row['team_id']],
+    final Map<int, int> newDivisions = <int, int>{};
+    final Set<int> promotedTeamIds = <int>{};
+    final Set<int> relegatedTeamIds = <int>{};
+
+    for (int i = 0; i < sorted.length; i++) {
+      final Tournament currentTour = sorted[i];
+      final int div = currentTour.divisionId;
+      final List<StandingRow>? table = tables[div];
+      if (table == null || table.isEmpty) continue;
+
+      final Tournament? lowerTour = sorted
+          .where((Tournament t) => t.divisionId == div + 1)
+          .firstOrNull;
+      if (lowerTour != null) {
+        final List<StandingRow>? lowerTable = tables[div + 1];
+        final int swapCount = min(
+          currentTour.relegationSpots > 0
+              ? currentTour.relegationSpots
+              : lowerTour.promotionSlots,
+          min(table.length, lowerTable?.length ?? 0),
+        );
+        if (swapCount > 0 && lowerTable != null) {
+          // Bottom swapCount of current division go down to div + 1
+          for (int k = table.length - swapCount; k < table.length; k++) {
+            final int tId = table[k].teamId;
+            newDivisions[tId] = div + 1;
+            relegatedTeamIds.add(tId);
+          }
+          // Top swapCount of lower division come up to div
+          for (int k = 0; k < swapCount; k++) {
+            final int tId = lowerTable[k].teamId;
+            newDivisions[tId] = div;
+            promotedTeamIds.add(tId);
+          }
+        } else if (swapCount > 0 &&
+            (lowerTable == null || lowerTable.isEmpty)) {
+          // Fallback if lower division was not simulated
+          final lowerRows = await db.query(
+            t.teams,
+            columns: <String>['team_id'],
+            where: 'country_id = ? AND division = ?',
+            whereArgs: <Object?>[countryId, div + 1],
+            orderBy: 'power DESC',
+            limit: swapCount,
+          );
+          for (final Map<String, Object?> row in lowerRows) {
+            final int tId = row['team_id'] as int;
+            newDivisions[tId] = div;
+            promotedTeamIds.add(tId);
+          }
+          for (int k = table.length - swapCount; k < table.length; k++) {
+            final int tId = table[k].teamId;
+            newDivisions[tId] = div + 1;
+            relegatedTeamIds.add(tId);
+          }
+        }
+      }
+    }
+
+    // Apply all division updates
+    for (final MapEntry<int, int> entry in newDivisions.entries) {
+      await db.update(
+        t.teams,
+        <String, Object?>{'division': entry.value},
+        where: 'team_id = ?',
+        whereArgs: <Object?>[entry.key],
       );
     }
 
-    // Promote the best clubs of this league up one division.
-    for (int i = 0; i < promoted; i++) {
-      await db.execute(
-        'UPDATE teams SET division = division - 1 WHERE team_id = ? AND division > 1',
-        <Object?>[table[i].teamId],
+    // Notify user if club promoted or relegated
+    if (promotedTeamIds.contains(userTeamId)) {
+      final int newDiv = newDivisions[userTeamId]!;
+      final Tournament? targetTour = sorted
+          .where((Tournament t) => t.divisionId == newDiv)
+          .firstOrNull;
+      await _messages.insert(
+        title: 'PROMOTION CELEBRATION!',
+        body:
+            'Congratulations! By finishing in the promotion places, our club has earned promotion to ${targetTour?.name ?? 'Division $newDiv'} for next season!',
+        teamId: userTeamId,
+        sender: 'Board of Directors',
       );
-    }
-    // Relegate the bottom clubs.
-    for (int i = max(0, table.length - relegated); i < table.length; i++) {
-      await db.execute(
-        'UPDATE teams SET division = division + 1 WHERE team_id = ?',
-        <Object?>[table[i].teamId],
+    } else if (relegatedTeamIds.contains(userTeamId)) {
+      final int newDiv = newDivisions[userTeamId]!;
+      final Tournament? targetTour = sorted
+          .where((Tournament t) => t.divisionId == newDiv)
+          .firstOrNull;
+      await _messages.insert(
+        title: 'RELEGATION CONFIRMED',
+        body:
+            'A disappointing conclusion to the campaign. Our club has been relegated to ${targetTour?.name ?? 'Division $newDiv'}. We must rebuild and fight for immediate promotion next season.',
+        teamId: userTeamId,
+        sender: 'Board of Directors',
       );
     }
   }
@@ -2135,7 +2435,54 @@ class CareerService {
       }
     }
 
-    // Refresh user team overall power after player progression
-    await _squads.refreshTeamPower(userTeamId);
+    // Off-season natural development for young reserve players (under 24)
+    // with unrealized potential who didn't get match minutes.
+    // Progress pace is kept modest (~50% chance of +1 OVR) so they don't stagnate completely.
+    final List<Map<String, Object?>> unplayedYoungsters = await db.rawQuery(
+      '''
+      SELECT p.player_id, p.power, p.potential, p.age, p.value
+      FROM players p
+      JOIN team_players tp ON tp.player_id = p.player_id
+      JOIN season_teams st ON st.team_id = tp.team_id
+      WHERE st.season_id = ? AND tp.team_id != ? AND p.status_id = ?
+        AND p.age <= 23 AND p.power < p.potential
+        AND p.player_id NOT IN (
+          SELECT DISTINCT mp.player_id FROM match_players mp
+          JOIN matches m ON m.match_id = mp.match_id
+          WHERE m.season_id = ?
+        )
+    ''',
+      <Object?>[seasonId, userTeamId, t.statusActive, seasonId],
+    );
+    for (final Map<String, Object?> r in unplayedYoungsters) {
+      if (_rng.nextDouble() > 0.50) continue;
+      final int pid = r['player_id'] as int;
+      final int pwr = (r['power'] as int?) ?? 50;
+      final int pot = (r['potential'] as int?) ?? pwr;
+      final int age = (r['age'] as int?) ?? 20;
+      final int val = (r['value'] as int?) ?? 0;
+      final int newPwr = min(pot, pwr + 1);
+      final int newMv = SquadRepository.valueAfterOverallChange(
+        currentValue: val,
+        previousPower: pwr,
+        newPower: newPwr,
+        age: age,
+      );
+      await db.update(
+        t.players,
+        <String, Object?>{
+          'power': newPwr,
+          'value': newMv,
+        },
+        where: 'player_id = ?',
+        whereArgs: <Object?>[pid],
+      );
+    }
+
+    // Refresh overall power for all registered clubs in the season after player progression
+    final List<Team> seasonClubs = await _registeredClubs();
+    for (final Team club in seasonClubs) {
+      await _squads.refreshTeamPower(club.teamId);
+    }
   }
 }

@@ -1078,8 +1078,9 @@ class SquadRepository {
       );
       return <YouthProspect>[];
     }
-    if (currentDate.difference(previousDate).inDays < 90)
+    if (currentDate.difference(previousDate).inDays < 90) {
       return <YouthProspect>[];
+    }
     final List<Map<String, Object?>> teams = await db.query(
       t.teams,
       where: 'team_id = ?',
