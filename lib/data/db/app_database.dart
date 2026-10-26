@@ -64,6 +64,27 @@ class AppDatabase {
       )
     ''');
     await db.execute('''
+      CREATE TABLE IF NOT EXISTS ${t.offseasonState} (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        season_id INTEGER NOT NULL,
+        step INTEGER NOT NULL DEFAULT 0,
+        report TEXT NOT NULL DEFAULT '',
+        window_weeks INTEGER NOT NULL DEFAULT 0,
+        camp TEXT,
+        ambition TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ${t.boardObjectives} (
+        start_year INTEGER NOT NULL,
+        team_id INTEGER NOT NULL,
+        target_rank INTEGER NOT NULL,
+        bonus INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        PRIMARY KEY (start_year, team_id)
+      )
+    ''');
+    await db.execute('''
       CREATE TABLE IF NOT EXISTS ${t.teamTactics} (
         team_id INTEGER PRIMARY KEY,
         formation TEXT NOT NULL DEFAULT '4-4-2'

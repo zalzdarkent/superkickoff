@@ -11,6 +11,7 @@ import 'knockout_bracket_sheet.dart';
 import 'club_hub_sheet.dart';
 import 'market_tab.dart';
 import 'news_tab.dart';
+import 'offseason_screen.dart';
 import 'match_screen.dart';
 import 'matchday_results_sheet.dart';
 import 'squad_tab.dart';
@@ -96,7 +97,10 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         body: Stack(
           children: <Widget>[
-            RefreshIndicator(onRefresh: game.refreshWorld, child: _body(game)),
+            if (game.offseason != null)
+              const OffseasonView()
+            else
+              RefreshIndicator(onRefresh: game.refreshWorld, child: _body(game)),
             if (game.busy)
               Container(
                 color: Colors.black54,
@@ -118,7 +122,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
           ],
         ),
-        bottomNavigationBar: NavigationBar(
+        bottomNavigationBar: game.offseason != null
+            ? null
+            : NavigationBar(
           selectedIndex: _index,
           labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
           height: 64,

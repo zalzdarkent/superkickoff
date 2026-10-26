@@ -59,6 +59,8 @@ const String transferOffers = 'transfer_offers';
 const String worldRankingHistory = 'world_ranking_history';
 const String careerHistory = 'career_history';
 const String managerProfile = 'manager_profile';
+const String offseasonState = 'offseason_state';
+const String boardObjectives = 'board_objectives';
 
 // ------------------------------------------------------- match statuses
 const int matchScheduled = 1;

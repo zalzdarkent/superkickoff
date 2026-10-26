@@ -17,6 +17,7 @@ import '../data/repositories/sponsorship_repository.dart';
 import '../data/repositories/transfer_repository.dart';
 import 'formation.dart';
 import 'match_engine.dart';
+import 'offseason.dart';
 import 'prize_engine.dart';
 import 'season_generator.dart';
 
@@ -1171,9 +1172,52 @@ class CareerService {
     return <String, Map<int, int>>{'wins': wins, 'draws': draws};
   }
 
-  /// End-of-season flow: prizes, promotion/relegation, ageing & retirement,
-  /// archiving (which also aggregates player stats), then the next season.
+  // ------------------------------------------------------------ off-season
+
+  /// Runs the whole break in one go (no manager decisions). The game itself
+  /// walks the stages one at a time; this is the headless equivalent.
   Future<Season> completeSeason({
+    required int userTeamId,
+    required void Function(String) onProgress,
+  }) async {
+    await beginOffseason(userTeamId: userTeamId, onProgress: onProgress);
+    final Season current = (await _seasons.currentSeason())!;
+    onProgress('Contracts and retirements...');
+    await _enterContracts(current, userTeamId);
+    onProgress('Player development...');
+    await _enterDevelopment(current, userTeamId);
+    return startNextSeason(userTeamId: userTeamId, onProgress: onProgress);
+  }
+
+  Future<OffseasonState?> offseasonState() async {
+    final List<Map<String, Object?>> rows = await db.query(
+      t.offseasonState,
+      where: 'id = 1',
+      limit: 1,
+    );
+    return rows.isEmpty ? null : OffseasonState.fromMap(rows.first);
+  }
+
+  Future<void> _saveOffseason(
+    OffseasonState s, {
+    int? step,
+    String? report,
+    int? windowWeeks,
+    String? camp,
+    String? ambition,
+  }) => db.insert(t.offseasonState, <String, Object?>{
+    'id': 1,
+    'season_id': s.seasonId,
+    'step': step ?? s.step,
+    'report': report ?? s.report,
+    'window_weeks': windowWeeks ?? s.windowWeeks,
+    'camp': camp ?? s.camp,
+    'ambition': ambition ?? s.ambition,
+  }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+  /// Stage 1 — closes the competitions: prizes, history, promotion and
+  /// relegation, sponsor and board verdicts. Opens the off-season.
+  Future<OffseasonState> beginOffseason({
     required int userTeamId,
     required void Function(String) onProgress,
   }) async {
@@ -1184,6 +1228,8 @@ class CareerService {
     final List<Tournament> tournaments = await _seasonTournaments(
       current.seasonId,
     );
+    final Team? teamBefore = await _refs.teamById(userTeamId);
+    final List<String> lines = <String>[];
 
     onProgress('Awarding prizes...');
     final Set<String> titles = await _awardCompetitionPrizes(
@@ -1191,6 +1237,40 @@ class CareerService {
       userTeamId: userTeamId,
       tournaments: tournaments,
     );
+
+    // Final league standing of the user club, before the tables move on.
+    int userRank = 0;
+    for (final Tournament tour in tournaments) {
+      if (!tour.isLeague) continue;
+      final List<StandingRow> table = await _seasons.standings(
+        current.seasonId,
+        tour.tournamentId,
+      );
+      final int idx = table.indexWhere(
+        (StandingRow r) => r.teamId == userTeamId,
+      );
+      if (idx == -1) continue;
+      userRank = idx + 1;
+      final StandingRow row = table[idx];
+      lines.add(
+        'Finished ${_ordinal(userRank)} in ${tour.name} with ${row.points} pts '
+        '(${row.wins}W ${row.draws}D ${row.losses}L, '
+        '${row.goalsFor}:${row.goalsAgainst}).',
+      );
+      lines.add('Champions: ${table.first.name}.');
+    }
+    if (titles.isNotEmpty) lines.add('Trophies won: ${titles.join(', ')}.');
+
+    final int? prize = Sqflite.firstIntValue(
+      await db.rawQuery(
+        'SELECT SUM(amount) FROM ${t.competitionPrizeAwards} '
+        'WHERE season_id = ? AND team_id = ?',
+        <Object?>[current.seasonId, userTeamId],
+      ),
+    );
+    if (prize != null && prize > 0) {
+      lines.add('Prize money received: ${_money(prize)}.');
+    }
 
     onProgress('Recording season history...');
     await _seasons.recordSeasonAwards(
@@ -1204,6 +1284,23 @@ class CareerService {
       endYear: current.endYear,
       championships: titles.join(', '),
     );
+    final List<Map<String, Object?>> awards = await db.rawQuery(
+      '''
+      SELECT a.type, p.name FROM ${t.playerAwards} a
+      JOIN ${t.players} p ON p.player_id = a.player_id
+      WHERE a.season_id = ?
+    ''',
+      <Object?>[current.seasonId],
+    );
+    const Map<int, String> awardLabels = <int, String>{
+      t.awardTopScorer: 'Top scorer',
+      t.awardMvp: 'Player of the season',
+      t.awardYoungPlayer: 'Young player of the season',
+    };
+    for (final Map<String, Object?> a in awards) {
+      final String? label = awardLabels[a['type']];
+      if (label != null) lines.add('$label: ${a['name']}.');
+    }
 
     onProgress('Promotion and relegation...');
     for (final Tournament tour in tournaments) {
@@ -1214,30 +1311,17 @@ class CareerService {
       );
       await _applyPromotionRelegation(tour, table);
     }
-
-    onProgress('Ageing squads...');
-    await _ageAndRetire();
-
-    onProgress('Updating player values & contracts...');
-    await _evaluateSeasonPerformanceAndWages(
-      seasonId: current.seasonId,
-      userTeamId: userTeamId,
-    );
+    final Team? teamAfter = await _refs.teamById(userTeamId);
+    if (teamBefore != null && teamAfter != null) {
+      if (teamAfter.division < teamBefore.division) {
+        lines.add('PROMOTED! We move up to division ${teamAfter.division}.');
+      } else if (teamAfter.division > teamBefore.division) {
+        lines.add('Relegated to division ${teamAfter.division}.');
+      }
+    }
 
     if (_sponsorships != null) {
       onProgress('Evaluating sponsor objectives...');
-      int userRank = 0;
-      for (final Tournament tour in tournaments) {
-        if (!tour.isLeague) continue;
-        final List<StandingRow> table = await _seasons.standings(
-          current.seasonId,
-          tour.tournamentId,
-        );
-        final int idx = table.indexWhere(
-          (StandingRow r) => r.teamId == userTeamId,
-        );
-        if (idx != -1) userRank = idx + 1;
-      }
       final List<String> sponsorBonuses = await _sponsorships
           .evaluateSeasonTargets(
             teamId: userTeamId,
@@ -1245,6 +1329,7 @@ class CareerService {
             finalLeagueRank: userRank,
           );
       for (final String msg in sponsorBonuses) {
+        lines.add(msg);
         await _messages.insert(
           title: 'Sponsorship Bonus Paid!',
           body: msg,
@@ -1253,18 +1338,480 @@ class CareerService {
         );
       }
     }
+    lines.addAll(await _settleBoardObjective(current, userTeamId, userRank));
 
-    onProgress('Recalling loaned players...');
+    final OffseasonState state = OffseasonState(
+      seasonId: current.seasonId,
+      step: OffseasonStep.summary.index,
+      report: lines.join('\n'),
+      windowWeeks: 0,
+    );
+    await _saveOffseason(state);
+    return state;
+  }
+
+  Future<List<String>> _settleBoardObjective(
+    Season current,
+    int userTeamId,
+    int userRank,
+  ) async {
+    final List<Map<String, Object?>> rows = await db.query(
+      t.boardObjectives,
+      where: 'start_year = ? AND team_id = ? AND status = ?',
+      whereArgs: <Object?>[current.startYear, userTeamId, 'pending'],
+      limit: 1,
+    );
+    if (rows.isEmpty || userRank == 0) return <String>[];
+    final int target = rows.first['target_rank'] as int;
+    final int bonus = rows.first['bonus'] as int;
+    final bool met = userRank <= target;
+    await db.update(
+      t.boardObjectives,
+      <String, Object?>{'status': met ? 'met' : 'failed'},
+      where: 'start_year = ? AND team_id = ?',
+      whereArgs: <Object?>[current.startYear, userTeamId],
+    );
+    final String text = met
+        ? 'Board objective met (top $target): bonus of ${_money(bonus)} paid.'
+        : 'Board objective missed (top $target): the board is disappointed.';
+    if (met) {
+      await db.execute(
+        'UPDATE teams SET budget = budget + ? WHERE team_id = ?',
+        <Object?>[bonus, userTeamId],
+      );
+    }
+    await _messages.insert(
+      title: met ? 'Board objective achieved' : 'Board objective missed',
+      body: text,
+      teamId: userTeamId,
+      sender: 'Board',
+    );
+    return <String>[text];
+  }
+
+  static String _ordinal(int n) {
+    if (n % 100 >= 11 && n % 100 <= 13) return '${n}th';
+    switch (n % 10) {
+      case 1:
+        return '${n}st';
+      case 2:
+        return '${n}nd';
+      case 3:
+        return '${n}rd';
+      default:
+        return '${n}th';
+    }
+  }
+
+  /// User players whose contract ends this summer, best first.
+  Future<List<ExpiringContract>> expiringContracts(
+    int userTeamId,
+    int seasonEndYear,
+  ) async {
+    final List<Map<String, Object?>> rows = await db.rawQuery(
+      '''
+      SELECT p.*, MAX(c.end_date) AS contract_end,
+             MAX(c.salary) AS contract_salary
+      FROM ${t.players} p
+      JOIN ${t.teamPlayers} tp ON tp.player_id = p.player_id
+      JOIN ${t.contracts} c ON c.player_id = p.player_id AND c.status = 1
+      WHERE tp.team_id = ? AND p.status_id = ?
+        AND CAST(substr(c.end_date, 1, 4) AS INTEGER) <= ?
+      GROUP BY p.player_id
+      ORDER BY p.power DESC
+    ''',
+      <Object?>[userTeamId, t.statusActive, seasonEndYear],
+    );
+    return rows.map((Map<String, Object?> r) {
+      final int old = max(
+        (r['salary'] as int?) ?? 0,
+        (r['contract_salary'] as int?) ?? 0,
+      );
+      final int raised = max(old + 1, (old * 1.15).round());
+      return ExpiringContract(
+        player: Player.fromMap(r),
+        endDate: (r['contract_end'] as String?) ?? '',
+        newSalary: raised,
+        signingBonus: raised * 2,
+      );
+    }).toList();
+  }
+
+  /// Stage 2 — loans end, everyone ages, the old retire, AI contracts roll
+  /// over. The user's expiring deals are left for the manager to decide.
+  Future<String> _enterContracts(Season current, int userTeamId) async {
     await recallFinishedLoans(current.endYear, userTeamId);
 
-    onProgress('Archiving season stats...');
-    for (final Tournament tour in tournaments) {
+    final List<Map<String, Object?>> retiring = await db.rawQuery(
+      '''
+      SELECT p.name, p.age FROM ${t.players} p
+      JOIN ${t.teamPlayers} tp ON tp.player_id = p.player_id
+      WHERE tp.team_id = ? AND p.status_id = ?
+        AND (p.age + 1 >= 41 OR (p.age + 1 >= 37 AND p.power < 55))
+    ''',
+      <Object?>[userTeamId, t.statusActive],
+    );
+    await _ageAndRetire();
+
+    // Every other club simply extends the deals that run out.
+    await db.execute(
+      '''
+      UPDATE ${t.contracts} SET end_date = ? || substr(end_date, 5)
+      WHERE status = 1 AND team_id != ? AND end_date IS NOT NULL
+        AND CAST(substr(end_date, 1, 4) AS INTEGER) <= ?
+    ''',
+      <Object?>['${current.endYear + 2}', userTeamId, current.endYear],
+    );
+
+    final List<String> lines = <String>[
+      for (final Map<String, Object?> r in retiring)
+        '${r['name']} (${(r['age'] as int) + 1}) has retired from football.',
+    ];
+    if (retiring.isEmpty) lines.add('No one in the squad retired this summer.');
+    final int expiring = (await expiringContracts(
+      userTeamId,
+      current.endYear,
+    )).length;
+    lines.add(
+      expiring == 0
+          ? 'No contracts expire this summer.'
+          : '$expiring contract${expiring == 1 ? '' : 's'} expire this summer. '
+                'Renew the players you want to keep — the rest will leave.',
+    );
+    return lines.join('\n');
+  }
+
+  /// Lets expiring user players that were not renewed walk out to other clubs.
+  Future<List<String>> _releaseUnrenewed(Season current, int userTeamId) async {
+    final List<ExpiringContract> leaving = await expiringContracts(
+      userTeamId,
+      current.endYear,
+    );
+    if (leaving.isEmpty) return <String>[];
+    final List<Team> buyers = (await _registeredClubs())
+        .where((Team team) => team.teamId != userTeamId)
+        .toList();
+    final List<String> lines = <String>[];
+    for (final ExpiringContract c in leaving) {
+      final int pid = c.player.playerId;
+      if (buyers.isEmpty) continue;
+      final Team club = buyers[_rng.nextInt(buyers.length)];
+      await db.update(
+        t.teamPlayers,
+        <String, Object?>{'team_id': club.teamId},
+        where: 'player_id = ?',
+        whereArgs: <Object?>[pid],
+      );
+      await db.update(
+        t.contracts,
+        <String, Object?>{
+          'team_id': club.teamId,
+          'end_date': '${current.endYear + 2}-06-30',
+        },
+        where: 'player_id = ? AND status = 1',
+        whereArgs: <Object?>[pid],
+      );
+      await db.update(
+        t.players,
+        <String, Object?>{
+          'squad_status': t.squadReserve,
+          'market_status': t.marketActive,
+          'is_captain': 0,
+        },
+        where: 'player_id = ?',
+        whereArgs: <Object?>[pid],
+      );
+      await db.delete(
+        t.teamLineups,
+        where: 'team_id = ? AND player_id = ?',
+        whereArgs: <Object?>[userTeamId, pid],
+      );
+      lines.add('${c.player.name} left on a free transfer to ${club.name}.');
+    }
+    await _squads.refreshTeamPower(userTeamId);
+    return lines;
+  }
+
+  /// Stage 3 — season performance and age shape every player's rating.
+  Future<String> _enterDevelopment(Season current, int userTeamId) async {
+    final List<Player> before = await _squads.squadForTeam(userTeamId);
+    final Map<int, int> oldPower = <int, int>{
+      for (final Player p in before) p.playerId: p.power,
+    };
+
+    // Needs the per-match rows, so it must run before the archive below.
+    await _evaluateSeasonPerformanceAndWages(
+      seasonId: current.seasonId,
+      userTeamId: userTeamId,
+    );
+    await _developPlayers();
+    for (final Tournament tour in await _seasonTournaments(current.seasonId)) {
       await _seasons.archiveSeasonTournament(
         current.seasonId,
         tour.tournamentId,
       );
     }
+    await _squads.refreshAllTeamPowers();
 
+    final List<Player> after = await _squads.squadForTeam(userTeamId);
+    final List<(Player, int)> changes = <(Player, int)>[
+      for (final Player p in after)
+        if (oldPower.containsKey(p.playerId) && p.power != oldPower[p.playerId])
+          (p, p.power - oldPower[p.playerId]!),
+    ]..sort(((Player, int) a, (Player, int) b) => b.$2.compareTo(a.$2));
+    final List<String> lines = <String>[
+      for (final (Player, int) c in changes)
+        '${c.$2 > 0 ? '+' : '-'} ${c.$1.name} (${c.$1.age}): '
+            '${oldPower[c.$1.playerId]} → ${c.$1.power}',
+    ];
+    if (lines.isEmpty) lines.add('No notable changes in the squad.');
+    return lines.join('\n');
+  }
+
+  /// Youngsters grow towards their potential, veterans slowly decline. The
+  /// "random" step is derived from the player id and age so each statement is
+  /// consistent with itself and the result still varies year to year.
+  Future<void> _developPlayers() async {
+    const String grow =
+        'MIN(potential - power, 1 + (player_id * 7 + age * 13) % 3)';
+    const String prime =
+        'MIN(potential - power, (player_id * 7 + age * 13) % 2)';
+    // Value follows the same curve as SquadRepository.valueAfterOverallChange.
+    Future<void> raise(String where, String inc, String rate) => db.execute(
+      '''
+      UPDATE ${t.players}
+      SET value = value + CAST(ROUND(value * $rate * (0.6 + power / 100.0) * ($inc)) AS INTEGER),
+          power = power + ($inc)
+      WHERE status_id = ? AND power < potential AND $where
+    ''',
+      <Object?>[t.statusActive],
+    );
+    await raise('age <= 23', grow, '0.16');
+    await raise('age BETWEEN 24 AND 27', prime, '0.14');
+    await db.execute(
+      '''
+      UPDATE ${t.players}
+      SET power = MAX(40, power - CASE WHEN age >= 34
+            THEN 1 + (player_id * 5 + age * 11) % 2
+            ELSE (player_id * 5 + age * 11) % 3 END)
+      WHERE status_id = ? AND age >= 31
+    ''',
+      <Object?>[t.statusActive],
+    );
+  }
+
+  /// Advances the stage the manager is on. Returns an error message when the
+  /// stage is not finished yet, otherwise null.
+  Future<String?> advanceOffseason({
+    required int userTeamId,
+    required void Function(String) onProgress,
+  }) async {
+    final OffseasonState? s = await offseasonState();
+    if (s == null) return 'No off-season in progress.';
+    final Season? current = await _seasons.currentSeason();
+    if (current == null) return 'No season loaded.';
+    final OffseasonStep step = s.current;
+    switch (step) {
+      case OffseasonStep.summary:
+        onProgress('Contracts and retirements...');
+        await _saveOffseason(
+          s,
+          step: OffseasonStep.contracts.index,
+          report: await _enterContracts(current, userTeamId),
+        );
+      case OffseasonStep.contracts:
+        onProgress('Player development...');
+        final List<String> left = await _releaseUnrenewed(current, userTeamId);
+        final String dev = await _enterDevelopment(current, userTeamId);
+        await _saveOffseason(
+          s,
+          step: OffseasonStep.development.index,
+          report: <String>[...left, dev].join('\n'),
+        );
+      case OffseasonStep.development:
+        await _saveOffseason(
+          s,
+          step: OffseasonStep.transfers.index,
+          windowWeeks: _transferWindowWeeks,
+          report:
+              'The transfer window is open for $_transferWindowWeeks weeks. '
+              'Use the market below, then advance the weeks to the deadline.',
+        );
+      case OffseasonStep.transfers:
+        if (s.windowWeeks > 0) {
+          return 'The transfer window is still open — advance to the deadline.';
+        }
+        await _saveOffseason(
+          s,
+          step: OffseasonStep.preseason.index,
+          report: 'Choose how the squad prepares for the new season.',
+        );
+      case OffseasonStep.preseason:
+        if (s.camp == null) return 'Choose a pre-season camp first.';
+        await _saveOffseason(
+          s,
+          step: OffseasonStep.board.index,
+          report: 'The board will set a target for the coming season.',
+        );
+      case OffseasonStep.board:
+        if (s.ambition == null) return 'Agree an objective with the board.';
+        await _saveOffseason(
+          s,
+          step: OffseasonStep.newSeason.index,
+          report: 'Everything is in place. The fixtures are ready to be drawn.',
+        );
+      case OffseasonStep.newSeason:
+        return 'Start the new season instead.';
+    }
+    return null;
+  }
+
+  static const int _transferWindowWeeks = 4;
+
+  /// One week of the window: AI clubs trade among themselves.
+  Future<void> advanceTransferWindow(
+    int userTeamId, {
+    bool toDeadline = false,
+  }) async {
+    OffseasonState? s = await offseasonState();
+    if (s == null || s.current != OffseasonStep.transfers) return;
+    final int weeks = toDeadline ? s.windowWeeks : min(1, s.windowWeeks);
+    for (int w = 0; w < weeks; w++) {
+      for (int i = 0; i < 5; i++) {
+        await _runMarketAi(userTeamId);
+      }
+    }
+    await _saveOffseason(s, windowWeeks: s.windowWeeks - weeks);
+  }
+
+  /// Applies the chosen camp. Returns an error message, or null on success.
+  Future<String?> choosePreseasonCamp(
+    int userTeamId,
+    PreseasonCamp camp,
+  ) async {
+    final OffseasonState? s = await offseasonState();
+    if (s == null || s.current != OffseasonStep.preseason) {
+      return 'Not in the pre-season stage.';
+    }
+    if (s.camp != null) return 'A camp has already been chosen.';
+    final Team? team = await _refs.teamById(userTeamId);
+    if (team == null) return 'Club not found.';
+    if (camp.cost > team.budget) {
+      return 'Not enough budget: the camp costs ${_money(camp.cost)}.';
+    }
+    await db.execute(
+      'UPDATE teams SET budget = budget - ? WHERE team_id = ?',
+      <Object?>[camp.cost, userTeamId],
+    );
+    await db.execute(
+      '''
+      UPDATE ${t.players} SET fitness = ?
+      WHERE status_id = ? AND player_id IN
+        (SELECT player_id FROM ${t.teamPlayers} WHERE team_id = ?)
+    ''',
+      <Object?>[
+        camp == PreseasonCamp.tour ? 85 : 100,
+        t.statusActive,
+        userTeamId,
+      ],
+    );
+    final List<String> lines = <String>[camp.label];
+    if (camp == PreseasonCamp.training) {
+      final List<Player> squad = await _squads.squadForTeam(userTeamId);
+      final List<Player> prospects =
+          squad
+              .where((Player p) => p.age <= 23 && p.power < p.potential)
+              .toList()
+            ..sort(
+              (Player a, Player b) =>
+                  (b.potential - b.power).compareTo(a.potential - a.power),
+            );
+      for (final Player p in prospects.take(3)) {
+        await db.update(
+          t.players,
+          <String, Object?>{'power': p.power + 1},
+          where: 'player_id = ?',
+          whereArgs: <Object?>[p.playerId],
+        );
+        await _squads.refreshPlayerValue(p.playerId, previousPower: p.power);
+        lines.add('+ ${p.name}: ${p.power} → ${p.power + 1}');
+      }
+      await _squads.refreshTeamPower(userTeamId);
+    }
+    await _saveOffseason(s, camp: camp.name, report: lines.join('\n'));
+    return null;
+  }
+
+  /// The three objectives the board puts on the table for next season.
+  Future<List<BoardOption>> boardOptions(int userTeamId) async {
+    final Team? team = await _refs.teamById(userTeamId);
+    if (team == null) return <BoardOption>[];
+    final List<Map<String, Object?>> rows = await db.query(
+      t.teams,
+      columns: <String>['team_id'],
+      where: 'country_id = ? AND division = ?',
+      whereArgs: <Object?>[team.countryId, team.division],
+      orderBy: 'power DESC, team_id ASC',
+    );
+    final int size = max(1, rows.length);
+    final int idx = rows.indexWhere(
+      (Map<String, Object?> r) => r['team_id'] == userTeamId,
+    );
+    final int expected = idx == -1 ? size : idx + 1;
+    return <BoardOption>[
+      for (final BoardAmbition a in BoardAmbition.values)
+        BoardOption(
+          ambition: a,
+          targetRank: (expected + a.rankOffset).clamp(1, size),
+          bonus: ((max(300000, team.budget * a.rate) / 10000).round()) * 10000,
+        ),
+    ];
+  }
+
+  /// Agrees the objective: the advance is paid now, the bonus on success.
+  Future<String?> chooseBoardAmbition(
+    int userTeamId,
+    BoardAmbition ambition,
+  ) async {
+    final OffseasonState? s = await offseasonState();
+    final Season? current = await _seasons.currentSeason();
+    if (s == null || current == null || s.current != OffseasonStep.board) {
+      return 'Not in the board stage.';
+    }
+    if (s.ambition != null) return 'The objective has already been agreed.';
+    final BoardOption option = (await boardOptions(userTeamId))
+        .firstWhere((BoardOption o) => o.ambition == ambition);
+    await db.insert(t.boardObjectives, <String, Object?>{
+      'start_year': current.startYear + 1,
+      'team_id': userTeamId,
+      'target_rank': option.targetRank,
+      'bonus': option.bonus,
+      'status': 'pending',
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.execute(
+      'UPDATE teams SET budget = budget + ? WHERE team_id = ?',
+      <Object?>[option.advance, userTeamId],
+    );
+    await _saveOffseason(
+      s,
+      ambition: ambition.name,
+      report:
+          'Target: finish in the top ${option.targetRank}. '
+          'The board adds ${_money(option.advance)} to the transfer budget now '
+          'and pays ${_money(option.bonus)} if we deliver.',
+    );
+    return null;
+  }
+
+  /// Final stage — draws the new season and closes the off-season.
+  Future<Season> startNextSeason({
+    required int userTeamId,
+    required void Function(String) onProgress,
+  }) async {
+    final Season? current = await _seasons.currentSeason();
+    if (current == null) {
+      throw StateError('No season to complete');
+    }
     onProgress('Preparing the new season...');
     final Team? userTeam = await _refs.teamById(userTeamId);
     if (userTeam == null) {
@@ -1313,6 +1860,7 @@ class CareerService {
       body: 'Fixtures are out for the new season — good luck!',
       sender: 'League',
     );
+    await db.delete(t.offseasonState);
     return plan.season;
   }
 

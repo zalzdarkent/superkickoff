@@ -21,6 +21,7 @@ import '../game/career_service.dart';
 import '../game/formation.dart';
 import '../game/match_engine.dart';
 import '../game/news_engine.dart';
+import '../game/offseason.dart';
 import '../game/season_generator.dart';
 import '../game/training.dart';
 
@@ -51,6 +52,9 @@ class CareerProvider extends ChangeNotifier {
   String busyStatus = '';
 
   Season? season;
+
+  /// Set while the break between two seasons is in progress.
+  OffseasonState? offseason;
   Tournament? league;
   Tournament? cup;
 
@@ -140,6 +144,7 @@ class CareerProvider extends ChangeNotifier {
       return;
     }
     season = await _seasons.currentSeason();
+    offseason = await _service.offseasonState();
     week = await _completedWeeks(season!.seasonId);
     await _deriveCareerContext();
     await refreshWorld();
@@ -776,19 +781,84 @@ class CareerProvider extends ChangeNotifier {
       busy = true;
       busyStatus = 'Season finished!';
       notifyListeners();
-      final Season next = await _service.completeSeason(
+      offseason = await _service.beginOffseason(
         userTeamId: userTeamId,
         onProgress: (String s) {
           busyStatus = s;
           notifyListeners();
         },
       );
-      season = next;
-      week = 0;
-      await _deriveCareerContext();
       busy = false;
       await refreshWorld();
     }
+  }
+
+  // ------------------------------------------------------------- off-season
+
+  Future<T> _offseasonWork<T>(Future<T> Function() work, String status) async {
+    busy = true;
+    busyStatus = status;
+    notifyListeners();
+    try {
+      return await work();
+    } finally {
+      offseason = await _service.offseasonState();
+      busy = false;
+      await refreshWorld();
+    }
+  }
+
+  void _progress(String s) {
+    busyStatus = s;
+    notifyListeners();
+  }
+
+  /// Finishes the current stage and opens the next one.
+  Future<String?> advanceOffseason() => _offseasonWork(
+    () => _service.advanceOffseason(
+      userTeamId: userTeamId,
+      onProgress: _progress,
+    ),
+    'Moving on...',
+  );
+
+  Future<List<ExpiringContract>> expiringContracts() => season == null
+      ? Future<List<ExpiringContract>>.value(<ExpiringContract>[])
+      : _service.expiringContracts(userTeamId, season!.endYear);
+
+  Future<void> advanceTransferWindow({bool toDeadline = false}) =>
+      _offseasonWork(
+        () =>
+            _service.advanceTransferWindow(userTeamId, toDeadline: toDeadline),
+        'Transfer window...',
+      );
+
+  Future<String?> choosePreseasonCamp(PreseasonCamp camp) => _offseasonWork(
+    () => _service.choosePreseasonCamp(userTeamId, camp),
+    'Pre-season...',
+  );
+
+  Future<List<BoardOption>> boardOptions() => _service.boardOptions(userTeamId);
+
+  Future<String?> chooseBoardAmbition(BoardAmbition ambition) => _offseasonWork(
+    () => _service.chooseBoardAmbition(userTeamId, ambition),
+    'Meeting the board...',
+  );
+
+  Future<void> startNextSeason() async {
+    busy = true;
+    busyStatus = 'Preparing the new season...';
+    notifyListeners();
+    final Season next = await _service.startNextSeason(
+      userTeamId: userTeamId,
+      onProgress: _progress,
+    );
+    season = next;
+    week = 0;
+    offseason = await _service.offseasonState();
+    await _deriveCareerContext();
+    busy = false;
+    await refreshWorld();
   }
 
   /// Starts a resumable session from the title screen.
