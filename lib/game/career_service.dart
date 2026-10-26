@@ -203,12 +203,159 @@ class CareerService {
     return typeId ?? 2;
   }
 
+  /// Ultra-fast simulation for background AI-vs-AI matches (cups, lower divisions).
+  /// Generates score and advances bracket in < 0.1ms without heavy database operations.
+  Future<MatchResult> simulateMatchFast(FixtureMatch match) async {
+    final Team? home = await _refs.teamById(match.homeTeamId);
+    final Team? away = await _refs.teamById(match.awayTeamId);
+    final int homePower = home?.power ?? 60;
+    final int awayPower = away?.power ?? 60;
+
+    final (int homeGoals, int awayGoals) = _engine.quickSimulate(
+      homePower: homePower + 3,
+      awayPower: awayPower,
+    );
+
+    int? winnerId = homeGoals > awayGoals
+        ? match.homeTeamId
+        : (awayGoals > homeGoals ? match.awayTeamId : null);
+    int? penaltyHome;
+    int? penaltyAway;
+
+    if (await _isKnockout(match)) {
+      if (match.leg == 1) {
+        final bool hasLeg2 = (Sqflite.firstIntValue(
+              await db.rawQuery(
+                '''
+                SELECT COUNT(*) FROM matches
+                WHERE season_id = ? AND tournament_id = ? AND phase = ? AND leg = 2
+                  AND home_team_id = ? AND away_team_id = ?
+                ''',
+                <Object?>[
+                  match.seasonId,
+                  match.tournamentId,
+                  match.phase,
+                  match.awayTeamId,
+                  match.homeTeamId,
+                ],
+              ),
+            ) ??
+            0) >
+            0;
+        if (!hasLeg2 && winnerId == null) {
+          penaltyHome = _rng.nextInt(3) + 4;
+          penaltyAway = penaltyHome + (_rng.nextBool() ? 1 : -1);
+          if (penaltyHome == penaltyAway) penaltyHome = penaltyHome + 1;
+          winnerId = penaltyHome > penaltyAway ? match.homeTeamId : match.awayTeamId;
+        }
+      } else if (match.leg == 2) {
+        final List<Map<String, Object?>> leg1Rows = await db.query(
+          t.matches,
+          where:
+              'season_id = ? AND tournament_id = ? AND phase = ? AND leg = 1 '
+              'AND home_team_id = ? AND away_team_id = ?',
+          whereArgs: <Object?>[
+            match.seasonId,
+            match.tournamentId,
+            match.phase,
+            match.awayTeamId,
+            match.homeTeamId,
+          ],
+          limit: 1,
+        );
+        if (leg1Rows.isNotEmpty) {
+          final int leg1Away = (leg1Rows.first['away_goals'] as int?) ?? 0;
+          final int leg1Home = (leg1Rows.first['home_goals'] as int?) ?? 0;
+          final int homeAgg = homeGoals + leg1Away;
+          final int awayAgg = awayGoals + leg1Home;
+          if (homeAgg > awayAgg) {
+            winnerId = match.homeTeamId;
+          } else if (awayAgg > homeAgg) {
+            winnerId = match.awayTeamId;
+          } else {
+            penaltyHome = _rng.nextInt(3) + 4;
+            penaltyAway = penaltyHome + (_rng.nextBool() ? 1 : -1);
+            if (penaltyHome == penaltyAway) penaltyHome = penaltyHome + 1;
+            winnerId = penaltyHome > penaltyAway ? match.homeTeamId : match.awayTeamId;
+          }
+        }
+      } else if (winnerId == null) {
+        penaltyHome = _rng.nextInt(3) + 4;
+        penaltyAway = penaltyHome + (_rng.nextBool() ? 1 : -1);
+        if (penaltyHome == penaltyAway) penaltyHome = penaltyHome + 1;
+        winnerId = penaltyHome > penaltyAway ? match.homeTeamId : match.awayTeamId;
+      }
+    }
+
+    await db.update(
+      t.matches,
+      <String, Object?>{
+        'home_goals': homeGoals,
+        'away_goals': awayGoals,
+        'winner_id': winnerId,
+        'penalty_home_goals': penaltyHome,
+        'penalty_away_goals': penaltyAway,
+        'status': t.matchFinished,
+      },
+      where: 'match_id = ?',
+      whereArgs: <Object?>[match.matchId],
+    );
+
+    return MatchResult(
+      homeGoals: homeGoals,
+      awayGoals: awayGoals,
+      events: const <MatchEvent>[],
+      playerRows: const <MatchPlayerRow>[],
+      attendanceGeneral: 0,
+      attendanceStand: 0,
+      attendanceTerrace: 0,
+      attendanceBoxes: 0,
+      revenue: 0,
+      homeShots: homeGoals + _rng.nextInt(4) + 2,
+      awayShots: awayGoals + _rng.nextInt(4) + 2,
+      homeShotsOnTarget: homeGoals + _rng.nextInt(3),
+      awayShotsOnTarget: awayGoals + _rng.nextInt(3),
+      homeSaves: awayGoals > 0 ? _rng.nextInt(3) : 0,
+      awaySaves: homeGoals > 0 ? _rng.nextInt(3) : 0,
+      homePossession: 50,
+      input: MatchInput(
+        homeSquad: const <Player>[],
+        awaySquad: const <Player>[],
+        capacityGeneral: 0,
+        capacityStand: 0,
+        capacityTerrace: 0,
+        capacityBoxes: 0,
+        homePower: homePower,
+        homeFormation: Formation.f442,
+        awayFormation: Formation.f442,
+        homeTeamId: match.homeTeamId,
+        awayTeamId: match.awayTeamId,
+        homeLineupIds: const <int>[],
+        awayLineupIds: const <int>[],
+        refereeTemper: 2,
+      ),
+    );
+  }
+
   /// Simulates [match] and persists the full result. Returns the result for
   /// the live viewer (events are already minute-ordered).
   Future<MatchResult> simulateMatch(
     FixtureMatch match, {
     bool recordEvents = true,
+    int? userTeamId,
+    int? userLeagueId,
   }) async {
+    final bool isUserTeam = (userTeamId != null) &&
+        (match.homeTeamId == userTeamId || match.awayTeamId == userTeamId);
+    final bool isTargetLeague = userLeagueId != null
+        ? match.tournamentId == userLeagueId
+        : !(await _isKnockout(match));
+
+    // Fast-path: AI-vs-AI matches not in the user's league or cup matches.
+    if (!recordEvents && !isUserTeam && !isTargetLeague) {
+      return simulateMatchFast(match);
+    }
+
     final MatchInput input = await prepareMatchInput(match);
     final Set<int> banned = await _suspendedPlayerIds(match);
     final MatchResult result = _engine.simulate(
@@ -403,18 +550,28 @@ class CareerService {
         'red_cards': row.redCards,
       };
 
-  /// Quick-simulates every scheduled match on [date] except [skipMatchId],
-  /// which the player will play live.
+  /// Quick-simulates scheduled matches on [date] except [skipMatchId],
+  /// which the player will play live. If [tournamentId] is provided, only matches
+  /// for that tournament will be simulated.
   Future<Map<int, MatchResult>> simulateMatchday({
     required int seasonId,
     required String date,
     int? skipMatchId,
+    int? tournamentId,
+    int? userTeamId,
+    int? userLeagueId,
   }) async {
     final List<FixtureMatch> fixtures = await matchesOnDate(seasonId, date);
     final Map<int, MatchResult> results = <int, MatchResult>{};
     for (final FixtureMatch m in fixtures) {
       if (m.matchId == skipMatchId) continue;
-      results[m.matchId] = await simulateMatch(m, recordEvents: false);
+      if (tournamentId != null && m.tournamentId != tournamentId) continue;
+      results[m.matchId] = await simulateMatch(
+        m,
+        recordEvents: false,
+        userTeamId: userTeamId,
+        userLeagueId: userLeagueId,
+      );
     }
     return results;
   }

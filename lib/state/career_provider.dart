@@ -229,6 +229,39 @@ class CareerProvider extends ChangeNotifier {
     };
     await _ensureDomesticLeagues();
     await _ensureInternationalCups();
+    await _cleanUnusedScheduledMatches();
+  }
+
+  /// Cleans up stray scheduled matches for competitions where the user has no
+  /// participation (such as continental tiers user didn't qualify for).
+  Future<void> _cleanUnusedScheduledMatches() async {
+    final Season? current = season;
+    final int uTeamId = userTeamId;
+    final Tournament? lg = league;
+    if (current == null || lg == null) return;
+
+    final List<Map<String, Object?>> userCupRows = await _db.rawQuery('''
+      SELECT DISTINCT tournament_id FROM matches
+      WHERE season_id = ? AND (home_team_id = ? OR away_team_id = ?)
+    ''', <Object?>[current.seasonId, uTeamId, uTeamId]);
+
+    final Set<int> activeTours = <int>{
+      lg.tournamentId,
+      9999,
+      for (final Tournament d in domesticLeagues) d.tournamentId,
+      for (final Map<String, Object?> r in userCupRows)
+        r['tournament_id'] as int,
+    };
+
+    await _db.delete(
+      t.matches,
+      where:
+          'season_id = ? AND status = ? AND tournament_id NOT IN (${activeTours.join(',')})',
+      whereArgs: <Object?>[
+        current.seasonId,
+        t.matchScheduled,
+      ],
+    );
   }
 
   /// Older saves only have the top division generated. Add missing domestic
@@ -683,6 +716,11 @@ class CareerProvider extends ChangeNotifier {
     if (match.tournamentId == league?.tournamentId) {
       return league?.name ?? 'League';
     }
+    for (final Tournament tournament in domesticLeagues) {
+      if (tournament.tournamentId == match.tournamentId) {
+        return tournament.name;
+      }
+    }
     for (final Tournament tournament in cups) {
       if (tournament.tournamentId == match.tournamentId) {
         return tournament.name;
@@ -857,12 +895,16 @@ class CareerProvider extends ChangeNotifier {
     if (season == null || nextDate == null) return;
     final int seasonId = season!.seasonId;
     final String date = nextDate!;
+    final int? tourId = nextUserMatch?.tournamentId ??
+        (matchesToday.isNotEmpty ? matchesToday.first.tournamentId : null);
     await _service.simulateMatchday(
       seasonId: seasonId,
       date: date,
       skipMatchId: nextUserMatch?.matchId,
+      userTeamId: userTeamId,
+      userLeagueId: league?.tournamentId,
     );
-    await _rememberMatchday(seasonId, date);
+    await _rememberMatchday(seasonId, date, tournamentId: tourId);
     await _tickAfterMatchday();
   }
 
@@ -873,12 +915,15 @@ class CareerProvider extends ChangeNotifier {
     final int? seasonId = season?.seasonId;
     final String? date = nextDate;
     if (seasonId != null && date != null) {
+      final int? tourId = mine?.tournamentId;
       await _service.simulateMatchday(
         seasonId: seasonId,
         date: date,
         skipMatchId: mine?.matchId,
+        userTeamId: userTeamId,
+        userLeagueId: league?.tournamentId,
       );
-      await _rememberMatchday(seasonId, date);
+      await _rememberMatchday(seasonId, date, tournamentId: tourId);
     }
     liveSession = null;
     await _tickAfterMatchday();
@@ -928,14 +973,22 @@ class CareerProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _rememberMatchday(int seasonId, String date) async {
+  Future<void> _rememberMatchday(
+    int seasonId,
+    String date, {
+    int? tournamentId,
+  }) async {
     await _writeNews(seasonId, date);
     final List<FixtureMatch> played = await _service.matchesOnDate(
       seasonId,
       date,
       scheduledOnly: false,
     );
-    lastMatchday = played.where((FixtureMatch m) => m.isPlayed).toList();
+    lastMatchday = played
+        .where((FixtureMatch m) =>
+            m.isPlayed &&
+            (tournamentId == null || m.tournamentId == tournamentId))
+        .toList();
     lastMatchdayTeams = Map<int, Team>.of(teamCache);
     lastMatchdayAggregates = <int, (int, int)>{};
     for (final FixtureMatch m in lastMatchday) {

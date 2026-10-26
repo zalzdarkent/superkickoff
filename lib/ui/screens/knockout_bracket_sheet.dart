@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/models/models.dart';
 import '../theme.dart';
+import '../widgets/common.dart';
 import 'team_detail_sheet.dart';
 
 /// Displays the played and upcoming rounds of one cup's knockout bracket.
@@ -73,9 +74,20 @@ class _KnockoutBracketSheet extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: Text(
-              '${tournament.name} · Knockout bracket',
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            child: Row(
+              children: <Widget>[
+                TournamentAvatar(
+                  tournament: tournament,
+                  radius: 12,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${tournament.name} · Knockout bracket',
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
             ),
           ),
           const Divider(height: 1),
@@ -117,7 +129,7 @@ class _RoundColumn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 178,
+      width: 196,
       child: Padding(
         padding: const EdgeInsets.only(right: 10),
         child: Column(
@@ -226,6 +238,7 @@ class _MatchCard extends StatelessWidget {
     final bool winner = tie.winnerId == teamId;
     final bool two = tie.twoLegged;
     String score(int? goals, bool played) => played ? '${goals ?? 0}' : '-';
+    final Team? team = teams[teamId];
     return Row(
       children: <Widget>[
         Expanded(
@@ -234,19 +247,36 @@ class _MatchCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(4),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
-              child: Text(
-                teams[teamId]?.name ?? '?',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: winner ? FontWeight.bold : FontWeight.normal,
-                  color: winner ? AppTheme.accent : null,
-                ),
+              child: Row(
+                children: <Widget>[
+                  if (team != null)
+                    CrestAvatar(team: team, radius: 8.5)
+                  else
+                    CrestAvatar.raw(
+                      teamId: teamId,
+                      name: '?',
+                      abbreviation: '?',
+                      radius: 8.5,
+                    ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      team?.name ?? '?',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: winner ? FontWeight.bold : FontWeight.normal,
+                        color: winner ? AppTheme.accent : null,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ),
+        const SizedBox(width: 4),
         Text(
           two
               ? '${score(leg1Goals, tie.first.isPlayed)}  '
@@ -302,10 +332,19 @@ class _ChampionColumn extends StatelessWidget {
                 color: AppTheme.warn.withAlpha(30),
                 borderRadius: BorderRadius.circular(7),
               ),
-              child: Text(
-                champion?.name ?? 'TBD',
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  if (champion != null) ...<Widget>[
+                    CrestAvatar(team: champion!, radius: 18),
+                    const SizedBox(height: 6),
+                  ],
+                  Text(
+                    champion?.name ?? 'TBD',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ],
               ),
             ),
           ),

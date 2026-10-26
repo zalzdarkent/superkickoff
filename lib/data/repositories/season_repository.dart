@@ -208,6 +208,35 @@ class SeasonRepository {
         ...groupArgs,
       ],
     );
+    if (teamRows.isEmpty) {
+      final fallbackRows = await db.rawQuery(
+        '''
+        SELECT tm.team_id, tm.name, tm.abbreviation, tm.logo_base64
+        FROM teams tm
+        JOIN tournaments tu ON tu.division_id = tm.division
+        WHERE tu.tournament_id = ?
+        ORDER BY tm.power DESC, tm.name ASC
+        ''',
+        <Object?>[tournamentId],
+      );
+      for (final Map<String, Object?> r in fallbackRows) {
+        final StandingRow row = StandingRow(
+          teamId: r['team_id'] as int,
+          name: r['name'] as String,
+          abbreviation: r['abbreviation'] as String? ?? '',
+          logoBase64: r['logo_base64'] as String?,
+          played: 0,
+          wins: 0,
+          draws: 0,
+          losses: 0,
+          goalsFor: 0,
+          goalsAgainst: 0,
+          points: 0,
+        );
+        rows.add(row);
+      }
+      return rows;
+    }
     for (final Map<String, Object?> r in teamRows) {
       final StandingRow row = StandingRow(
         teamId: r['team_id'] as int,

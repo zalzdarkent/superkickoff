@@ -166,6 +166,8 @@ class MatchStatsSheet extends StatelessWidget {
               children: <Widget>[
                 Container(width: 8, height: 8, color: AppTheme.accent),
                 const SizedBox(width: 5),
+                CrestAvatar(team: session.homeTeam, radius: 8),
+                const SizedBox(width: 5),
                 Flexible(
                   child: Text(
                     session.homeTeam.name,
@@ -193,6 +195,8 @@ class MatchStatsSheet extends StatelessWidget {
                     style: const TextStyle(fontSize: 10, color: AppTheme.textDim),
                   ),
                 ),
+                const SizedBox(width: 5),
+                CrestAvatar(team: session.awayTeam, radius: 8),
                 const SizedBox(width: 5),
                 Container(width: 8, height: 8, color: _awayColor),
               ],

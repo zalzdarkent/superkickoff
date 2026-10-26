@@ -445,6 +445,29 @@ class MatchEngine {
   static const double _attackerInjuryBias = 0.30;
   static const List<int> _tierPrices = <int>[14, 38, 21, 120];
 
+  /// Ultra-fast Poisson score simulator for background AI-vs-AI matches.
+  (int, int) quickSimulate({
+    required int homePower,
+    required int awayPower,
+  }) {
+    final double ratio = (homePower / max(1, awayPower)).clamp(0.5, 2.0);
+    final double homeExp = 1.35 * ratio;
+    final double awayExp = 1.10 / ratio;
+
+    int sample(double lambda) {
+      final double l = exp(-lambda);
+      double p = 1.0;
+      int k = 0;
+      do {
+        k++;
+        p *= _rng.nextDouble();
+      } while (p > l);
+      return k - 1;
+    }
+
+    return (sample(homeExp), sample(awayExp));
+  }
+
   MatchResult simulate(
     MatchInput input, {
     bool recordEvents = true,

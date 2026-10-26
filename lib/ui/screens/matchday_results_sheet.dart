@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/format.dart';
 import '../../data/models/models.dart';
 import '../theme.dart';
+import '../widgets/common.dart';
 import 'team_detail_sheet.dart';
 
 /// Shows every result from the matchday that just finished.
@@ -190,15 +191,32 @@ class _MatchdayResultsSheet extends StatelessWidget {
                   borderRadius: BorderRadius.circular(4),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
-                    child: Text(
-                      home?.name ?? '?',
-                      textAlign: TextAlign.right,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: mine ? FontWeight.w700 : FontWeight.w400,
-                      ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: <Widget>[
+                        Flexible(
+                          child: Text(
+                            home?.name ?? '?',
+                            textAlign: TextAlign.right,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: mine ? FontWeight.w700 : FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        if (home != null)
+                          CrestAvatar(team: home, radius: 10)
+                        else
+                          CrestAvatar.raw(
+                            teamId: match.homeTeamId,
+                            name: home?.name,
+                            abbreviation: home?.abbreviation,
+                            radius: 10,
+                          ),
+                      ],
                     ),
                   ),
                 ),
@@ -243,14 +261,31 @@ class _MatchdayResultsSheet extends StatelessWidget {
                   borderRadius: BorderRadius.circular(4),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
-                    child: Text(
-                      away?.name ?? '?',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: mine ? FontWeight.w700 : FontWeight.w400,
-                      ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      children: <Widget>[
+                        if (away != null)
+                          CrestAvatar(team: away, radius: 10)
+                        else
+                          CrestAvatar.raw(
+                            teamId: match.awayTeamId,
+                            name: away?.name,
+                            abbreviation: away?.abbreviation,
+                            radius: 10,
+                          ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            away?.name ?? '?',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: mine ? FontWeight.w700 : FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),

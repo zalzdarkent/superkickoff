@@ -255,17 +255,21 @@ class _MatchScreenState extends State<MatchScreen> {
                     padding: const EdgeInsets.all(4),
                     child: Column(
                       children: <Widget>[
+                        CrestAvatar(team: session.homeTeam, radius: 24),
+                        const SizedBox(height: 6),
                         Text(
                           session.homeTeam.abbreviation,
                           style: const TextStyle(
-                            fontSize: 22,
+                            fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 2),
                         Text(
                           session.homeTeam.name,
                           textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontSize: 11,
                             color: AppTheme.textDim,
@@ -313,17 +317,21 @@ class _MatchScreenState extends State<MatchScreen> {
                     padding: const EdgeInsets.all(4),
                     child: Column(
                       children: <Widget>[
+                        CrestAvatar(team: session.awayTeam, radius: 24),
+                        const SizedBox(height: 6),
                         Text(
                           session.awayTeam.abbreviation,
                           style: const TextStyle(
-                            fontSize: 22,
+                            fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 2),
                         Text(
                           session.awayTeam.name,
                           textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontSize: 11,
                             color: AppTheme.textDim,
@@ -421,9 +429,19 @@ class _MatchScreenState extends State<MatchScreen> {
               '${e.detail?.startsWith('scored') == true ? 'scored' : 'missed'}',
               style: const TextStyle(fontSize: 13),
             ),
-            trailing: Text(
-              (e.isHome ? session.homeTeam : session.awayTeam).abbreviation,
-              style: const TextStyle(color: AppTheme.textDim, fontSize: 11),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                CrestAvatar(
+                  team: e.isHome ? session.homeTeam : session.awayTeam,
+                  radius: 9,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  (e.isHome ? session.homeTeam : session.awayTeam).abbreviation,
+                  style: const TextStyle(color: AppTheme.textDim, fontSize: 11),
+                ),
+              ],
             ),
           ),
       ],
@@ -474,9 +492,16 @@ class _MatchScreenState extends State<MatchScreen> {
         '${e.minute}\'  $label${e.playerName != null ? '  ·  ${e.playerName}' : ''}',
         style: const TextStyle(fontSize: 13),
       ),
-      trailing: Text(
-        team.abbreviation,
-        style: const TextStyle(color: AppTheme.textDim, fontSize: 11),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          CrestAvatar(team: team, radius: 9),
+          const SizedBox(width: 5),
+          Text(
+            team.abbreviation,
+            style: const TextStyle(color: AppTheme.textDim, fontSize: 11),
+          ),
+        ],
       ),
     );
   }
@@ -654,7 +679,9 @@ class _MatchScreenState extends State<MatchScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 10),
+          CrestAvatar(team: team, radius: 26),
+          const SizedBox(height: 8),
           Text(
             team.name,
             textAlign: TextAlign.center,
