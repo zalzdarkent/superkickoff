@@ -153,7 +153,17 @@ class ScoutingRepository {
     required String date,
   }) async {
     final math.Random rng = math.Random();
-    final int count = 2 + rng.nextInt(2); // 2 or 3 wonderkids
+    final List<Map<String, Object?>> headScoutRows = await db.query(
+      t.teamStaff,
+      where: 'team_id = ? AND role = ?',
+      whereArgs: <Object?>[teamId, 'head_scout'],
+      limit: 1,
+    );
+    final int headScoutStars = headScoutRows.isNotEmpty
+        ? ((headScoutRows.first['stars'] as int?) ?? 1)
+        : 0;
+    final int extraProspect = (headScoutStars >= 4 && rng.nextDouble() < 0.6) ? 1 : 0;
+    final int count = 2 + rng.nextInt(2) + extraProspect; // 2 to 4 wonderkids
     final List<ScoutWonderkid> found = <ScoutWonderkid>[];
 
     // Country IDs corresponding to region
@@ -164,8 +174,9 @@ class ScoutingRepository {
       _ => <int>[3, 64, 71, 185], // Germany, Spain, France, England
     };
 
+    final int potBonus = headScoutStars >= 3 ? (headScoutStars - 2) * 2 : 0;
     final int baseOvr = 52 + scout.stars * 4;
-    final int basePot = 72 + scout.stars * 4;
+    final int basePot = (72 + scout.stars * 4 + potBonus).clamp(72, 95);
 
     await db.transaction((Transaction txn) async {
       await txn.update(

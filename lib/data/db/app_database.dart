@@ -253,6 +253,26 @@ class AppDatabase {
         pre_season_date TEXT
       )
     ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ${t.teamFacilities} (
+        team_id INTEGER PRIMARY KEY,
+        training_level INTEGER NOT NULL DEFAULT 1,
+        medical_level INTEGER NOT NULL DEFAULT 1
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ${t.teamStaff} (
+        staff_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        team_id INTEGER NOT NULL,
+        role TEXT NOT NULL,
+        name TEXT NOT NULL,
+        stars INTEGER NOT NULL DEFAULT 1,
+        salary INTEGER NOT NULL DEFAULT 5000,
+        specialty TEXT,
+        hired_date TEXT,
+        UNIQUE (team_id, role)
+      )
+    ''');
     // ---------------------------------------------------- fixture scheduling
     // Persisted competition rules. CompetitionConfig derives safe defaults from
     // the bundled tournament data; this table stores explicit/season-specific
@@ -749,6 +769,98 @@ class AppDatabase {
           'Eslovenia', 'Rumanía', 'Escocia', 'Gales', 'Irlanda del Norte'
         )
       ''');
+    } catch (_) {}
+    await _ensureGlobalSponsors(db);
+  }
+
+  /// Seeds real, prestigious global corporate brands into the sponsors table
+  /// so that each slot has authentic, diverse partners.
+  static Future<void> _ensureGlobalSponsors(Database db) async {
+    try {
+      final List<Map<String, Object?>> rows = await db.query(t.sponsors);
+      final Set<String> existing = rows
+          .map((Map<String, Object?> r) => ((r['name'] as String?) ?? '').toLowerCase().trim())
+          .toSet();
+
+      const List<String> globalBrands = <String>[
+        // Airlines & Tourism
+        'Fly Emirates',
+        'Etihad Airways',
+        'Qatar Airways',
+        'Singapore Airlines',
+        'Turkish Airlines',
+        'Lufthansa',
+        'Visit Rwanda',
+        'Visit Saudi',
+
+        // Tech, Digital & Entertainment
+        'Spotify',
+        'Samsung',
+        'Sony PlayStation',
+        'Snapdragon',
+        'Apple',
+        'Google Pixel',
+        'Rakuten',
+        'Nintendo',
+        'Intel',
+        'HP',
+
+        // Automotive & Engineering
+        'BMW',
+        'Mercedes-Benz',
+        'Audi',
+        'Toyota',
+        'Jeep',
+        'Pirelli',
+        'Hyundai',
+        'Chevrolet',
+
+        // Banking, Insurance & Finance
+        'Standard Chartered',
+        'Allianz',
+        'Santander',
+        'Barclays',
+        'AIA',
+        'HSBC',
+        'AXA',
+        'UBS',
+
+        // Energy & Telecommunications
+        'Petronas',
+        'Shell',
+        'Aramco',
+        'Vodafone',
+        'T-Mobile',
+        'O2',
+        'Movistar',
+
+        // Sports, Beverages & Lifestyle
+        'Red Bull',
+        'Heineken',
+        'Pepsi Max',
+        'Coca-Cola',
+        'Monster Energy',
+        'Gatorade',
+        'Nike',
+        'Adidas',
+        'Puma',
+        'Hublot',
+        'Tag Heuer',
+        'Rolex',
+      ];
+
+      for (final String brand in globalBrands) {
+        if (!existing.contains(brand.toLowerCase().trim())) {
+          await db.insert(
+            t.sponsors,
+            <String, Object?>{
+              'name': brand,
+              'level': 1,
+            },
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
+        }
+      }
     } catch (_) {}
   }
 

@@ -17,6 +17,7 @@ import 'match_screen.dart';
 import 'matchday_results_sheet.dart';
 import 'squad_tab.dart';
 import 'annual_awards_gala_sheet.dart';
+import 'tactical_analysis_sheet.dart';
 import 'team_detail_sheet.dart';
 
 /// Main game hub with bottom navigation.
@@ -754,6 +755,17 @@ class _OverviewTabState extends State<OverviewTab>
                 ),
               ],
             ),
+            if (game.nextUserMatch != null) ...<Widget>[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.psychology_outlined, size: 18),
+                  label: const Text('Analisis Taktis Lawan'),
+                  onPressed: () => showTacticalAnalysisSheet(context),
+                ),
+              ),
+            ],
           ],
         ),
       ),

@@ -9,6 +9,7 @@ import '../data/db/app_database.dart';
 import '../data/db/schema.dart' as t;
 import '../data/models/models.dart';
 import '../data/repositories/club_logo_service.dart';
+import '../data/repositories/facilities_repository.dart';
 import '../data/repositories/match_repository.dart';
 import '../data/repositories/message_repository.dart';
 import '../data/repositories/news_repository.dart';
@@ -45,6 +46,7 @@ class CareerProvider extends ChangeNotifier {
   late PrizeRepository _prizes;
   late SponsorshipRepository _sponsorships;
   late ScoutingRepository _scouting;
+  late FacilitiesRepository _facilities;
   late CareerService _service;
   late MatchEngine _engine;
   final Random _rng = Random();
@@ -142,6 +144,7 @@ class CareerProvider extends ChangeNotifier {
     _prizes = PrizeRepository(_db);
     _sponsorships = SponsorshipRepository(_db);
     _scouting = ScoutingRepository(_db);
+    _facilities = FacilitiesRepository(_db);
     _engine = MatchEngine();
     _service = CareerService(
       _db,
@@ -154,6 +157,7 @@ class CareerProvider extends ChangeNotifier {
       transfers: _transfers,
       sponsorships: _sponsorships,
       scouting: _scouting,
+      facilities: _facilities,
       engine: _engine,
       generator: SeasonGenerator(_db, random: _rng),
       random: _rng,
@@ -1233,6 +1237,60 @@ class CareerProvider extends ChangeNotifier {
     return outcome;
   }
 
+  // --------------------------------------------------- facilities and staff
+
+  Future<ClubFacilities> clubFacilities() =>
+      _facilities.getFacilities(userTeamId);
+
+  Future<String?> upgradeTrainingGround() async {
+    final String? error = await _facilities.upgradeTrainingGround(userTeamId);
+    if (error == null) await refreshWorld();
+    return error;
+  }
+
+  Future<String?> upgradeMedicalCentre() async {
+    final String? error = await _facilities.upgradeMedicalCentre(userTeamId);
+    if (error == null) await refreshWorld();
+    return error;
+  }
+
+  Future<List<ClubStaff>> clubStaff() => _facilities.getStaff(userTeamId);
+
+  List<ClubStaff> availableStaffCandidates({String? role}) =>
+      _facilities.availableStaffCandidates(role: role);
+
+  int hiringFeeForStaff(ClubStaff candidate) =>
+      _facilities.hiringFeeForStaff(candidate);
+
+  Future<String?> hireStaff(ClubStaff candidate) async {
+    final String currentDate =
+        nextDate ?? DateTime.now().toIso8601String().substring(0, 10);
+    final String? error = await _facilities.hireStaff(
+      teamId: userTeamId,
+      candidate: candidate,
+      currentDate: currentDate,
+    );
+    if (error == null) await refreshWorld();
+    return error;
+  }
+
+  Future<void> fireStaff(String role) async {
+    await _facilities.fireStaff(userTeamId, role);
+    await refreshWorld();
+  }
+
+  Future<TacticalAnalysisReport?> upcomingOpponentTacticalReport() async {
+    final FixtureMatch? nextMatch = nextUserMatch;
+    if (nextMatch == null) return null;
+    final int oppId = nextMatch.homeTeamId == userTeamId
+        ? nextMatch.awayTeamId
+        : nextMatch.homeTeamId;
+    return _facilities.generateTacticalReport(
+      userTeamId: userTeamId,
+      opponentTeamId: oppId,
+    );
+  }
+
   Future<PlayerDetail?> playerDetail(int playerId) =>
       _squads.playerDetail(playerId, seasonId: season?.seasonId);
 
@@ -2220,6 +2278,11 @@ class CareerProvider extends ChangeNotifier {
       teamId: userTeamId,
       sender: 'Commercial Director',
     );
+    await refreshWorld();
+  }
+
+  Future<void> terminateSponsorship(int sponsorshipId) async {
+    await _sponsorships.terminateSponsorship(sponsorshipId);
     await refreshWorld();
   }
 

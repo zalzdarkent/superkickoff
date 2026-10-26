@@ -209,9 +209,9 @@ class _TrainingSheetState extends State<TrainingSheet> {
                           const SizedBox(width: 8),
                           _pill(
                             _focus.isFitness
-                                ? 'Whole squad +${TrainingRules.fitnessGain} fitness'
-                                : 'Up to ${TrainingRules.maxPlayers} players '
-                                      '+${TrainingRules.powerGain} power',
+                                ? 'Whole squad +${state.fitnessGain} fitness'
+                                : 'Up to ${state.maxPlayers} players '
+                                      '+${state.powerGain} power',
                             AppTheme.textDim,
                           ),
                         ],
@@ -220,6 +220,7 @@ class _TrainingSheetState extends State<TrainingSheet> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                _row('Training Ground', 'Level ${state.trainingLevel}/5'),
                 _row('Session cost', money(state.cost)),
                 _row('Club budget', money(game.userTeam?.budget ?? 0)),
                 _row('Sessions completed', '${state.sessions}'),

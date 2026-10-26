@@ -28,20 +28,26 @@ Menghadirkan sistem penghargaan bergengsi akhir musim dan seremoni visual untuk 
 ---
 
 ## 🏢 Fitur 4: Fasilitas Klub & Staf Kepelatihan (*Club Facilities & Staff*)
-> **Status:** ⏳ *Planned (Tahap Berikutnya)*
+> **Status:** ✅ *Completed (Selesai)*
 
-Memperluas manajemen klub di luar stadion dan akademi muda dengan menghadirkan staf profesional dan infrastruktur latihan.
+Memperluas manajemen klub di luar stadion dan akademi muda dengan menghadirkan staf profesional (Head Physio, Tactical Analyst, Head Scout) dan infrastruktur fasilitas klub (Training Ground & Medical Centre).
 
 ### Rincian Fitur:
 1. **Medical Centre & Fisioterapis (*Physio Staff*):**
-   - Rekrut fisioterapis dengan rating bintang (1–5 bintang).
-   - Mempercepat pemulihan pemain cedera (*injury recovery speed*).
-   - Mengurangi risiko cedera parah saat pertandingan dan mempercepat pemulihan kebugaran (*fitness recovery*) pasca-laga.
+   - Rekrut fisioterapis profesional dengan rating 1–5 bintang di bursa staf kepelatihan.
+   - Mengurangi risiko cedera pertandingan hingga 45% dan memangkas drop stamina pasca-laga (dari 8 ke 5-6).
+   - Mempercepat pemulihan kebugaran (*fitness recovery*) dan penyembuhan pemain cedera secara signifikan di alur *weekly housekeeping*.
 2. **Training Ground Facility Upgrade:**
-   - Level fasilitas latihan (Level 1–5).
-   - Meningkatkan efektivitas latihan mingguan dan mempercepat lonjakan atribut pemain muda (*wonderkids*) menuju potensi maksimalnya (`jug_potencial`).
+   - Level fasilitas latihan klub (Level 1–5) dengan visualisasi upgrade dan biaya dinamis.
+   - Meningkatkan kapasitas latihan mingguan (3 hingga 7 pemain per sesi) serta poin kebugaran (4 hingga 8).
+   - Mempercepat lonjakan atribut dan perkembangan potensi pemain muda (*wonderkids*) menuju rating maksimal (`jug_potencial`).
 3. **Head Scout & Tactical Analyst:**
-   - Meningkatkan akurasi laporan *scouting* dan analisis kekuatan lawan sebelum matchday.
+   - **Head Scout (1–5 Bintang):** Meningkatkan efektivitas scouting dunia, membuka potensi bonus wonderkid, serta memperbesar peluang menemukan talenta muda elit.
+   - **Tactical Analyst (1–5 Bintang):** Menghasilkan dossier analisis taktis pra-pertandingan (*Tactical Dossier*) di Home Next Match card yang mencakup formasi lawan, gaya main, bahaya utama (*key danger men*), titik lemah pertahanan, dan rekomendasi kontra-taktik dengan akurasi prediksi berbobot bintang.
+4. **UI & Integrasi Manajemen:**
+   - Tab "Fasilitas & Staf" di Club Hub untuk upgrade infrastruktur dan rekrut/ganti staf.
+   - Lembar Analisis Taktis lawan interaktif sebelum bertanding.
+   - Tab Latihan terhubung langsung dengan level fasilitas latihan aktif.
 
 ---
 

@@ -879,6 +879,7 @@ class TrainingState {
     required this.matchesPlayed,
     required this.cost,
     required this.eligible,
+    this.trainingLevel = 1,
   });
 
   /// Focus keys already trained on this matchday; each can run once.
@@ -889,6 +890,13 @@ class TrainingState {
 
   /// Focus key (see [TrainingFocus.name]) -> number of eligible players.
   final Map<String, int> eligible;
+
+  /// Level of the club's training ground facilities (1-5).
+  final int trainingLevel;
+
+  int get maxPlayers => (3 + (trainingLevel - 1)).clamp(3, 7);
+  int get fitnessGain => (4 + (trainingLevel - 1)).clamp(4, 8);
+  int get powerGain => trainingLevel >= 3 ? 2 : 1;
 }
 
 /// Result of one training session.
@@ -1577,4 +1585,180 @@ class NewsItem {
     teamId: m['team_id'] as int?,
     playerId: m['player_id'] as int?,
   );
+}
+
+/// Club training and medical facilities status.
+class ClubFacilities {
+  const ClubFacilities({
+    required this.teamId,
+    required this.trainingLevel,
+    required this.medicalLevel,
+  });
+
+  final int teamId;
+  final int trainingLevel; // 1 to 5
+  final int medicalLevel; // 1 to 5
+
+  bool get isMaxTraining => trainingLevel >= 5;
+  bool get isMaxMedical => medicalLevel >= 5;
+
+  static int trainingUpgradeCost(int currentLevel) => switch (currentLevel) {
+    1 => 1200000,
+    2 => 3000000,
+    3 => 6500000,
+    4 => 12000000,
+    _ => 0,
+  };
+
+  static int medicalUpgradeCost(int currentLevel) => switch (currentLevel) {
+    1 => 1000000,
+    2 => 2500000,
+    3 => 5500000,
+    4 => 10000000,
+    _ => 0,
+  };
+
+  int get nextTrainingCost => trainingUpgradeCost(trainingLevel);
+  int get nextMedicalCost => medicalUpgradeCost(medicalLevel);
+
+  String get trainingTitle => switch (trainingLevel) {
+    1 => 'Standard Pitches',
+    2 => 'Modern Training Complex',
+    3 => 'High-Performance Centre',
+    4 => 'State-of-the-Art Training Ground',
+    _ => 'World-Class Football Campus',
+  };
+
+  String get trainingDescription => switch (trainingLevel) {
+    1 => 'Peralatan latihan standar. Kapasitas 3 pemain per sesi.',
+    2 => 'Fasilitas modern. Kapasitas 4 pemain, pemulihan kebugaran +5.',
+    3 => 'Pusat performa tinggi. Kapasitas 5 pemain, akselerasi atribut +25%.',
+    4 => 'Infrastruktur canggih. Kapasitas 6 pemain, lonjakan potensi wonderkid +45%.',
+    _ => 'Kampus sepakbola kelas dunia. Kapasitas 7 pemain, pertumbuhan potensi maksimal +70%.',
+  };
+
+  String get medicalTitle => switch (medicalLevel) {
+    1 => 'First-Aid Clinic',
+    2 => 'Advanced Physiotherapy Suite',
+    3 => 'Hydrotherapy & Sports Science',
+    4 => 'Cryotherapy & Biomechanics Lab',
+    _ => 'Elite Sports Medicine Institute',
+  };
+
+  String get medicalDescription => switch (medicalLevel) {
+    1 => 'Klinik medis dasar penanganan cedera ringan.',
+    2 => 'Fasilitas fisioterapi canggih. -10% risiko cedera, +1 kebugaran mingguan.',
+    3 => 'Pusat sains & hidrokinesioterapi. -20% risiko cedera, +2 pemulihan stamina.',
+    4 => 'Laboratorium biomekanika & krioterapi. -30% risiko cedera, pemulihan cepat.',
+    _ => 'Institut medis elit. -45% risiko cedera, pemulihan pemain cedera 4x lebih cepat.',
+  };
+
+  /// Max players eligible for a training session based on level.
+  int get trainingMaxPlayers => (3 + (trainingLevel - 1)).clamp(3, 7);
+
+  /// Fitness points gained during training.
+  int get trainingFitnessGain => (4 + (trainingLevel - 1)).clamp(4, 8);
+
+  /// Percentage injury risk reduction in matches (0.0 to 0.35).
+  double get injuryReductionRate => ((medicalLevel - 1) * 0.07).clamp(0.0, 0.35);
+
+  /// Additional weekly fitness recovery points.
+  int get weeklyFitnessBonus => (medicalLevel - 1).clamp(0, 4);
+
+  factory ClubFacilities.fromMap(Map<String, Object?> m) => ClubFacilities(
+    teamId: (m['team_id'] as int?) ?? 0,
+    trainingLevel: ((m['training_level'] as int?) ?? 1).clamp(1, 5),
+    medicalLevel: ((m['medical_level'] as int?) ?? 1).clamp(1, 5),
+  );
+
+  Map<String, Object?> toMap() => <String, Object?>{
+    'team_id': teamId,
+    'training_level': trainingLevel,
+    'medical_level': medicalLevel,
+  };
+}
+
+/// A professional coaching/support staff member hired by the club.
+class ClubStaff {
+  const ClubStaff({
+    required this.staffId,
+    required this.teamId,
+    required this.role,
+    required this.name,
+    required this.stars,
+    required this.salary,
+    required this.specialty,
+    this.hiredDate,
+  });
+
+  final int staffId;
+  final int teamId;
+  final String role; // 'head_physio', 'tactical_analyst', 'head_scout'
+  final String name;
+  final int stars; // 1 to 5
+  final int salary; // weekly wage
+  final String specialty;
+  final String? hiredDate;
+
+  bool get isPhysio => role == 'head_physio';
+  bool get isAnalyst => role == 'tactical_analyst';
+  bool get isHeadScout => role == 'head_scout';
+
+  String get roleTitle => switch (role) {
+    'head_physio' => 'Head Physiotherapist',
+    'tactical_analyst' => 'Lead Tactical Analyst',
+    'head_scout' => 'Head of Global Scouting',
+    _ => 'Specialist Coach',
+  };
+
+  factory ClubStaff.fromMap(Map<String, Object?> m) => ClubStaff(
+    staffId: (m['staff_id'] as int?) ?? 0,
+    teamId: (m['team_id'] as int?) ?? 0,
+    role: (m['role'] as String?) ?? 'head_physio',
+    name: (m['name'] as String?) ?? 'Staff Member',
+    stars: ((m['stars'] as int?) ?? 1).clamp(1, 5),
+    salary: (m['salary'] as int?) ?? 5000,
+    specialty: (m['specialty'] as String?) ?? '',
+    hiredDate: m['hired_date'] as String?,
+  );
+
+  Map<String, Object?> toMap() => <String, Object?>{
+    if (staffId > 0) 'staff_id': staffId,
+    'team_id': teamId,
+    'role': role,
+    'name': name,
+    'stars': stars,
+    'salary': salary,
+    'specialty': specialty,
+    'hired_date': hiredDate,
+  };
+}
+
+/// Pre-match tactical intelligence and opponent scout dossier.
+class TacticalAnalysisReport {
+  const TacticalAnalysisReport({
+    required this.opponent,
+    required this.analyst,
+    required this.tacticalStyle,
+    required this.tacticalStyleDescription,
+    required this.formation,
+    required this.predictedMentality,
+    required this.dangerMen,
+    required this.vulnerabilities,
+    required this.counterTactics,
+    required this.matchPrediction,
+    required this.confidenceRating,
+  });
+
+  final Team opponent;
+  final ClubStaff? analyst;
+  final String tacticalStyle;
+  final String tacticalStyleDescription;
+  final String formation;
+  final String predictedMentality;
+  final List<Player> dangerMen;
+  final List<String> vulnerabilities;
+  final List<String> counterTactics;
+  final String matchPrediction;
+  final int confidenceRating; // 30 - 98%
 }

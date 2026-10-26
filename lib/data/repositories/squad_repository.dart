@@ -337,13 +337,13 @@ class SquadRepository {
   }
 
   /// Applies post-match fatigue to the players who featured.
-  Future<void> applyMatchFatigue(List<int> playerIds) async {
+  Future<void> applyMatchFatigue(List<int> playerIds, {int drop = 8}) async {
     if (playerIds.isEmpty) return;
     final String marks = List<String>.filled(playerIds.length, '?').join(',');
     await db.rawUpdate(
-      'UPDATE players SET fitness = MAX(15, fitness - 8) '
+      'UPDATE players SET fitness = MAX(15, fitness - ?) '
       'WHERE player_id IN ($marks)',
-      playerIds,
+      <Object?>[drop, ...playerIds],
     );
   }
 
@@ -1398,12 +1398,25 @@ class SquadRepository {
     ''',
       <Object?>[teamId, t.statusActive],
     );
-    final Map<String, Object?> c = countRows.first;
+    final List<Map<String, Object?>> facRows = await db.query(
+      t.teamFacilities,
+      where: 'team_id = ?',
+      whereArgs: <Object?>[teamId],
+      limit: 1,
+    );
+    final int trainingLevel = facRows.isNotEmpty
+        ? ((facRows.first['training_level'] as int?) ?? 1)
+        : 1;
+
+    final Map<String, Object?> c =
+        countRows.isEmpty ? const <String, Object?>{} : countRows.first;
+
     return TrainingState(
       doneFocuses: done,
       sessions: sessions,
       matchesPlayed: matchesPlayed,
       cost: TrainingRules.cost,
+      trainingLevel: trainingLevel,
       eligible: <String, int>{
         TrainingFocus.goalkeeper.name: (c['gk'] as int?) ?? 0,
         TrainingFocus.defence.name: (c['def'] as int?) ?? 0,
@@ -1455,6 +1468,10 @@ class SquadRepository {
       );
     }
 
+    final int maxPlayers = state.maxPlayers;
+    final int fitnessGain = state.fitnessGain;
+    final int powerGain = state.powerGain;
+
     late final List<Map<String, Object?>> selected;
     if (focus.isFitness) {
       selected = await db.rawQuery(
@@ -1476,7 +1493,7 @@ class SquadRepository {
         ORDER BY (p.potential - p.power) DESC, p.age ASC
         LIMIT ?
       ''',
-        <Object?>[teamId, t.statusActive, TrainingRules.maxPlayers],
+        <Object?>[teamId, t.statusActive, maxPlayers],
       );
     }
     if (selected.isEmpty) {
@@ -1493,14 +1510,14 @@ class SquadRepository {
         await txn.rawUpdate(
           'UPDATE players SET fitness = MIN(100, fitness + ?) '
           'WHERE player_id IN ($placeholders)',
-          <Object?>[TrainingRules.fitnessGain, ...ids],
+          <Object?>[fitnessGain, ...ids],
         );
       } else {
         await txn.rawUpdate(
           'UPDATE players SET power = MIN(potential, power + ?), '
           'fitness = MIN(100, fitness + ?) '
           'WHERE player_id IN ($placeholders)',
-          <Object?>[TrainingRules.powerGain, TrainingRules.fitnessGain, ...ids],
+          <Object?>[powerGain, fitnessGain, ...ids],
         );
       }
       await txn.update(

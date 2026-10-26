@@ -6,6 +6,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../data/db/schema.dart' as t;
 import '../data/models/models.dart';
+import '../data/repositories/facilities_repository.dart';
 import '../data/repositories/match_repository.dart';
 import '../data/repositories/message_repository.dart';
 import '../data/repositories/prize_repository.dart';
@@ -44,6 +45,7 @@ class CareerService {
     TransferRepository? transfers,
     SponsorshipRepository? sponsorships,
     ScoutingRepository? scouting,
+    FacilitiesRepository? facilities,
     TransferWindowManager? windowManager,
     Random? random,
     this.marketTickChance = 0.45,
@@ -56,6 +58,7 @@ class CareerService {
        _transfers = transfers,
        _sponsorships = sponsorships,
        _scouting = scouting,
+       _facilities = facilities ?? FacilitiesRepository(db),
        _windowManager =
            windowManager ?? TransferWindowManager(db, messages: messages),
        _engine = engine,
@@ -72,10 +75,13 @@ class CareerService {
   final TransferRepository? _transfers;
   final SponsorshipRepository? _sponsorships;
   final ScoutingRepository? _scouting;
+  final FacilitiesRepository _facilities;
   final TransferWindowManager _windowManager;
   final MatchEngine _engine;
   final SeasonGenerator _gen;
   final Random _rng;
+
+  FacilitiesRepository get facilities => _facilities;
 
   TransferWindowManager get windowManager => _windowManager;
   String? _lastHousekeepingDate;
@@ -163,6 +169,41 @@ class CareerService {
         ? <String, Object?>{}
         : rows.first;
 
+    final ClubFacilities homeFac = await _facilities.getFacilities(home.teamId);
+    final ClubFacilities awayFac = await _facilities.getFacilities(away.teamId);
+    final ClubStaff? homePhysio = await _facilities.getStaffByRole(
+      home.teamId,
+      'head_physio',
+    );
+    final ClubStaff? awayPhysio = await _facilities.getStaffByRole(
+      away.teamId,
+      'head_physio',
+    );
+    final ClubStaff? homeAnalyst = await _facilities.getStaffByRole(
+      home.teamId,
+      'tactical_analyst',
+    );
+    final ClubStaff? awayAnalyst = await _facilities.getStaffByRole(
+      away.teamId,
+      'tactical_analyst',
+    );
+
+    final double homeInjuryReduction = (homeFac.injuryReductionRate +
+            (homePhysio != null ? homePhysio.stars * 0.04 : 0.0))
+        .clamp(0.0, 0.45);
+    final double awayInjuryReduction = (awayFac.injuryReductionRate +
+            (awayPhysio != null ? awayPhysio.stars * 0.04 : 0.0))
+        .clamp(0.0, 0.45);
+
+    final double homeTacticalBonus =
+        (homeAnalyst != null && homeAnalyst.stars >= 3)
+            ? (homeAnalyst.stars * 0.015)
+            : 0.0;
+    final double awayTacticalBonus =
+        (awayAnalyst != null && awayAnalyst.stars >= 3)
+            ? (awayAnalyst.stars * 0.015)
+            : 0.0;
+
     return MatchInput(
       homeSquad: homeSquad,
       awaySquad: awaySquad,
@@ -178,6 +219,10 @@ class CareerService {
       homeLineupIds: await _lineupIds(home.teamId),
       awayLineupIds: await _lineupIds(away.teamId),
       refereeTemper: await _refereeTemper(match),
+      homeInjuryReduction: homeInjuryReduction,
+      awayInjuryReduction: awayInjuryReduction,
+      homeTacticalBonus: homeTacticalBonus,
+      awayTacticalBonus: awayTacticalBonus,
     );
   }
 
@@ -516,11 +561,36 @@ class CareerService {
     );
     // Gate receipts stay with the home club.
     await _matchRepo.adjustBudget(match.homeTeamId, result.revenue);
-    // Match fitness drops for everyone who featured.
-    await _squads.applyMatchFatigue(<int>[
+    // Match fitness drops for everyone who featured, mitigated by club physios.
+    final ClubStaff? homePhysio = await _facilities.getStaffByRole(
+      match.homeTeamId,
+      'head_physio',
+    );
+    final ClubStaff? awayPhysio = await _facilities.getStaffByRole(
+      match.awayTeamId,
+      'head_physio',
+    );
+    final int homeDrop = (homePhysio != null && homePhysio.stars >= 3)
+        ? (homePhysio.stars >= 5 ? 5 : 6)
+        : 8;
+    final int awayDrop = (awayPhysio != null && awayPhysio.stars >= 3)
+        ? (awayPhysio.stars >= 5 ? 5 : 6)
+        : 8;
+
+    final Set<int> homeIds = {
+      for (final Player p in result.input.homeSquad) p.playerId,
+    };
+    final List<int> homeFeatured = <int>[
       for (final MatchPlayerRow row in result.playerRows)
-        if (row.minutes > 0) row.playerId,
-    ]);
+        if (row.minutes > 0 && homeIds.contains(row.playerId)) row.playerId,
+    ];
+    final List<int> awayFeatured = <int>[
+      for (final MatchPlayerRow row in result.playerRows)
+        if (row.minutes > 0 && !homeIds.contains(row.playerId)) row.playerId,
+    ];
+
+    await _squads.applyMatchFatigue(homeFeatured, drop: homeDrop);
+    await _squads.applyMatchFatigue(awayFeatured, drop: awayDrop);
     return result;
   }
 
@@ -645,6 +715,42 @@ class CareerService {
           <Object?>[scoutWages, userTeamId],
         );
       }
+    }
+
+    // Medical Centre & Head Physio recovery boost for user team
+    final ClubFacilities userFac = await _facilities.getFacilities(userTeamId);
+    final ClubStaff? userPhysio = await _facilities.getStaffByRole(
+      userTeamId,
+      'head_physio',
+    );
+    final int physioStars = userPhysio?.stars ?? 0;
+    final int extraRecovery =
+        userFac.weeklyFitnessBonus + (physioStars / 2).round();
+    final int injuredBonus = physioStars + (userFac.medicalLevel >= 3 ? 2 : 0);
+
+    if (extraRecovery > 0 || injuredBonus > 0) {
+      await db.execute(
+        '''
+        UPDATE players
+        SET fitness = CASE
+              WHEN fitness <= 40 THEN MIN(55, fitness + ?)
+              ELSE MIN(100, fitness + ?)
+            END
+        WHERE status_id = ? AND player_id IN (
+          SELECT player_id FROM team_players WHERE team_id = ?
+        )
+      ''',
+        <Object?>[injuredBonus, extraRecovery, t.statusActive, userTeamId],
+      );
+    }
+
+    // Pay Coaching & Professional Staff Wages
+    final int staffWages = await _facilities.totalWeeklyStaffWages(userTeamId);
+    if (staffWages > 0) {
+      await db.execute(
+        'UPDATE teams SET budget = MAX(0, budget - ?) WHERE team_id = ?',
+        <Object?>[staffWages, userTeamId],
+      );
     }
     await db.execute('UPDATE teams SET budget = MAX(budget, 20000)');
     await _runYouthAcademy(userTeamId, seasonId);
@@ -2133,6 +2239,26 @@ class CareerService {
     ''',
       <Object?>[t.statusActive],
     );
+
+    // Accelerate wonderkids for teams with upgraded training ground facilities
+    final List<Map<String, Object?>> facRows = await db.query(
+      t.teamFacilities,
+      where: 'training_level > 1',
+    );
+    for (final Map<String, Object?> row in facRows) {
+      final int teamId = (row['team_id'] as int?) ?? 0;
+      final int level = (row['training_level'] as int?) ?? 1;
+      final int bonusGrowth = level >= 4 ? 2 : 1;
+      await db.execute(
+        '''
+        UPDATE ${t.players}
+        SET power = MIN(potential, power + ?)
+        WHERE status_id = ? AND power < potential AND age <= 21
+          AND player_id IN (SELECT player_id FROM ${t.teamPlayers} WHERE team_id = ?)
+      ''',
+        <Object?>[bonusGrowth, t.statusActive, teamId],
+      );
+    }
 
     await db.execute(
       '''

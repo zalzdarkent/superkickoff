@@ -347,6 +347,10 @@ class MatchInput {
     this.homeLineupIds = const <int>[],
     this.awayLineupIds = const <int>[],
     this.refereeTemper = 2,
+    this.homeInjuryReduction = 0.0,
+    this.awayInjuryReduction = 0.0,
+    this.homeTacticalBonus = 0.0,
+    this.awayTacticalBonus = 0.0,
   });
 
   final List<Player> homeSquad;
@@ -363,6 +367,10 @@ class MatchInput {
   final List<int> homeLineupIds;
   final List<int> awayLineupIds;
   final int refereeTemper; // 1 lenient ... 5 grumpy
+  final double homeInjuryReduction;
+  final double awayInjuryReduction;
+  final double homeTacticalBonus;
+  final double awayTacticalBonus;
 }
 
 /// Result produced by [MatchEngine.simulate].
@@ -506,8 +514,10 @@ class MatchEngine {
         _baseChancePerMinute * homeAttack / (awayDefense + 40);
     final double awayRate =
         _baseChancePerMinute * awayAttack / (homeDefense + 40);
-    final double homeConversion = _conversion(homeAttack, awayDefense);
-    final double awayConversion = _conversion(awayAttack, homeDefense);
+    final double homeConversion =
+        _conversion(homeAttack, awayDefense) * (1.0 + input.homeTacticalBonus);
+    final double awayConversion =
+        _conversion(awayAttack, homeDefense) * (1.0 + input.awayTacticalBonus);
     final double penaltyRate = _penaltyPool / 90 / 2;
     final double ownGoalRate = _ownGoalPool / 90 / 2;
     final double yellowRate = _yellowPool / 90 / 2 * tempMid;
@@ -908,13 +918,15 @@ class MatchEngine {
       }
 
       // ----- injuries
-      if (_rng.nextDouble() < injuryRate) {
-        final bool isHome = _rng.nextBool();
-        final Player? hurt = pickInjured(isHome);
+      final bool isHomeInj = _rng.nextBool();
+      final double injReduction =
+          isHomeInj ? input.homeInjuryReduction : input.awayInjuryReduction;
+      if (_rng.nextDouble() < injuryRate * (1.0 - injReduction).clamp(0.1, 1.0)) {
+        final Player? hurt = pickInjured(isHomeInj);
         if (hurt != null) {
           injuredIds.add(hurt.playerId);
-          addEvent(MatchEvent.injury, minute, isHome, player: hurt);
-          makeSubstitution(isHome, minute);
+          addEvent(MatchEvent.injury, minute, isHomeInj, player: hurt);
+          makeSubstitution(isHomeInj, minute);
         }
       }
 

@@ -63,6 +63,8 @@ const String careerState = 'career_state';
 const String managerProfile = 'manager_profile';
 const String offseasonState = 'offseason_state';
 const String boardObjectives = 'board_objectives';
+const String teamFacilities = 'team_facilities';
+const String teamStaff = 'team_staff';
 
 // ------------------------------------------------------- match statuses
 const int matchScheduled = 1;

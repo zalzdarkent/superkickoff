@@ -12,6 +12,7 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import 'annual_awards_gala_sheet.dart';
 import 'player_detail_sheet.dart';
+import 'tactical_analysis_sheet.dart';
 
 /// Opens the club hub: overview, finances and stadium in three tabs.
 Future<void> showClubHub(BuildContext context) {
@@ -37,17 +38,21 @@ class _ClubHubSheetState extends State<ClubHubSheet>
   late Future<List<ClubTrophy>> _trophies;
   late Future<List<PlayerAward>> _awards;
   late Future<YouthAcademyState> _academy;
+  late Future<ClubFacilities> _facilities;
+  late Future<List<ClubStaff>> _staff;
   late final TabController _tabController;
   bool _busy = false;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _future = context.read<CareerProvider>().clubOverview();
     _trophies = context.read<CareerProvider>().clubTrophies();
     _awards = context.read<CareerProvider>().clubAwards();
     _academy = context.read<CareerProvider>().youthAcademyState();
+    _facilities = context.read<CareerProvider>().clubFacilities();
+    _staff = context.read<CareerProvider>().clubStaff();
   }
 
   @override
@@ -62,6 +67,8 @@ class _ClubHubSheetState extends State<ClubHubSheet>
       _trophies = context.read<CareerProvider>().clubTrophies();
       _awards = context.read<CareerProvider>().clubAwards();
       _academy = context.read<CareerProvider>().youthAcademyState();
+      _facilities = context.read<CareerProvider>().clubFacilities();
+      _staff = context.read<CareerProvider>().clubStaff();
     });
   }
 
@@ -98,6 +105,224 @@ class _ClubHubSheetState extends State<ClubHubSheet>
       return;
     }
     _reload();
+  }
+
+  Future<void> _upgradeTraining() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final String? error =
+        await context.read<CareerProvider>().upgradeTrainingGround();
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: AppTheme.danger),
+      );
+      return;
+    }
+    _reload();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Training Ground berhasil ditingkatkan!')),
+    );
+  }
+
+  Future<void> _upgradeMedical() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final String? error =
+        await context.read<CareerProvider>().upgradeMedicalCentre();
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: AppTheme.danger),
+      );
+      return;
+    }
+    _reload();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Medical Centre berhasil ditingkatkan!')),
+    );
+  }
+
+  Future<void> _fireStaff(String role) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    await context.read<CareerProvider>().fireStaff(role);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    _reload();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Staf berhasil diberhentikan.')),
+    );
+  }
+
+  void _showHireStaffSheet(String role) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext sheetContext) {
+        final List<ClubStaff> candidates =
+            context.read<CareerProvider>().availableStaffCandidates(role: role);
+        final String roleTitle = switch (role) {
+          'head_physio' => 'Rekrut Fisioterapis Utama',
+          'tactical_analyst' => 'Rekrut Lead Analis Taktis',
+          'head_scout' => 'Rekrut Kepala Pemandu Bakat',
+          _ => 'Rekrut Staf Profesional',
+        };
+
+        return FractionallySizedBox(
+          heightFactor: 0.75,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade700,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  roleTitle,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Pilih profesional terbaik untuk meningkatkan keunggulan performa klub.',
+                  style: TextStyle(fontSize: 12, color: AppTheme.textDim),
+                ),
+                const Divider(height: 20),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: candidates.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    itemBuilder: (BuildContext ctx, int index) {
+                      final ClubStaff c = candidates[index];
+                      final int fee =
+                          context.read<CareerProvider>().hiringFeeForStaff(c);
+                      return Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Row(
+                                children: <Widget>[
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Text(
+                                          c.name,
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Row(
+                                          children: <Widget>[
+                                            for (int i = 0; i < 5; i++)
+                                              Icon(
+                                                i < c.stars
+                                                    ? Icons.star
+                                                    : Icons.star_border,
+                                                size: 13,
+                                                color: Colors.amber,
+                                              ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              'Gaji: ${money(c.salary)}/mgg',
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                color: AppTheme.textDim,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () async {
+                                      Navigator.of(sheetContext).pop();
+                                      final String? error = await context
+                                          .read<CareerProvider>()
+                                          .hireStaff(c);
+                                      if (!mounted) return;
+                                      if (error != null) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(error),
+                                            backgroundColor: AppTheme.danger,
+                                          ),
+                                        );
+                                      } else {
+                                        _reload();
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              '${c.name} berhasil direkrut!',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    child: Text('Rekrut (${money(fee)})'),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.05),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  'Keahlian: ${c.specialty}',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppTheme.accent,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -201,6 +426,7 @@ class _ClubHubSheetState extends State<ClubHubSheet>
             Tab(text: 'Overview'),
             Tab(text: 'Finances'),
             Tab(text: 'Stadium'),
+            Tab(text: 'Facilities'),
             Tab(text: 'Academy'),
             Tab(text: 'Honours'),
           ],
@@ -212,6 +438,7 @@ class _ClubHubSheetState extends State<ClubHubSheet>
               _overviewTab(club),
               _financesTab(club),
               _stadiumTab(club),
+              _facilitiesTab(club),
               _academyTab(),
               _honoursTab(),
             ],
@@ -276,12 +503,437 @@ class _ClubHubSheetState extends State<ClubHubSheet>
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    '${club.stadiumName} \u00b7 ${_number(club.capacity)} seats',
+                    '${club.stadiumName} · ${_number(club.capacity)} seats',
                     style: const TextStyle(fontSize: 12),
                   ),
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _facilitiesTab(ClubOverview club) {
+    return FutureBuilder<(ClubFacilities, List<ClubStaff>)>(
+      future: Future.wait([_facilities, _staff]).then(
+        (List<Object> values) =>
+            (values[0] as ClubFacilities, values[1] as List<ClubStaff>),
+      ),
+      builder: (
+        BuildContext context,
+        AsyncSnapshot<(ClubFacilities, List<ClubStaff>)> snap,
+      ) {
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final ClubFacilities fac = snap.data!.$1;
+        final List<ClubStaff> staff = snap.data!.$2;
+
+        final ClubStaff? physio = staff.cast<ClubStaff?>().firstWhere(
+          (ClubStaff? s) => s?.isPhysio ?? false,
+          orElse: () => null,
+        );
+        final ClubStaff? analyst = staff.cast<ClubStaff?>().firstWhere(
+          (ClubStaff? s) => s?.isAnalyst ?? false,
+          orElse: () => null,
+        );
+        final ClubStaff? headScout = staff.cast<ClubStaff?>().firstWhere(
+          (ClubStaff? s) => s?.isHeadScout ?? false,
+          orElse: () => null,
+        );
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              // Training Ground Facility Card
+              _facilityCard(
+                icon: Icons.fitness_center,
+                iconColor: AppTheme.accent,
+                title: 'Training Ground',
+                subTitle: fac.trainingTitle,
+                description: fac.trainingDescription,
+                level: fac.trainingLevel,
+                maxLevel: 5,
+                pills: <String>[
+                  'Max ${fac.trainingMaxPlayers} Pemain / sesi',
+                  'Kebugaran +${fac.trainingFitnessGain}',
+                  'Wonderkid Surge +${(fac.trainingLevel - 1) * 20}%',
+                ],
+                upgradeCost: fac.isMaxTraining ? null : fac.nextTrainingCost,
+                onUpgrade: _upgradeTraining,
+              ),
+              const SizedBox(height: 16),
+
+              // Medical Centre Facility Card
+              _facilityCard(
+                icon: Icons.medical_services,
+                iconColor: AppTheme.danger,
+                title: 'Medical Centre',
+                subTitle: fac.medicalTitle,
+                description: fac.medicalDescription,
+                level: fac.medicalLevel,
+                maxLevel: 5,
+                pills: <String>[
+                  '-${((fac.injuryReductionRate) * 100).round()}% Risiko Cedera',
+                  '+${fac.weeklyFitnessBonus} Stamina Mingguan',
+                  'Rehabilitasi Kilat',
+                ],
+                upgradeCost: fac.isMaxMedical ? null : fac.nextMedicalCost,
+                onUpgrade: _upgradeMedical,
+              ),
+              const SizedBox(height: 22),
+
+              // Staff Header
+              const Text(
+                'Staf Profesional Klub',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Rekrut staf ahli berperingkat bintang untuk memaksimalkan performa, intel strategi, dan kebugaran tim.',
+                style: TextStyle(fontSize: 11, color: AppTheme.textDim),
+              ),
+              const SizedBox(height: 12),
+
+              // Physio Card
+              _staffRoleCard(
+                role: 'head_physio',
+                roleTitle: 'Head Physiotherapist',
+                roleDesc:
+                    'Mengurangi risiko cedera pertandingan dan mempercepat pemulihan stamina pasca-laga.',
+                icon: Icons.healing,
+                staff: physio,
+              ),
+              const SizedBox(height: 10),
+
+              // Tactical Analyst Card
+              _staffRoleCard(
+                role: 'tactical_analyst',
+                roleTitle: 'Lead Tactical Analyst',
+                roleDesc:
+                    'Menyusun dossier analisis taktik lawan, celah formasi, dan kunci pemain berbahaya sebelum matchday.',
+                icon: Icons.psychology,
+                staff: analyst,
+                extraAction: analyst != null
+                    ? () => showTacticalAnalysisSheet(context)
+                    : null,
+                extraActionLabel: 'Lihat Intel Lawan',
+              ),
+              const SizedBox(height: 10),
+
+              // Head Scout Card
+              _staffRoleCard(
+                role: 'head_scout',
+                roleTitle: 'Head of Global Scouting',
+                roleDesc:
+                    'Meningkatkan akurasi dan potensi bintang wonderkid yang ditemukan dalam misi scouting global.',
+                icon: Icons.travel_explore,
+                staff: headScout,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _facilityCard({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subTitle,
+    required String description,
+    required int level,
+    required int maxLevel,
+    required List<String> pills,
+    required int? upgradeCost,
+    required VoidCallback onUpgrade,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceCard,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 22, color: iconColor),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      subTitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: iconColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white10,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'Level $level / $maxLevel',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            description,
+            style: const TextStyle(fontSize: 12, color: AppTheme.textDim),
+          ),
+          const SizedBox(height: 10),
+          // 5-step level bar
+          Row(
+            children: <Widget>[
+              for (int i = 1; i <= maxLevel; i++)
+                Expanded(
+                  child: Container(
+                    height: 5,
+                    margin: const EdgeInsets.symmetric(horizontal: 2),
+                    decoration: BoxDecoration(
+                      color: i <= level ? iconColor : Colors.white12,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: pills
+                .map(
+                  (String p) => Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: Text(
+                      p,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: upgradeCost == null
+                ? OutlinedButton(
+                    onPressed: null,
+                    child: const Text('Level Maksimal Terpenuhi'),
+                  )
+                : FilledButton.icon(
+                    icon: const Icon(Icons.upgrade, size: 18),
+                    label: Text('Tingkatkan Fasilitas (${money(upgradeCost)})'),
+                    onPressed: onUpgrade,
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _staffRoleCard({
+    required String role,
+    required String roleTitle,
+    required String roleDesc,
+    required IconData icon,
+    required ClubStaff? staff,
+    VoidCallback? extraAction,
+    String? extraActionLabel,
+  }) {
+    if (staff == null) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceCard,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Row(
+          children: <Widget>[
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 20, color: AppTheme.textDim),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    roleTitle,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    roleDesc,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.textDim,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton(
+              onPressed: () => _showHireStaffSheet(role),
+              child: const Text('Rekrut'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceCard,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.accent.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 20, color: AppTheme.accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      staff.name,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: <Widget>[
+                        for (int i = 0; i < 5; i++)
+                          Icon(
+                            i < staff.stars ? Icons.star : Icons.star_border,
+                            size: 13,
+                            color: Colors.amber,
+                          ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '$roleTitle · ${money(staff.salary)}/mgg',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.textDim,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              'Keahlian: ${staff.specialty}',
+              style: const TextStyle(fontSize: 11, color: AppTheme.accent),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: <Widget>[
+              if (extraAction != null && extraActionLabel != null) ...<Widget>[
+                TextButton.icon(
+                  onPressed: extraAction,
+                  icon: const Icon(Icons.analytics_outlined, size: 16),
+                  label: Text(extraActionLabel),
+                ),
+                const SizedBox(width: 6),
+              ],
+              TextButton(
+                onPressed: () => _showHireStaffSheet(role),
+                child: const Text('Ganti'),
+              ),
+              TextButton(
+                onPressed: () => _fireStaff(role),
+                child: const Text('Pecat', style: TextStyle(color: AppTheme.danger)),
+              ),
+            ],
           ),
         ],
       ),
@@ -1229,10 +1881,21 @@ class _ClubHubSheetState extends State<ClubHubSheet>
                           margin: const EdgeInsets.only(bottom: 6),
                           child: ListTile(
                             dense: true,
-                            leading: const Icon(
-                              Icons.verified,
-                              color: AppTheme.accent,
-                              size: 20,
+                            leading: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: AppTheme.accent.withValues(alpha: 0.15),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                switch (s.type) {
+                                  1 => Icons.checkroom,
+                                  2 => Icons.stadium,
+                                  _ => Icons.shield_outlined,
+                                },
+                                color: AppTheme.accent,
+                                size: 18,
+                              ),
                             ),
                             title: Text(
                               s.sponsorName,
@@ -1295,113 +1958,276 @@ class _ClubHubSheetState extends State<ClubHubSheet>
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'Available Sponsorship Offers',
+                    'Manajemen Kontrak Sponsor',
                     style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    'Sign sponsor contracts to earn immediate signing bonuses, weekly income, and target incentives.',
+                    'Tiap musim klub dapat bermitra dengan 3 brand komersial berbeda: Jersey Utama, Stadion, dan Lengan.',
                     style: TextStyle(fontSize: 11, color: AppTheme.textDim),
                   ),
                   const Divider(height: 20),
                   Expanded(
-                    child: FutureBuilder<List<ClubSponsorship>>(
-                      future: game.availableSponsorshipOffers(),
-                      builder: (BuildContext _, AsyncSnapshot<List<ClubSponsorship>> snap) {
+                    child: FutureBuilder<List<Object>>(
+                      future: Future.wait<Object>(<Future<Object>>[
+                        game.activeSponsorships(),
+                        game.availableSponsorshipOffers(),
+                      ]),
+                      builder: (BuildContext _, AsyncSnapshot<List<Object>> snap) {
                         if (!snap.hasData) {
                           return const Center(
                             child: CircularProgressIndicator(),
                           );
                         }
-                        final List<ClubSponsorship> offers = snap.data!;
-                        if (offers.isEmpty) {
-                          return const Center(
-                            child: Text(
-                              'All sponsorship slots are currently filled for this season!',
-                              style: TextStyle(color: AppTheme.textDim),
-                            ),
-                          );
-                        }
-                        return ListView.builder(
-                          itemCount: offers.length,
-                          itemBuilder: (BuildContext _, int i) {
-                            final ClubSponsorship offer = offers[i];
-                            return Card(
-                              child: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: <Widget>[
-                                    Row(
+                        final List<ClubSponsorship> active =
+                            snap.data![0] as List<ClubSponsorship>;
+                        final List<ClubSponsorship> offers =
+                            snap.data![1] as List<ClubSponsorship>;
+
+                        return ListView(
+                          children: <Widget>[
+                            if (active.isNotEmpty) ...<Widget>[
+                              const Text(
+                                'KONTRAK AKTIF SAAT INI',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  letterSpacing: 1,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.textDim,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              for (final ClubSponsorship s in active)
+                                Card(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Row(
                                       children: <Widget>[
-                                        const Icon(
-                                          Icons.business,
-                                          color: AppTheme.accent,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          offer.sponsorName,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 14,
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.accent.withValues(alpha: 0.15),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Icon(
+                                            switch (s.type) {
+                                              1 => Icons.checkroom,
+                                              2 => Icons.stadium,
+                                              _ => Icons.shield_outlined,
+                                            },
+                                            color: AppTheme.accent,
+                                            size: 20,
                                           ),
                                         ),
-                                        const Spacer(),
-                                        Text(
-                                          offer.typeLabel,
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            color: AppTheme.textDim,
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: <Widget>[
+                                              Text(
+                                                s.sponsorName,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                '${s.typeLabel} · +${money(s.weeklyReward)}/minggu',
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  color: AppTheme.textDim,
+                                                ),
+                                              ),
+                                              Text(
+                                                'Bonus Target: ${money(s.bonusPrize)} (Top ${s.target})',
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  color: AppTheme.accent,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        TextButton(
+                                          onPressed: () async {
+                                            final bool? ok = await showDialog<bool>(
+                                              context: context,
+                                              builder: (BuildContext dCtx) => AlertDialog(
+                                                title: const Text('Putus Kontrak Sponsor?'),
+                                                content: Text(
+                                                  'Apakah Anda yakin ingin memutus kontrak dengan ${s.sponsorName}? Slot ${s.typeLabel} akan kembali kosong untuk tawaran brand baru.',
+                                                ),
+                                                actions: <Widget>[
+                                                  TextButton(
+                                                    onPressed: () => Navigator.pop(dCtx, false),
+                                                    child: const Text('Batal'),
+                                                  ),
+                                                  FilledButton(
+                                                    style: FilledButton.styleFrom(
+                                                      backgroundColor: AppTheme.danger,
+                                                    ),
+                                                    onPressed: () => Navigator.pop(dCtx, true),
+                                                    child: const Text('Putus Kontrak'),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                            if (ok == true) {
+                                              await game.terminateSponsorship(s.sponsorshipId);
+                                              setSheetState(() {});
+                                              setState(() => _reload());
+                                            }
+                                          },
+                                          child: const Text(
+                                            'Putus',
+                                            style: TextStyle(
+                                              color: AppTheme.danger,
+                                              fontSize: 12,
+                                            ),
                                           ),
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Upfront signing bonus: ${money(offer.baseReward)}',
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                    Text(
-                                      'Weekly reward: +${money(offer.weeklyReward)}/week',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: AppTheme.accent,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Target bonus: ${money(offer.bonusPrize)} (Top ${offer.target} finish)',
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      child: FilledButton(
-                                        onPressed: () async {
-                                          await game.signSponsorship(offer);
-                                          if (context.mounted) {
-                                            ScaffoldMessenger.of(
-                                              context,
-                                            ).showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                  'Signed deal with ${offer.sponsorName}! Received ${money(offer.baseReward)} upfront.',
+                                  ),
+                                ),
+                              const SizedBox(height: 12),
+                            ],
+                            if (offers.isNotEmpty) ...<Widget>[
+                              const Text(
+                                'TAWARAN BRAND SPONSOR TERSEDIA',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  letterSpacing: 1,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.accent,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              for (final ClubSponsorship offer in offers)
+                                Card(
+                                  margin: const EdgeInsets.only(bottom: 10),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Row(
+                                          children: <Widget>[
+                                            Container(
+                                              padding: const EdgeInsets.all(6),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white.withValues(alpha: 0.08),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: Icon(
+                                                switch (offer.type) {
+                                                  1 => Icons.checkroom,
+                                                  2 => Icons.stadium,
+                                                  _ => Icons.shield_outlined,
+                                                },
+                                                color: AppTheme.accent,
+                                                size: 18,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              offer.sponsorName,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                            const Spacer(),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                                vertical: 3,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: AppTheme.surface,
+                                                borderRadius: BorderRadius.circular(6),
+                                                border: Border.all(color: Colors.white12),
+                                              ),
+                                              child: Text(
+                                                offer.typeLabel,
+                                                style: const TextStyle(
+                                                  fontSize: 10,
+                                                  color: AppTheme.textDim,
                                                 ),
                                               ),
-                                            );
-                                            setSheetState(() {});
-                                            setState(() => _reload());
-                                          }
-                                        },
-                                        child: Text(
-                                          'Sign Deal (+${money(offer.baseReward)})',
+                                            ),
+                                          ],
                                         ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'Bonus Tanda Tangan: ${money(offer.baseReward)}',
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                        Text(
+                                          'Pendapatan Mingguan: +${money(offer.weeklyReward)}/minggu',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: AppTheme.accent,
+                                          ),
+                                        ),
+                                        Text(
+                                          'Bonus Target: ${money(offer.bonusPrize)} (Finis Top ${offer.target})',
+                                          style: const TextStyle(fontSize: 12),
+                                        ),
+                                        const SizedBox(height: 10),
+                                        SizedBox(
+                                          width: double.infinity,
+                                          child: FilledButton(
+                                            onPressed: () async {
+                                              await game.signSponsorship(offer);
+                                              if (context.mounted) {
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(
+                                                      'Kontrak ${offer.typeLabel} resmi diteken bersama ${offer.sponsorName}! Bonus awal ${money(offer.baseReward)}.',
+                                                    ),
+                                                  ),
+                                                );
+                                                setSheetState(() {});
+                                                setState(() => _reload());
+                                              }
+                                            },
+                                            child: Text(
+                                              'Tandatangani Kontrak (+${money(offer.baseReward)})',
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                            ] else if (active.length >= 3) ...<Widget>[
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.surfaceCard,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3)),
+                                ),
+                                child: const Row(
+                                  children: <Widget>[
+                                    Icon(Icons.check_circle, color: AppTheme.accent, size: 24),
+                                    SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        'Semua 3 slot sponsor (Jersey Utama, Stadion, dan Lengan) telah terisi penuh oleh brand mitra komersial.',
+                                        style: TextStyle(fontSize: 12),
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
-                            );
-                          },
+                            ],
+                          ],
                         );
                       },
                     ),

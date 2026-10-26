@@ -68,6 +68,154 @@ void main() {
     expect(bonuses, isNotEmpty);
   });
 
+  test('sponsorship offers are guaranteed to be from 3 distinct brands across slots', () async {
+    // 1. Initial 3 offers across slots 1, 2, 3
+    final List<ClubSponsorship> offers = await sponsorships.availableOffers(
+      teamId: 42,
+      seasonId: 1,
+      clubPower: 75,
+    );
+
+    expect(offers.length, 3);
+    final Set<int> offerTypes = offers.map((ClubSponsorship o) => o.type).toSet();
+    final Set<int> offerSponsorIds = offers.map((ClubSponsorship o) => o.sponsorId).toSet();
+    final Set<String> offerNames = offers.map((ClubSponsorship o) => o.sponsorName.trim().toLowerCase()).toSet();
+
+    // All 3 slot types (1: Main Shirt, 2: Stadium, 3: Sleeve)
+    expect(offerTypes, <int>{1, 2, 3});
+    // Crucial requirement: Must be 3 DIFFERENT brands, never duplicate brands (e.g., Etihad x 3)
+    expect(offerSponsorIds.length, 3);
+    expect(offerNames.length, 3);
+
+    // 2. Sign slot 1
+    await sponsorships.signSponsorship(offers[0]);
+
+    // 3. Query offers again for the remaining 2 slots
+    final List<ClubSponsorship> remainingOffers = await sponsorships.availableOffers(
+      teamId: 42,
+      seasonId: 1,
+      clubPower: 75,
+    );
+    expect(remainingOffers.length, 2);
+    // Remaining slots must NOT reuse the brand already signed in slot 1
+    for (final ClubSponsorship rem in remainingOffers) {
+      expect(rem.sponsorId, isNot(offers[0].sponsorId));
+      expect(rem.sponsorName.trim().toLowerCase(), isNot(offers[0].sponsorName.trim().toLowerCase()));
+    }
+    // And remaining offers must also be distinct from each other
+    expect(remainingOffers[0].sponsorId, isNot(remainingOffers[1].sponsorId));
+    expect(
+      remainingOffers[0].sponsorName.trim().toLowerCase(),
+      isNot(remainingOffers[1].sponsorName.trim().toLowerCase()),
+    );
+
+    // 4. Sign slot 2 and slot 3
+    await sponsorships.signSponsorship(remainingOffers[0]);
+    final List<ClubSponsorship> lastOffers = await sponsorships.availableOffers(
+      teamId: 42,
+      seasonId: 1,
+      clubPower: 75,
+    );
+    expect(lastOffers.length, 1);
+    expect(lastOffers.first.sponsorId, isNot(offers[0].sponsorId));
+    expect(lastOffers.first.sponsorId, isNot(remainingOffers[0].sponsorId));
+    await sponsorships.signSponsorship(lastOffers.first);
+
+    // 5. Verify all active sponsorships in the club have completely unique brands
+    final List<ClubSponsorship> activeDeals = await sponsorships.activeSponsorships(42, 1);
+    expect(activeDeals.length, 3);
+    final Set<String> activeNames = activeDeals.map((ClubSponsorship d) => d.sponsorName.trim().toLowerCase()).toSet();
+    expect(activeNames.length, 3);
+
+    // 6. Test contract termination
+    final ClubSponsorship dealToTerminate = activeDeals.first;
+    await sponsorships.terminateSponsorship(dealToTerminate.sponsorshipId);
+
+    final List<ClubSponsorship> postTerminationActive = await sponsorships.activeSponsorships(42, 1);
+    expect(postTerminationActive.length, 2);
+    expect(
+      postTerminationActive.any((ClubSponsorship d) => d.sponsorshipId == dealToTerminate.sponsorshipId),
+      isFalse,
+    );
+
+    // Terminated slot is now open again with a distinct brand offer
+    final List<ClubSponsorship> reopenedOffers = await sponsorships.availableOffers(
+      teamId: 42,
+      seasonId: 1,
+      clubPower: 75,
+    );
+    expect(reopenedOffers.length, 1);
+    expect(reopenedOffers.first.type, dealToTerminate.type);
+  });
+
+  test('activeSponsorships auto-heals duplicate sponsor brands from existing saves', () async {
+    // Simulate an existing save affected by the old bug where all 3 slots were "Etihad Airways"
+    await db.insert('sponsorships', <String, Object?>{
+      'sponsorship_id': 101,
+      'team_id': 42,
+      'sponsor_id': 1,
+      'type': 1,
+      'season_id': 1,
+      'base_reward': 5000000,
+      'progress': 150000,
+      'target': 1,
+      'is_unique_prize': 2000000,
+      'status': 1,
+      'extra_data': 'Etihad Airways',
+    });
+    await db.insert('sponsorships', <String, Object?>{
+      'sponsorship_id': 102,
+      'team_id': 42,
+      'sponsor_id': 1,
+      'type': 2,
+      'season_id': 1,
+      'base_reward': 3000000,
+      'progress': 100000,
+      'target': 10,
+      'is_unique_prize': 1000000,
+      'status': 1,
+      'extra_data': 'Etihad Airways',
+    });
+    await db.insert('sponsorships', <String, Object?>{
+      'sponsorship_id': 103,
+      'team_id': 42,
+      'sponsor_id': 1,
+      'type': 3,
+      'season_id': 1,
+      'base_reward': 2000000,
+      'progress': 75000,
+      'target': 1,
+      'is_unique_prize': 1500000,
+      'status': 1,
+      'extra_data': 'Etihad Airways',
+    });
+
+    // When querying active sponsorships, auto-heal should resolve duplicate brands
+    final List<ClubSponsorship> healed = await sponsorships.activeSponsorships(42, 1);
+    expect(healed.length, 3);
+
+    final Set<String> brandNames = healed.map((ClubSponsorship s) => s.sponsorName.trim().toLowerCase()).toSet();
+    final Set<int> sponsorIds = healed.map((ClubSponsorship s) => s.sponsorId).toSet();
+
+    // Must now be 3 totally distinct brands and IDs!
+    expect(brandNames.length, 3);
+    expect(sponsorIds.length, 3);
+
+    // Verify database was actually persisted with healed data
+    final List<Map<String, Object?>> persistedRows = await db.query(
+      'sponsorships',
+      where: 'team_id = 42 AND season_id = 1 AND status = 1',
+    );
+    final Set<String> persistedNames = persistedRows
+        .map((Map<String, Object?> r) => (r['extra_data'] as String).trim().toLowerCase())
+        .toSet();
+    expect(persistedNames.length, 3);
+    final Set<int> persistedIds = persistedRows
+        .map((Map<String, Object?> r) => r['sponsor_id'] as int)
+        .toSet();
+    expect(persistedIds.length, 3);
+  });
+
   test('scouting department hires scouts, deploys to region and discovers wonderkids', () async {
     final List<Scout> available = scouting.availableScoutsToHire();
     expect(available, isNotEmpty);
