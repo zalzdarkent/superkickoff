@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import '../repositories/club_logo_service.dart';
 import '../repositories/squad_repository.dart';
 import 'schema.dart' as t;
 
@@ -497,6 +498,17 @@ class AppDatabase {
       WHERE country_id = (SELECT country_id FROM countries WHERE name = 'Indonesia')
         AND abbreviation = 'Per'
     ''');
+    final List<Map<String, Object?>> teamColumns = await db.rawQuery(
+      'PRAGMA table_info(${t.teams})',
+    );
+    if (!teamColumns.any(
+      (Map<String, Object?> column) => column['name'] == 'logo_base64',
+    )) {
+      try {
+        await db.execute('ALTER TABLE ${t.teams} ADD COLUMN logo_base64 TEXT');
+      } catch (_) {}
+    }
+    await const ClubLogoService().seedDefaultLogos(db);
   }
 
   /// Test/dev helper: open an arbitrary file directly.

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../data/models/models.dart';
 import '../../state/career_provider.dart';
 import '../theme.dart';
+import '../widgets/common.dart';
 import 'knockout_bracket_sheet.dart';
 import 'team_detail_sheet.dart';
 
@@ -18,6 +19,7 @@ class FixturesTab extends StatefulWidget {
 class _FixturesTabState extends State<FixturesTab> {
   List<FixtureMatch>? fixtures;
   Map<int, String> tournamentNames = <int, String>{};
+  Map<int, int> _cupTotalRounds = <int, int>{};
   final GlobalKey _currentWeekKey = GlobalKey();
   String? _scrolledToDate;
 
@@ -30,14 +32,56 @@ class _FixturesTabState extends State<FixturesTab> {
   Future<void> _load() async {
     final CareerProvider game = context.read<CareerProvider>();
     if (game.season == null) return;
-    final List<FixtureMatch> list = await game.seasonFixtures();
+    final List<FixtureMatch> list = game.userTeamId > 0
+        ? await game.fixturesForTeam(game.userTeamId)
+        : await game.seasonFixtures();
+    final Map<int, int> cupRounds = await game.cupTotalRounds();
     if (!mounted) return;
     setState(() {
       fixtures = list;
+      _cupTotalRounds = cupRounds;
       tournamentNames = <int, String>{
         for (final Tournament tour in game.cups) tour.tournamentId: tour.name,
       };
     });
+  }
+
+  Widget _headerBanner(CareerProvider game, int count) {
+    final Team? userTeam = game.userTeam;
+    if (userTeam == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+      child: Row(
+        children: <Widget>[
+          CrestAvatar(team: userTeam, radius: 11),
+          const SizedBox(width: 8),
+          Text(
+            'Jadwal ${userTeam.name}',
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: AppTheme.accent.withAlpha(35),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.accent.withAlpha(80)),
+            ),
+            child: Text(
+              '$count Laga',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.accent,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -45,8 +89,16 @@ class _FixturesTabState extends State<FixturesTab> {
     final CareerProvider game = context.watch<CareerProvider>();
     final List<FixtureMatch> list = fixtures ?? const <FixtureMatch>[];
     if (list.isEmpty) {
-      return const Center(child: Text('No fixtures yet'));
+      return Center(
+        child: Text(
+          game.userTeam != null
+              ? 'Belum ada jadwal pertandingan untuk ${game.userTeam!.name}'
+              : 'Belum ada jadwal pertandingan',
+          style: const TextStyle(color: AppTheme.textDim),
+        ),
+      );
     }
+
     final int leagueId = game.league?.tournamentId ?? 0;
     final Map<int, List<FixtureMatch>> knockoutMatches =
         <int, List<FixtureMatch>>{};
@@ -59,7 +111,8 @@ class _FixturesTabState extends State<FixturesTab> {
     final Map<int, int> totalRounds = <int, int>{
       for (final MapEntry<int, List<FixtureMatch>> entry
           in knockoutMatches.entries)
-        entry.key: knockoutTotalRounds(entry.value),
+        entry.key:
+            _cupTotalRounds[entry.key] ?? knockoutTotalRounds(entry.value),
     };
 
     // Group by tournament + round. Knockout legs are merged into one tie so
@@ -116,6 +169,7 @@ class _FixturesTabState extends State<FixturesTab> {
         }
       });
     }
+
     return RefreshIndicator(
       onRefresh: _load,
       child: SingleChildScrollView(
@@ -124,6 +178,7 @@ class _FixturesTabState extends State<FixturesTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
+            _headerBanner(game, list.length),
             for (final String key in keys)
               _groupColumn(
                 key,
@@ -280,16 +335,29 @@ class _FixturesTabState extends State<FixturesTab> {
           ),
         Expanded(
           child: InkWell(
-            onTap: () => showTeamDetail(context, m.homeTeamId),
+            onTap: home == null
+                ? null
+                : () => showTeamDetail(context, m.homeTeamId),
             borderRadius: BorderRadius.circular(4),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
-              child: Text(
-                home?.name ?? '?',
-                textAlign: TextAlign.right,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: nameStyle,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  Flexible(
+                    child: Text(
+                      home?.name ?? '?',
+                      textAlign: TextAlign.right,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: nameStyle,
+                    ),
+                  ),
+                  if (home != null) ...<Widget>[
+                    const SizedBox(width: 6),
+                    CrestAvatar(team: home, radius: 10),
+                  ],
+                ],
               ),
             ),
           ),
@@ -297,7 +365,7 @@ class _FixturesTabState extends State<FixturesTab> {
         Container(
           width: 56,
           alignment: Alignment.center,
-          margin: const EdgeInsets.symmetric(horizontal: 8),
+          margin: const EdgeInsets.symmetric(horizontal: 6),
           child: Text(
             played ? '${m.homeGoals ?? 0} - ${m.awayGoals ?? 0}' : 'vs',
             style: TextStyle(
@@ -309,15 +377,29 @@ class _FixturesTabState extends State<FixturesTab> {
         ),
         Expanded(
           child: InkWell(
-            onTap: () => showTeamDetail(context, m.awayTeamId),
+            onTap: away == null
+                ? null
+                : () => showTeamDetail(context, m.awayTeamId),
             borderRadius: BorderRadius.circular(4),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
-              child: Text(
-                away?.name ?? '?',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: nameStyle,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: <Widget>[
+                  if (away != null) ...<Widget>[
+                    CrestAvatar(team: away, radius: 10),
+                    const SizedBox(width: 6),
+                  ],
+                  Flexible(
+                    child: Text(
+                      away?.name ?? '?',
+                      textAlign: TextAlign.left,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: nameStyle,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

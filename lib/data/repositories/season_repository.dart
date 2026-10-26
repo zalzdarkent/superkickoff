@@ -155,6 +155,24 @@ class SeasonRepository {
     return c ?? 0;
   }
 
+  /// Total knockout rounds for each cup in the season.
+  Future<Map<int, int>> cupTotalRounds(int seasonId) async {
+    final List<Map<String, Object?>> rows = await db.rawQuery(
+      '''
+      SELECT tournament_id, COUNT(*) AS cnt
+      FROM matches
+      WHERE season_id = ? AND phase = 1 AND leg = 1 AND group_id IS NULL
+      GROUP BY tournament_id
+    ''',
+      <Object?>[seasonId],
+    );
+    return <int, int>{
+      for (final Map<String, Object?> row in rows)
+        (row['tournament_id'] as int):
+            (((row['cnt'] as int) * 2).bitLength - 1).clamp(1, 10),
+    };
+  }
+
   /// League standings computed from played matches of [tournamentId].
   /// Pass [groupId] to read a single group of a cup group stage.
   Future<List<StandingRow>> standings(

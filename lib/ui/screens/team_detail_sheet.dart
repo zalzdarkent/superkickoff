@@ -14,7 +14,11 @@ import 'player_detail_sheet.dart';
 /// Formation, starting XI on the tactical pitch, bench, squad list,
 /// strength ratings (ATT, MID, DEF, GK, OVR), and club overview.
 /// Tapping any player opens their detailed profile.
-Future<void> showTeamDetail(BuildContext context, int teamId) {
+Future<void> showTeamDetail(
+  BuildContext context,
+  int teamId, {
+  int initialTabIndex = 0,
+}) {
   if (teamId <= 0) return Future<void>.value();
   return showModalBottomSheet<void>(
     context: context,
@@ -22,15 +26,23 @@ Future<void> showTeamDetail(BuildContext context, int teamId) {
     backgroundColor: Colors.transparent,
     builder: (BuildContext context) => FractionallySizedBox(
       heightFactor: 0.92,
-      child: TeamDetailSheet(teamId: teamId),
+      child: TeamDetailSheet(
+        teamId: teamId,
+        initialTabIndex: initialTabIndex,
+      ),
     ),
   );
 }
 
 class TeamDetailSheet extends StatefulWidget {
-  const TeamDetailSheet({super.key, required this.teamId});
+  const TeamDetailSheet({
+    super.key,
+    required this.teamId,
+    this.initialTabIndex = 0,
+  });
 
   final int teamId;
+  final int initialTabIndex;
 
   @override
   State<TeamDetailSheet> createState() => _TeamDetailSheetState();
@@ -57,7 +69,11 @@ class _TeamDetailSheetState extends State<TeamDetailSheet>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(
+      length: 4,
+      vsync: this,
+      initialIndex: widget.initialTabIndex.clamp(0, 3),
+    );
     _loadData();
   }
 

@@ -63,6 +63,7 @@ class Team {
     required this.stadiumId,
     required this.coachId,
     required this.foundedYear,
+    this.logoBase64,
   });
 
   final int teamId;
@@ -76,6 +77,7 @@ class Team {
   final int stadiumId;
   final int coachId;
   final int foundedYear;
+  final String? logoBase64;
 
   factory Team.fromMap(Map<String, Object?> m) => Team(
     teamId: m['team_id'] as int,
@@ -89,6 +91,7 @@ class Team {
     stadiumId: m['stadium_id'] as int,
     coachId: m['coach_id'] as int,
     foundedYear: (m['founded_year'] as int?) ?? 1900,
+    logoBase64: m['logo_base64'] as String?,
   );
 
   Map<String, Object?> toMap() => <String, Object?>{
@@ -103,6 +106,7 @@ class Team {
     'stadium_id': stadiumId,
     'coach_id': coachId,
     'founded_year': foundedYear,
+    'logo_base64': logoBase64,
   };
 }
 

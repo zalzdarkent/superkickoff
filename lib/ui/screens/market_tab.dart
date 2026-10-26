@@ -317,6 +317,7 @@ class _MarketTabState extends State<MarketTab> {
           const _TransferWindowBanner(),
           const TabBar(
             isScrollable: true,
+            tabAlignment: TabAlignment.start,
             labelColor: AppTheme.accent,
             unselectedLabelColor: AppTheme.textDim,
             indicatorColor: AppTheme.accent,

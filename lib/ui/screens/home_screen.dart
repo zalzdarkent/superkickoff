@@ -6,6 +6,7 @@ import '../../data/models/models.dart';
 import '../../state/career_provider.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'competition_tab.dart';
 import 'inbox_tab.dart';
 import 'knockout_bracket_sheet.dart';
 import 'club_hub_sheet.dart';
@@ -15,9 +16,7 @@ import 'offseason_screen.dart';
 import 'match_screen.dart';
 import 'matchday_results_sheet.dart';
 import 'squad_tab.dart';
-import 'standings_tab.dart';
 import 'annual_awards_gala_sheet.dart';
-import 'fixtures_tab.dart';
 import 'team_detail_sheet.dart';
 
 /// Main game hub with bottom navigation.
@@ -30,6 +29,16 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _index = 0;
+  int _competitionSubIndex = 0;
+
+  void _navigateToTab(int tabIndex, [int subIndex = 0]) {
+    setState(() {
+      _index = tabIndex;
+      if (tabIndex == 2) {
+        _competitionSubIndex = subIndex;
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -47,20 +56,59 @@ class _HomeScreenState extends State<HomeScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
+          titleSpacing: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            tooltip: 'Keluar karir',
+            onPressed: () => _leaveCareer(context),
+          ),
           title: InkWell(
             onTap: () => showTeamDetail(context, team.teamId),
             borderRadius: BorderRadius.circular(8),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
               child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  CrestAvatar(team: team, radius: 14),
+                  CrestAvatar(team: team, radius: 15),
                   const SizedBox(width: 8),
                   Flexible(
-                    child: Text(
-                      team.name,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 15),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          team.name,
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            const Icon(
+                              Icons.calendar_month,
+                              size: 11,
+                              color: AppTheme.accent,
+                            ),
+                            const SizedBox(width: 3),
+                            Flexible(
+                              child: Text(
+                                game.season?.name ?? 'Season ?',
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppTheme.textDim,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -68,20 +116,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           actions: <Widget>[
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Chip(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-                avatar: const Icon(Icons.calendar_month, size: 13),
-                label: Text(
-                  game.season?.name ?? 'Season ?',
-                  style: const TextStyle(fontSize: 10),
-                ),
-              ),
-            ),
             IconButton(
+              visualDensity: VisualDensity.compact,
               tooltip: 'Inbox',
               icon: Badge(
                 isLabelVisible: game.unreadCount > 0,
@@ -92,16 +128,18 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             if (game.cups.isNotEmpty)
               IconButton(
-                tooltip: 'Knockout brackets',
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Bagan Turnamen',
                 icon: const Icon(Icons.account_tree_outlined),
                 onPressed: () => _openBrackets(context, game),
               ),
             IconButton(
-              tooltip: 'Save and exit',
+              visualDensity: VisualDensity.compact,
+              tooltip: 'Keluar Karir',
               icon: const Icon(Icons.exit_to_app),
               onPressed: () => _leaveCareer(context),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
           ],
         ),
         body: Stack(
@@ -138,31 +176,32 @@ class _HomeScreenState extends State<HomeScreen> {
           labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
           height: 64,
           onDestinationSelected: (int i) {
-            setState(() => _index = i);
+            setState(() {
+              _index = i;
+              if (i == 2) {
+                _competitionSubIndex = 0;
+              }
+            });
           },
-          destinations: <Widget>[
-            const NavigationDestination(
-              icon: Icon(Icons.outlined_flag),
+          destinations: const <Widget>[
+            NavigationDestination(
+              icon: Icon(Icons.dashboard_outlined),
+              selectedIcon: Icon(Icons.dashboard),
               label: 'Overview',
             ),
-            const NavigationDestination(
-              icon: Icon(Icons.groups),
+            NavigationDestination(
+              icon: Icon(Icons.groups_outlined),
+              selectedIcon: Icon(Icons.groups),
               label: 'Squad',
             ),
-            const NavigationDestination(
-              icon: Icon(Icons.event),
-              label: 'Fixtures',
+            NavigationDestination(
+              icon: Icon(Icons.emoji_events_outlined),
+              selectedIcon: Icon(Icons.emoji_events),
+              label: 'Kompetisi',
             ),
-            const NavigationDestination(
-              icon: Icon(Icons.table_chart),
-              label: 'Table',
-            ),
-            const NavigationDestination(
-              icon: Icon(Icons.newspaper),
-              label: 'Berita',
-            ),
-            const NavigationDestination(
-              icon: Icon(Icons.storefront),
+            NavigationDestination(
+              icon: Icon(Icons.storefront_outlined),
+              selectedIcon: Icon(Icons.storefront),
               label: 'Market',
             ),
           ],
@@ -243,18 +282,17 @@ class _HomeScreenState extends State<HomeScreen> {
       case 1:
         return const SquadTab();
       case 2:
-        return const FixturesTab();
+        return CompetitionTab(
+          key: ValueKey<int>(_competitionSubIndex),
+          initialIndex: _competitionSubIndex,
+        );
       case 3:
-        return const StandingsTab();
-      case 4:
-        return const NewsTab();
-      case 5:
         return const MarketTab();
       default:
         return OverviewTab(
           onPlayPressed: () => _playNext(context, game),
           onOpenInbox: () => _openInbox(context),
-          onNavigateTab: (int i) => setState(() => _index = i),
+          onNavigateTab: _navigateToTab,
         );
     }
   }
@@ -284,24 +322,107 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// Overview: next match card, quick stats, mini table and inbox preview.
-class OverviewTab extends StatelessWidget {
+/// Overview: next match card, quick stats, mini table, recent news and inbox preview.
+class OverviewTab extends StatefulWidget {
   const OverviewTab({
     super.key,
     required this.onPlayPressed,
     this.onOpenInbox,
     this.onNavigateTab,
+    this.initialSubTab = 0,
   });
 
   final VoidCallback onPlayPressed;
   final VoidCallback? onOpenInbox;
-  final ValueChanged<int>? onNavigateTab;
+  final void Function(int tabIndex, [int subIndex])? onNavigateTab;
+  final int initialSubTab;
+
+  @override
+  State<OverviewTab> createState() => _OverviewTabState();
+}
+
+class _OverviewTabState extends State<OverviewTab>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialSubTab.clamp(0, 1),
+    );
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final CareerProvider game = context.watch<CareerProvider>();
     final Team? team = game.userTeam;
     if (team == null) return const SizedBox.shrink();
+
+    return Column(
+      children: <Widget>[
+        Material(
+          color: AppTheme.surfaceCard,
+          elevation: 1,
+          child: TabBar(
+            controller: _tabController,
+            dividerColor: Colors.transparent,
+            labelColor: AppTheme.accent,
+            unselectedLabelColor: AppTheme.textDim,
+            indicatorColor: AppTheme.accent,
+            indicatorWeight: 2.5,
+            labelStyle: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+            ),
+            unselectedLabelStyle: const TextStyle(fontSize: 13),
+            tabs: const <Widget>[
+              Tab(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    Icon(Icons.dashboard_outlined, size: 16),
+                    SizedBox(width: 6),
+                    Text('Ringkasan'),
+                  ],
+                ),
+              ),
+              Tab(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    Icon(Icons.newspaper_outlined, size: 16),
+                    SizedBox(width: 6),
+                    Text('Berita'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            physics: const NeverScrollableScrollPhysics(),
+            children: <Widget>[
+              _buildSummary(context, game, team),
+              const NewsTab(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSummary(BuildContext context, CareerProvider game, Team team) {
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
       children: <Widget>[
@@ -339,10 +460,71 @@ class OverviewTab extends StatelessWidget {
             ],
           ),
         ),
-        MiniStandingsCard(game: game, team: team),
-        _unreadInboxCard(context, game, onOpenInbox: onOpenInbox),
+        MiniStandingsCard(
+          game: game,
+          team: team,
+          onViewAll: () => widget.onNavigateTab?.call(2, 0),
+        ),
+        _unreadInboxCard(context, game, onOpenInbox: widget.onOpenInbox),
+        _recentNewsCard(context, game),
         const SizedBox(height: 24),
       ],
+    );
+  }
+
+  Widget _recentNewsCard(BuildContext context, CareerProvider game) {
+    return FutureBuilder<List<NewsItem>>(
+      future: game.newsFeed('world'),
+      builder: (BuildContext context, AsyncSnapshot<List<NewsItem>> snapshot) {
+        final List<NewsItem> items = snapshot.data ?? const <NewsItem>[];
+        if (items.isEmpty) return const SizedBox.shrink();
+        final NewsItem latest = items.first;
+        return SectionCard(
+          title: 'Berita Terkini',
+          trailing: TextButton.icon(
+            onPressed: () => _tabController.animateTo(1),
+            icon: const Icon(Icons.arrow_forward, size: 14),
+            label: const Text('Baca Berita'),
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+            ),
+          ),
+          child: InkWell(
+            onTap: () => _tabController.animateTo(1),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: <Widget>[
+                  const Icon(
+                    Icons.newspaper,
+                    size: 18,
+                    color: AppTheme.accent,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      latest.headline,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    Icons.chevron_right,
+                    size: 16,
+                    color: AppTheme.textDim,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -543,7 +725,7 @@ class OverviewTab extends StatelessWidget {
                             ? 'Play Match'
                             : 'Advance Week',
                       ),
-                      onPressed: game.nextDate == null ? null : onPlayPressed,
+                      onPressed: game.nextDate == null ? null : widget.onPlayPressed,
                     ),
                   ),
                 ),
@@ -851,7 +1033,7 @@ class OverviewTab extends StatelessWidget {
                         'Jelajahi Bursa Transfer Sekarang',
                         style: TextStyle(fontSize: 12),
                       ),
-                      onPressed: () => onNavigateTab?.call(5),
+                      onPressed: () => widget.onNavigateTab?.call(3),
                     ),
                   ),
                 ],
@@ -872,19 +1054,22 @@ class OverviewTab extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  const Row(
+                  Row(
                     children: <Widget>[
-                      Icon(
+                      const Icon(
                         Icons.flag_outlined,
                         size: 15,
                         color: AppTheme.accent,
                       ),
-                      SizedBox(width: 6),
-                      Text(
-                        'Target & Ekspektasi Manajemen Musim Ini',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+                      const SizedBox(width: 6),
+                      const Expanded(
+                        child: Text(
+                          'Target & Ekspektasi Musim Ini',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ],
@@ -916,7 +1101,7 @@ class OverviewTab extends StatelessWidget {
                         'Atur Skuad & Taktik Tim',
                         style: TextStyle(fontSize: 12),
                       ),
-                      onPressed: () => onNavigateTab?.call(1),
+                      onPressed: () => widget.onNavigateTab?.call(1),
                     ),
                   ),
                 ],
@@ -963,14 +1148,17 @@ class OverviewTab extends StatelessWidget {
                             color: AppTheme.accent,
                           ),
                           const SizedBox(width: 6),
-                          const Text(
-                            'Agenda Pertandingan Perdana Mendatang',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
+                          const Expanded(
+                            child: Text(
+                              'Laga Perdana Mendatang',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
-                          const Spacer(),
+                          const SizedBox(width: 8),
                           Text(
                             shortDate(firstMatch.date),
                             style: const TextStyle(
@@ -1128,10 +1316,16 @@ class OverviewTab extends StatelessWidget {
 
 /// Small standings snippet on the overview.
 class MiniStandingsCard extends StatelessWidget {
-  const MiniStandingsCard({super.key, required this.game, required this.team});
+  const MiniStandingsCard({
+    super.key,
+    required this.game,
+    required this.team,
+    this.onViewAll,
+  });
 
   final CareerProvider game;
   final Team team;
+  final VoidCallback? onViewAll;
 
   @override
   Widget build(BuildContext context) {
@@ -1152,6 +1346,17 @@ class MiniStandingsCard extends StatelessWidget {
     if (display.isEmpty) {
       return SectionCard(
         title: 'Standings',
+        trailing: onViewAll == null
+            ? null
+            : TextButton.icon(
+                onPressed: onViewAll,
+                icon: const Icon(Icons.arrow_forward, size: 14),
+                label: const Text('Klasemen'),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                ),
+              ),
         child: Text(
           'Season underway — results will appear here.',
           style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
@@ -1160,6 +1365,17 @@ class MiniStandingsCard extends StatelessWidget {
     }
     return SectionCard(
       title: 'Top of the table',
+      trailing: onViewAll == null
+          ? null
+          : TextButton.icon(
+              onPressed: onViewAll,
+              icon: const Icon(Icons.arrow_forward, size: 14),
+              label: const Text('Klasemen'),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+              ),
+            ),
       child: Column(
         children: <Widget>[
           for (final StandingRow row in display)

@@ -1,10 +1,13 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../../data/models/models.dart';
 
 /// Shared small widgets used across screens.
 
-/// Rounded club crest placeholder built from the club colors + abbreviation.
+/// Club crest image or rounded placeholder built from the club colors + abbreviation.
 class CrestAvatar extends StatelessWidget {
   const CrestAvatar({super.key, required this.team, this.radius = 18});
 
@@ -13,17 +16,42 @@ class CrestAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String? logoBase64 = team.logoBase64;
+    if (logoBase64 != null && logoBase64.isNotEmpty) {
+      try {
+        final Uint8List bytes = base64Decode(logoBase64);
+        return SizedBox(
+          width: radius * 2,
+          height: radius * 2,
+          child: Image.memory(
+            bytes,
+            width: radius * 2,
+            height: radius * 2,
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) => _buildPlaceholder(),
+          ),
+        );
+      } catch (_) {
+        return _buildPlaceholder();
+      }
+    }
+    return _buildPlaceholder();
+  }
+
+  Widget _buildPlaceholder() {
     final Color primary = _colorFor(team.teamId);
     final String initials = team.abbreviation.isNotEmpty
         ? team.abbreviation.toUpperCase()
-        : team.name.substring(0, 2).toUpperCase();
+        : (team.name.length >= 2
+            ? team.name.substring(0, 2).toUpperCase()
+            : team.name.toUpperCase());
     return CircleAvatar(
       radius: radius,
       backgroundColor: primary,
       child: Text(
         initials,
         style: TextStyle(
-          color: Colors.black87,
+          color: Colors.white,
           fontWeight: FontWeight.bold,
           fontSize: radius * 0.7,
         ),

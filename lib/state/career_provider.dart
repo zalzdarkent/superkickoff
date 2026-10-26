@@ -7,6 +7,7 @@ import '../core/format.dart' as fmt;
 import '../data/db/app_database.dart';
 import '../data/db/schema.dart' as t;
 import '../data/models/models.dart';
+import '../data/repositories/club_logo_service.dart';
 import '../data/repositories/match_repository.dart';
 import '../data/repositories/message_repository.dart';
 import '../data/repositories/news_repository.dart';
@@ -1113,6 +1114,15 @@ class CareerProvider extends ChangeNotifier {
       ? Future<List<FixtureMatch>>.value(<FixtureMatch>[])
       : _seasons.fixturesForTeam(season!.seasonId, teamId);
 
+  Future<Map<int, int>> cupTotalRounds() async {
+    if (season == null) return const <int, int>{};
+    try {
+      return await _seasons.cupTotalRounds(season!.seasonId);
+    } catch (_) {
+      return const <int, int>{};
+    }
+  }
+
   // ---------------------------------------------------------------- squad
 
   Future<List<Player>> squadForUser() => _squads.squadForTeam(userTeamId);
@@ -1223,6 +1233,37 @@ class CareerProvider extends ChangeNotifier {
       teamCache[teamId] = t;
     }
     return t;
+  }
+
+  /// Seeds default bundled club logos into SQLite and optionally syncs missing
+  /// logos via API (e.g. TheSportsDB), updating [userTeam] and [teamCache].
+  Future<int> syncClubLogos({bool fetchOnline = false}) async {
+    int updated = await const ClubLogoService().seedDefaultLogos(_db);
+    if (fetchOnline && userTeam != null) {
+      updated += await const ClubLogoService().syncMissingLogos(
+        _db,
+        countryId: userTeam!.countryId,
+      );
+    }
+    if (userTeam != null) {
+      userTeam = await _refs.teamById(userTeam!.teamId);
+    }
+    if (season != null) {
+      final rows = await _db.rawQuery(
+        '''
+        SELECT tm.* FROM season_teams st
+        JOIN teams tm ON tm.team_id = st.team_id
+        WHERE st.season_id = ?
+      ''',
+        <Object?>[season!.seasonId],
+      );
+      teamCache = <int, Team>{
+        for (final Map<String, Object?> row in rows)
+          row['team_id'] as int: Team.fromMap(row),
+      };
+    }
+    notifyListeners();
+    return updated;
   }
 
   /// Archived-season browsing used by the Table tab history screen.

@@ -13,6 +13,7 @@ import 'package:superkickoff/data/repositories/reference_repository.dart';
 import 'package:superkickoff/data/repositories/season_repository.dart';
 import 'package:superkickoff/data/repositories/squad_repository.dart';
 import 'package:superkickoff/game/career_service.dart';
+import 'package:superkickoff/game/formation.dart';
 import 'package:superkickoff/game/match_engine.dart';
 import 'package:superkickoff/game/season_generator.dart';
 
@@ -97,9 +98,14 @@ void main() {
     final List<Team> clubs = await refs.teamsForDivision(countryId, 1);
     expect(clubs.length, 18);
     final Team userClub = clubs.first;
-    expect(await squads.formationForTeam(userClub.teamId), '4-4-2');
-    await squads.setFormation(userClub.teamId, '4-3-3');
-    expect(await squads.formationForTeam(userClub.teamId), '4-3-3');
+    final String initialFormation =
+        await squads.formationForTeam(userClub.teamId);
+    expect(
+      Formation.all.map((Formation f) => f.name),
+      contains(initialFormation),
+    );
+    await squads.setFormation(userClub.teamId, '4-2-3-1');
+    expect(await squads.formationForTeam(userClub.teamId), '4-2-3-1');
     await db.insert(t.careerHistory, <String, Object?>{
       'team_id': userClub.teamId,
       'season_id': seasonId,

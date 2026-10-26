@@ -4,6 +4,8 @@ import 'package:sqflite/sqflite.dart';
 
 import '../db/schema.dart' as t;
 import '../models/models.dart';
+import '../../game/formation.dart';
+import '../../game/match_engine.dart';
 import '../../game/training.dart';
 
 /// Squad, lineup and transfer-market management.
@@ -184,7 +186,7 @@ class SquadRepository {
     _tacticsReady = true;
   }
 
-  /// Formation saved for [teamId] (defaults to 4-4-2).
+  /// Formation saved for [teamId] (defaults to the tactical shape that best fits the team's squad).
   Future<String> formationForTeam(int teamId) async {
     await _ensureTacticsTable();
     final List<Map<String, Object?>> rows = await db.query(
@@ -194,8 +196,43 @@ class SquadRepository {
       whereArgs: <Object?>[teamId],
       limit: 1,
     );
-    return (rows.isEmpty ? null : rows.first['formation'] as String?) ??
-        '4-4-2';
+    if (rows.isNotEmpty && rows.first['formation'] != null) {
+      return rows.first['formation'] as String;
+    }
+    final String chosen = await _determineBestFormation(teamId);
+    await setFormation(teamId, chosen);
+    return chosen;
+  }
+
+  Future<String> _determineBestFormation(int teamId) async {
+    final List<Player> squad = await squadForTeam(teamId);
+    if (squad.isEmpty) {
+      const List<String> defaults = <String>[
+        '4-3-3',
+        '4-2-3-1',
+        '4-4-2',
+        '3-5-2',
+        '4-3-3',
+        '4-2-3-1',
+        '3-4-3',
+        '5-3-2',
+      ];
+      return defaults[teamId.abs() % defaults.length];
+    }
+    Formation bestF = Formation.f442;
+    double bestScore = -1.0;
+    for (final Formation f in Formation.all) {
+      final Lineup lineup = Lineup.best(squad, formation: f);
+      final double score = Lineup.attackOn(lineup.starters) +
+          Lineup.midfieldOn(lineup.starters) +
+          Lineup.defenseOn(lineup.starters) +
+          ((teamId.hashCode ^ f.name.hashCode).abs() % 100) * 0.05;
+      if (score > bestScore) {
+        bestScore = score;
+        bestF = f;
+      }
+    }
+    return bestF.name;
   }
 
   /// Persists the chosen formation for [teamId].

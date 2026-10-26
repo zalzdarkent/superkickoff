@@ -276,6 +276,79 @@ class _ClubHubSheetState extends State<ClubHubSheet>
               ],
             ),
           ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceCard,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Row(
+              children: <Widget>[
+                CrestAvatar(team: club.team, radius: 18),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      const Text(
+                        'Logo Klub (Base64)',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        club.team.logoBase64 != null
+                            ? 'Logo resmi tersimpan di SQLite.'
+                            : 'Menggunakan placeholder inisial.',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.textDim,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _busy
+                      ? null
+                      : () async {
+                          setState(() => _busy = true);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Menyinkronkan logo klub...'),
+                              duration: Duration(seconds: 1),
+                            ),
+                          );
+                          final int count = await context
+                              .read<CareerProvider>()
+                              .syncClubLogos(fetchOnline: true);
+                          if (!mounted) return;
+                          setState(() => _busy = false);
+                          _reload();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                count > 0
+                                    ? 'Berhasil memperbarui $count logo klub!'
+                                    : 'Logo klub sudah mutakhir.',
+                              ),
+                            ),
+                          );
+                        },
+                  icon: const Icon(Icons.sync, size: 16),
+                  label: const Text('Sync API', style: TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.accent,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
