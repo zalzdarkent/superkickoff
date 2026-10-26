@@ -502,6 +502,7 @@ class SeasonRepository {
     required int seasonId,
     required int year,
   }) async {
+    const int minimumAwardAppearances = 10;
     await db.delete(
       t.playerAwards,
       where: 'season_id = ?',
@@ -520,10 +521,11 @@ class SeasonRepository {
       WHERE m.season_id = ? AND m.status = ?
       GROUP BY mp.player_id, mp.team_id
       HAVING SUM(mp.goals) > 0
+         AND COUNT(DISTINCT mp.match_id) >= ?
       ORDER BY goals DESC, SUM(mp.assists) DESC, AVG(mp.rating) DESC
       LIMIT 1
     ''',
-      <Object?>[seasonId, t.matchFinished],
+      <Object?>[seasonId, t.matchFinished, minimumAwardAppearances],
     );
     if (topScorer.isNotEmpty) {
       final Map<String, Object?> row = topScorer.first;
@@ -555,11 +557,12 @@ class SeasonRepository {
       JOIN players p ON p.player_id = mp.player_id
       WHERE m.season_id = ? AND m.status = ? AND mp.minutes > 0
       GROUP BY mp.player_id, mp.team_id
+      HAVING COUNT(DISTINCT mp.match_id) >= ?
       ORDER BY SUM(mp.mvp) DESC, AVG(mp.rating) DESC,
                SUM(mp.goals) + SUM(mp.assists) DESC
       LIMIT 1
     ''',
-      <Object?>[seasonId, t.matchFinished],
+      <Object?>[seasonId, t.matchFinished, minimumAwardAppearances],
     );
     if (mvp.isNotEmpty) {
       final Map<String, Object?> row = mvp.first;
@@ -590,11 +593,11 @@ class SeasonRepository {
       JOIN players p ON p.player_id = mp.player_id
       WHERE m.season_id = ? AND m.status = ? AND p.age <= 21
       GROUP BY mp.player_id, mp.team_id
-      HAVING SUM(mp.minutes) >= 90
+      HAVING COUNT(DISTINCT mp.match_id) >= ?
       ORDER BY AVG(mp.rating) DESC, SUM(mp.goals) + SUM(mp.assists) DESC
       LIMIT 1
     ''',
-      <Object?>[seasonId, t.matchFinished],
+      <Object?>[seasonId, t.matchFinished, minimumAwardAppearances],
     );
     if (young.isNotEmpty) {
       final Map<String, Object?> row = young.first;
@@ -627,32 +630,12 @@ class SeasonRepository {
       JOIN players p ON p.player_id = mp.player_id
       WHERE m.season_id = ? AND m.status = ?
       GROUP BY mp.player_id, mp.team_id
-      HAVING SUM(mp.minutes) >= 180
+      HAVING COUNT(DISTINCT mp.match_id) >= ?
       ORDER BY score DESC
       LIMIT 1
     ''',
-      <Object?>[seasonId, t.matchFinished],
+      <Object?>[seasonId, t.matchFinished, minimumAwardAppearances],
     );
-    if (ballonDor.isEmpty) {
-      ballonDor = await db.rawQuery(
-        '''
-        SELECT mp.player_id, mp.team_id, p.position_id,
-               AVG(mp.rating) AS avg_rating,
-               SUM(mp.goals) AS goals,
-               SUM(mp.assists) AS assists,
-               SUM(mp.mvp) AS mvps,
-               ((AVG(mp.rating) * 12.0) + (SUM(mp.goals) * 3.0) + (SUM(mp.assists) * 2.0) + (SUM(mp.mvp) * 6.0)) AS score
-        FROM match_players mp
-        JOIN matches m ON m.match_id = mp.match_id
-        JOIN players p ON p.player_id = mp.player_id
-        WHERE m.season_id = ? AND m.status = ?
-        GROUP BY mp.player_id, mp.team_id
-        ORDER BY score DESC
-        LIMIT 1
-      ''',
-        <Object?>[seasonId, t.matchFinished],
-      );
-    }
     if (ballonDor.isNotEmpty) {
       final Map<String, Object?> row = ballonDor.first;
       final double rating = (row['avg_rating'] as num?)?.toDouble() ?? 0.0;
@@ -685,10 +668,11 @@ class SeasonRepository {
       JOIN players p ON p.player_id = mp.player_id
       WHERE m.season_id = ? AND m.status = ? AND p.position_id = 1
       GROUP BY mp.player_id, mp.team_id
+      HAVING COUNT(DISTINCT mp.match_id) >= ?
       ORDER BY clean_sheets DESC, avg_rating DESC
       LIMIT 1
     ''',
-      <Object?>[seasonId, t.matchFinished],
+      <Object?>[seasonId, t.matchFinished, minimumAwardAppearances],
     );
     if (glove.isNotEmpty) {
       final Map<String, Object?> row = glove.first;

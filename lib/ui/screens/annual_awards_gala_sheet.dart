@@ -82,14 +82,8 @@ class _AnnualAwardsGalaSheetState extends State<AnnualAwardsGalaSheet>
                 icon: Icon(Icons.emoji_events, size: 18),
                 text: 'Individual Awards',
               ),
-              Tab(
-                icon: Icon(Icons.groups, size: 18),
-                text: 'Team of the Year',
-              ),
-              Tab(
-                icon: Icon(Icons.shield, size: 18),
-                text: 'Club Honours',
-              ),
+              Tab(icon: Icon(Icons.groups, size: 18), text: 'Team of the Year'),
+              Tab(icon: Icon(Icons.shield, size: 18), text: 'Club Honours'),
             ],
           ),
           Expanded(
@@ -318,7 +312,8 @@ class _AnnualAwardsGalaSheetState extends State<AnnualAwardsGalaSheet>
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: const Color(0xFFFFD700).withValues(alpha: 0.2),
+                            color: const Color(0xFFFFD700)
+                                .withValues(alpha: 0.2),
                           ),
                           child: const Icon(
                             Icons.sports_soccer,
@@ -340,7 +335,7 @@ class _AnnualAwardsGalaSheetState extends State<AnnualAwardsGalaSheet>
                               ),
                             ),
                             Text(
-                              'World Player of the Year',
+                              'Top Player of the Career Season · 10+ appearances',
                               style: TextStyle(
                                 fontSize: 10,
                                 color: AppTheme.textDim,
@@ -384,7 +379,8 @@ class _AnnualAwardsGalaSheetState extends State<AnnualAwardsGalaSheet>
                   children: <Widget>[
                     CircleAvatar(
                       radius: 26,
-                      backgroundColor: const Color(0xFFFFD700).withValues(alpha: 0.25),
+                      backgroundColor: const Color(0xFFFFD700)
+                          .withValues(alpha: 0.25),
                       child: const Icon(
                         Icons.person,
                         size: 32,
@@ -486,7 +482,9 @@ class _AnnualAwardsGalaSheetState extends State<AnnualAwardsGalaSheet>
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: accentColor.withValues(alpha: 0.18),
-                    border: Border.all(color: accentColor.withValues(alpha: 0.5)),
+                    border: Border.all(
+                      color: accentColor.withValues(alpha: 0.5),
+                    ),
                   ),
                   child: Icon(icon, color: accentColor, size: 24),
                 ),
@@ -569,7 +567,9 @@ class _AnnualAwardsGalaSheetState extends State<AnnualAwardsGalaSheet>
       decoration: BoxDecoration(
         color: AppTheme.surfaceCard,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.4)),
+        border: Border.all(
+          color: const Color(0xFF6366F1).withValues(alpha: 0.4),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -667,10 +667,16 @@ class _AnnualAwardsGalaSheetState extends State<AnnualAwardsGalaSheet>
         .where((PlayerAward p) => p.positionId == 1)
         .toList();
     final List<PlayerAward> defs = tot
-        .where((PlayerAward p) => p.positionId != null && p.positionId! >= 2 && p.positionId! <= 4)
+        .where(
+          (PlayerAward p) =>
+              p.positionId != null && p.positionId! >= 2 && p.positionId! <= 4,
+        )
         .toList();
     final List<PlayerAward> mids = tot
-        .where((PlayerAward p) => p.positionId != null && p.positionId! >= 5 && p.positionId! <= 8)
+        .where(
+          (PlayerAward p) =>
+              p.positionId != null && p.positionId! >= 5 && p.positionId! <= 8,
+        )
         .toList();
     final List<PlayerAward> atts = tot
         .where((PlayerAward p) => p.positionId != null && p.positionId! >= 9)
@@ -718,8 +724,7 @@ class _AnnualAwardsGalaSheetState extends State<AnnualAwardsGalaSheet>
           ),
         ),
         const SizedBox(height: 8),
-        for (final PlayerAward p in tot)
-          _totyPlayerRow(p),
+        for (final PlayerAward p in tot) _totyPlayerRow(p),
       ],
     );
   }
@@ -755,11 +760,7 @@ class _AnnualAwardsGalaSheetState extends State<AnnualAwardsGalaSheet>
       child: Stack(
         children: <Widget>[
           // Pitch markings
-          Positioned.fill(
-            child: CustomPaint(
-              painter: _PitchPainter(),
-            ),
-          ),
+          Positioned.fill(child: CustomPaint(painter: _PitchPainter())),
           // Player rows
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
@@ -769,22 +770,30 @@ class _AnnualAwardsGalaSheetState extends State<AnnualAwardsGalaSheet>
                 // Attackers line
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: atts.map((PlayerAward p) => _pitchPlayerNode(p)).toList(),
+                  children: atts
+                      .map((PlayerAward p) => _pitchPlayerNode(p))
+                      .toList(),
                 ),
                 // Midfielders line
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: mids.map((PlayerAward p) => _pitchPlayerNode(p)).toList(),
+                  children: mids
+                      .map((PlayerAward p) => _pitchPlayerNode(p))
+                      .toList(),
                 ),
                 // Defenders line
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: defs.map((PlayerAward p) => _pitchPlayerNode(p)).toList(),
+                  children: defs
+                      .map((PlayerAward p) => _pitchPlayerNode(p))
+                      .toList(),
                 ),
                 // Goalkeeper line
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
-                  children: gks.map((PlayerAward p) => _pitchPlayerNode(p)).toList(),
+                  children: gks
+                      .map((PlayerAward p) => _pitchPlayerNode(p))
+                      .toList(),
                 ),
               ],
             ),
@@ -859,9 +868,7 @@ class _AnnualAwardsGalaSheetState extends State<AnnualAwardsGalaSheet>
                 color: Colors.white,
                 fontSize: 10,
                 fontWeight: FontWeight.bold,
-                shadows: <Shadow>[
-                  Shadow(color: Colors.black, blurRadius: 4),
-                ],
+                shadows: <Shadow>[Shadow(color: Colors.black, blurRadius: 4)],
               ),
             ),
             if (player.rating != null) ...<Widget>[
@@ -917,17 +924,17 @@ class _AnnualAwardsGalaSheetState extends State<AnnualAwardsGalaSheet>
                   ),
                   Text(
                     player.teamName,
-                    style: const TextStyle(fontSize: 11, color: AppTheme.textDim),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppTheme.textDim,
+                    ),
                   ),
                 ],
               ),
             ),
             if (player.rating != null) ...<Widget>[
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 3,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: const Color(0xFFFFD700).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(6),
@@ -1036,7 +1043,8 @@ class _AnnualAwardsGalaSheetState extends State<AnnualAwardsGalaSheet>
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFFD700).withValues(alpha: 0.2),
+                            color: const Color(0xFFFFD700)
+                                .withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: const Text(
@@ -1162,7 +1170,12 @@ class _PitchPainter extends CustomPainter {
       ..strokeWidth = 1.4;
 
     // Pitch border
-    final Rect pitchRect = Rect.fromLTWH(8, 8, size.width - 16, size.height - 16);
+    final Rect pitchRect = Rect.fromLTWH(
+      8,
+      8,
+      size.width - 16,
+      size.height - 16,
+    );
     canvas.drawRect(pitchRect, linePaint);
 
     // Halfway line
@@ -1171,16 +1184,17 @@ class _PitchPainter extends CustomPainter {
 
     // Center circle
     canvas.drawCircle(Offset(size.width / 2, midY), 36, linePaint);
-    canvas.drawCircle(Offset(size.width / 2, midY), 2.5, linePaint..style = PaintingStyle.fill);
+    canvas.drawCircle(
+      Offset(size.width / 2, midY),
+      2.5,
+      linePaint..style = PaintingStyle.fill,
+    );
     linePaint.style = PaintingStyle.stroke;
 
     // Top penalty area (Opponent/Goal area)
     final double penaltyWidth = size.width * 0.52;
     final double penaltyLeft = (size.width - penaltyWidth) / 2;
-    canvas.drawRect(
-      Rect.fromLTWH(penaltyLeft, 8, penaltyWidth, 54),
-      linePaint,
-    );
+    canvas.drawRect(Rect.fromLTWH(penaltyLeft, 8, penaltyWidth, 54), linePaint);
 
     // Bottom penalty area (Our keeper area)
     canvas.drawRect(

@@ -35,156 +35,133 @@ void main() {
     await tempDir.delete(recursive: true);
   });
 
-  test('recordSeasonAwards generates all annual awards and gala summary', () async {
-    const int testSeasonId = 999;
-    const int testYear = 2025;
-    const int userTeamId = 1;
+  test(
+    'recordSeasonAwards generates all annual awards and gala summary',
+    () async {
+      const int testSeasonId = 999;
+      const int testYear = 2025;
+      const int userTeamId = 1;
 
-    // Insert dummy season
-    await db.insert(
-      'seasons',
-      <String, Object?>{
+      // Insert dummy season
+      await db.insert('seasons', <String, Object?>{
         'season_id': testSeasonId,
         'name': '2025/2026',
         'start_year': testYear,
         'end_year': testYear + 1,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
 
-    // Ensure tournament 1 is a league tournament
-    await db.update(
-      'tournaments',
-      <String, Object?>{'organization': t.orgLeague},
-      where: 'tournament_id = 1',
-    );
+      // Ensure tournament 1 is a league tournament
+      await db.update('tournaments', <String, Object?>{
+        'organization': t.orgLeague,
+      }, where: 'tournament_id = 1');
 
-    // Pick 15 players with team_players to populate match stats
-    final List<Map<String, Object?>> playerRows = await db.rawQuery(
-      '''
+      // Pick 15 players with team_players to populate match stats
+      final List<Map<String, Object?>> playerRows = await db.rawQuery('''
       SELECT p.player_id, tp.team_id, p.position_id, p.name, p.age
       FROM players p
       JOIN team_players tp ON tp.player_id = p.player_id
       LIMIT 15
-      ''',
-    );
-    expect(playerRows.length, 15);
+      ''');
+      expect(playerRows.length, 15);
 
-    // Make sure one player is a goalkeeper and one is young (< 21)
-    for (int i = 0; i < playerRows.length; i++) {
-      final int pId = playerRows[i]['player_id'] as int;
-      final int posId = (i == 0)
-          ? 1
-          : (i <= 4
-              ? 2
-              : (i <= 8
-                  ? 5
-                  : 9));
-      await db.update(
-        'players',
-        <String, Object?>{
-          'position_id': posId,
-          'age': (i == 1) ? 20 : 26,
-        },
-        where: 'player_id = ?',
-        whereArgs: <Object?>[pId],
+      // Make sure one player is a goalkeeper and one is young (< 21)
+      for (int i = 0; i < playerRows.length; i++) {
+        final int pId = playerRows[i]['player_id'] as int;
+        final int posId = (i == 0) ? 1 : (i <= 4 ? 2 : (i <= 8 ? 5 : 9));
+        await db.update(
+          'players',
+          <String, Object?>{'position_id': posId, 'age': (i == 1) ? 20 : 26},
+          where: 'player_id = ?',
+          whereArgs: <Object?>[pId],
+        );
+      }
+
+      final List<int> matchIds = <int>[];
+      for (int round = 1; round <= 10; round++) {
+        matchIds.add(
+          await db.insert('matches', <String, Object?>{
+            'season_id': testSeasonId,
+            'tournament_id': 1,
+            'home_team_id': round.isOdd ? 1 : 2,
+            'away_team_id': round.isOdd ? 2 : 1,
+            'stadium_id': 1,
+            'home_goals': round.isOdd ? 3 : 0,
+            'away_goals': round.isOdd ? 0 : 2,
+            'status': t.matchFinished,
+            'round': round,
+            'phase': 1,
+            'winner_id': 1,
+          }),
+        );
+      }
+
+      // Populate match_players stats for the 15 players across the season.
+      for (int i = 0; i < playerRows.length; i++) {
+        final int pId = playerRows[i]['player_id'] as int;
+        final int tId = playerRows[i]['team_id'] as int;
+        final double rating = i == 14 ? 10.0 : 6.5 + (i * 0.2);
+        for (int matchIndex = 0; matchIndex < matchIds.length; matchIndex++) {
+          if (i == 14 && matchIndex >= 2) continue;
+          await db.insert('match_players', <String, Object?>{
+            'match_id': matchIds[matchIndex],
+            'player_id': pId,
+            'team_id': tId,
+            'minutes': 90,
+            'rating': rating,
+            'goals': i == 14
+                ? 5
+                : i == 10
+                ? 1
+                : 0,
+          });
+        }
+      }
+
+      // Record the season awards
+      await seasons.recordSeasonAwards(seasonId: testSeasonId, year: testYear);
+
+      // Fetch gala awards summary
+      final SeasonGalaSummary gala = await seasons.seasonGalaAwards(
+        testSeasonId,
+        userTeamId: userTeamId,
       );
-    }
 
-    // Create 2 finished matches for this season with home_goals / away_goals
-    final int match1 = await db.insert('matches', <String, Object?>{
-      'season_id': testSeasonId,
-      'tournament_id': 1,
-      'home_team_id': 1,
-      'away_team_id': 2,
-      'stadium_id': 1,
-      'home_goals': 3,
-      'away_goals': 0,
-      'status': t.matchFinished,
-      'round': 1,
-      'phase': 1,
-      'winner_id': 1,
-    });
+      expect(gala.seasonId, testSeasonId);
+      expect(gala.year, testYear);
+      expect(gala.ballonDor, isNotNull);
+      expect(gala.ballonDor!.label, "Ballon d'Or");
+      expect(gala.ballonDor!.type, t.awardBallonDor);
+      expect(gala.ballonDor!.rating, isNotNull);
+      expect(
+        gala.ballonDor!.playerId,
+        isNot(playerRows[14]['player_id']),
+        reason: 'two appearances should not qualify for season awards',
+      );
 
-    final int match2 = await db.insert('matches', <String, Object?>{
-      'season_id': testSeasonId,
-      'tournament_id': 1,
-      'home_team_id': 2,
-      'away_team_id': 1,
-      'stadium_id': 1,
-      'home_goals': 0,
-      'away_goals': 2,
-      'status': t.matchFinished,
-      'round': 2,
-      'phase': 1,
-      'winner_id': 1,
-    });
+      expect(gala.goldenBoot, isNotNull);
+      expect(gala.goldenBoot!.type, t.awardTopScorer);
+      expect(gala.goldenBoot!.goals, greaterThanOrEqualTo(5));
+      expect(gala.goldenBoot!.playerId, isNot(playerRows[14]['player_id']));
 
-    // Populate match_players stats for the 15 players
-    for (int i = 0; i < playerRows.length; i++) {
-      final int pId = playerRows[i]['player_id'] as int;
-      final int tId = playerRows[i]['team_id'] as int;
-      final double rating = 6.5 + (i * 0.2);
-      final int goals = (i == 10) ? 5 : (i == 9 ? 3 : 0);
+      expect(gala.goldenGlove, isNotNull);
+      expect(gala.goldenGlove!.type, t.awardGoldenGlove);
 
-      await db.insert('match_players', <String, Object?>{
-        'match_id': match1,
-        'player_id': pId,
-        'team_id': tId,
-        'minutes': 90,
-        'rating': rating,
-        'goals': goals,
-      });
+      expect(gala.youngPlayer, isNotNull);
+      expect(gala.youngPlayer!.type, t.awardYoungPlayer);
 
-      await db.insert('match_players', <String, Object?>{
-        'match_id': match2,
-        'player_id': pId,
-        'team_id': tId,
-        'minutes': 90,
-        'rating': rating,
-        'goals': 0,
-      });
-    }
+      expect(gala.managerOfTheYear, isNotNull);
+      expect(gala.managerOfTheYear!.type, t.awardManagerOfTheYear);
 
-    // Record the season awards
-    await seasons.recordSeasonAwards(
-      seasonId: testSeasonId,
-      year: testYear,
-    );
-
-    // Fetch gala awards summary
-    final SeasonGalaSummary gala = await seasons.seasonGalaAwards(
-      testSeasonId,
-      userTeamId: userTeamId,
-    );
-
-    expect(gala.seasonId, testSeasonId);
-    expect(gala.year, testYear);
-    expect(gala.ballonDor, isNotNull);
-    expect(gala.ballonDor!.label, "Ballon d'Or");
-    expect(gala.ballonDor!.type, t.awardBallonDor);
-    expect(gala.ballonDor!.rating, isNotNull);
-
-    expect(gala.goldenBoot, isNotNull);
-    expect(gala.goldenBoot!.type, t.awardTopScorer);
-    expect(gala.goldenBoot!.goals, greaterThanOrEqualTo(5));
-
-    expect(gala.goldenGlove, isNotNull);
-    expect(gala.goldenGlove!.type, t.awardGoldenGlove);
-
-    expect(gala.youngPlayer, isNotNull);
-    expect(gala.youngPlayer!.type, t.awardYoungPlayer);
-
-    expect(gala.managerOfTheYear, isNotNull);
-    expect(gala.managerOfTheYear!.type, t.awardManagerOfTheYear);
-
-    // Team of the Year
-    expect(gala.teamOfTheYear, isNotEmpty);
-    expect(
-      gala.teamOfTheYear.every((PlayerAward a) => a.type == t.awardTeamOfTheYear),
-      isTrue,
-    );
-  });
+      // Team of the Year
+      expect(gala.teamOfTheYear, isNotEmpty);
+      expect(
+        gala.teamOfTheYear.every(
+          (PlayerAward a) => a.type == t.awardTeamOfTheYear,
+        ),
+        isTrue,
+      );
+    },
+  );
 
   testWidgets('AnnualAwardsGalaSheet renders tabs and displays award data', (
     WidgetTester tester,
@@ -305,11 +282,7 @@ void main() {
 
     await tester.pumpWidget(
       const MaterialApp(
-        home: Scaffold(
-          body: AnnualAwardsGalaSheet(
-            gala: mockGala,
-          ),
-        ),
+        home: Scaffold(body: AnnualAwardsGalaSheet(gala: mockGala)),
       ),
     );
     await tester.pumpAndSettle();
