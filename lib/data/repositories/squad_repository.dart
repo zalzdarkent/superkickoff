@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../../core/country_names.dart';
 import '../../game/formation.dart';
 import '../../game/match_engine.dart';
+import '../../game/player_valuation_service.dart';
 import '../../game/training.dart';
 
 /// Squad, lineup and transfer-market management.
@@ -73,30 +74,29 @@ class SquadRepository {
     );
   }
 
-  /// Returns an MV derived from the player's existing value, so a higher
-  /// overall can never reset a valuable player to a lower price tier.
+  /// Returns an updated MV using the canonical PlayerValuationService target curve,
+  /// smoothly transitioning the player's value towards the target without compounding.
   static int valueAfterOverallChange({
     required int currentValue,
     required int previousPower,
     required int newPower,
     required int age,
+    int? potential,
+    int? positionId,
   }) {
-    if (currentValue <= 0 || newPower <= previousPower) return currentValue;
-    final int increase = newPower - previousPower;
-    // Steeper curve: each overall point is worth more on an already-valuable
-    // player, and younger players appreciate faster.
-    final double baseRate = age <= 23
-        ? 0.16
-        : age <= 27
-        ? 0.14
-        : age <= 30
-        ? 0.10
-        : 0.06;
-    // Higher overall points carry premium value per point.
-    final double overallFactor = 0.6 + previousPower / 100;
-    final double rate = baseRate * overallFactor;
-    final int gain = (currentValue * rate * increase).round();
-    return currentValue + gain;
+    if (newPower <= previousPower && currentValue > 0) return currentValue;
+    const PlayerValuationService valuation = PlayerValuationService();
+    final int target = valuation.calculateTargetMarketValue(
+      power: newPower,
+      potential: potential ?? (newPower + 2),
+      age: age,
+      positionId: positionId ?? 7,
+    );
+    final int updated = valuation.smoothValueUpdate(
+      currentValue: currentValue,
+      targetValue: target,
+    );
+    return math.max(currentValue, updated);
   }
 
   /// Updates the market value after an overall increase.
@@ -108,20 +108,24 @@ class SquadRepository {
     final DatabaseExecutor ex = txn ?? db;
     final List<Map<String, Object?>> rows = await ex.query(
       t.players,
-      columns: <String>['power', 'age', 'value'],
+      columns: <String>['power', 'potential', 'age', 'position_id', 'value'],
       where: 'player_id = ?',
       whereArgs: <Object?>[playerId],
       limit: 1,
     );
     if (rows.isEmpty) return;
     final int power = (rows.first['power'] as int?) ?? previousPower;
+    final int potential = (rows.first['potential'] as int?) ?? power;
     final int age = (rows.first['age'] as int?) ?? 25;
+    final int positionId = (rows.first['position_id'] as int?) ?? 7;
     final int currentValue = (rows.first['value'] as int?) ?? 0;
     final int newValue = valueAfterOverallChange(
       currentValue: currentValue,
       previousPower: previousPower,
       newPower: power,
       age: age,
+      potential: potential,
+      positionId: positionId,
     );
     if (newValue == currentValue) return;
     await ex.update(
@@ -1254,7 +1258,12 @@ class SquadRepository {
     final String profile = (p['profile'] as String?) ?? 'D';
     final int height = (p['height'] as int?) ?? 178;
     final int stars = (p['stars'] as int?) ?? 0;
-    final int value = power * power * 1000;
+    final int value = const PlayerValuationService().calculateTargetMarketValue(
+      power: power,
+      potential: potential,
+      age: age,
+      positionId: positionId,
+    );
     final int salary = 1200;
 
     late final int playerId;

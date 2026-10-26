@@ -31,7 +31,7 @@ class ClubLogoService {
           final String clean =
               b64.contains(',') ? b64.substring(b64.indexOf(',') + 1) : b64;
           batch.rawUpdate(
-            'UPDATE ${t.teams} SET logo_base64 = ? WHERE team_id = ? AND (logo_base64 IS NULL OR LENGTH(logo_base64) = 0 OR logo_base64 LIKE "data:image%")',
+            "UPDATE ${t.teams} SET logo_base64 = ? WHERE team_id = ? AND (logo_base64 IS NULL OR LENGTH(logo_base64) = 0 OR logo_base64 LIKE 'data:image%')",
             <Object?>[clean, teamId],
           );
           count++;

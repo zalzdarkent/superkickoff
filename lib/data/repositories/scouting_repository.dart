@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../db/schema.dart' as t;
 import '../models/models.dart';
+import '../../game/player_valuation_service.dart';
 
 /// Scouting department: hire scouts, dispatch them to regions, and discover wonderkids.
 class ScoutingRepository {
@@ -193,7 +194,12 @@ class ScoutingRepository {
         final int power = (baseOvr + rng.nextInt(5)).clamp(55, 82);
         final int potential = (basePot + rng.nextInt(6)).clamp(power + 8, 96);
         final int positionId = 1 + rng.nextInt(11);
-        final int value = (power * power * 1200 * (potential / 70)).round();
+        final int value = const PlayerValuationService().calculateTargetMarketValue(
+          power: power,
+          potential: potential,
+          age: age,
+          positionId: positionId,
+        );
 
         final int reportId = await txn.insert(t.scoutReports, <String, Object?>{
           'team_id': teamId,

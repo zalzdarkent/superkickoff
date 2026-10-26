@@ -18,6 +18,7 @@ import '../data/repositories/transfer_repository.dart';
 import 'formation.dart';
 import 'match_engine.dart';
 import 'offseason.dart';
+import 'player_valuation_service.dart';
 import 'prize_engine.dart';
 import 'competition_config.dart';
 import 'fixture_scheduler.dart';
@@ -744,9 +745,10 @@ class CareerService {
   }) async {
     final TransferRepository? transfers = _transfers;
     if (transfers == null) return;
-    final int loanFee = max(
-      25000,
-      (player.value * (0.06 + _rng.nextDouble() * 0.08)).round(),
+    final int loanSeasons = 1 + _rng.nextInt(2);
+    final int loanFee = const PlayerValuationService().calculateLoanFee(
+      marketValue: player.value,
+      loanSeasons: loanSeasons,
     );
     // Only clubs that can actually pay the fee make an offer.
     final List<Team> candidates = (await _registeredClubs())
@@ -757,7 +759,6 @@ class CareerService {
     if (candidates.isEmpty) return;
 
     final Team borrower = candidates[_rng.nextInt(candidates.length)];
-    final int loanSeasons = 1 + _rng.nextInt(2);
     final int offerId = await transfers.createOffer(
       playerId: player.playerId,
       fromTeamId: userTeamId,
@@ -787,17 +788,24 @@ class CareerService {
   }) async {
     final TransferRepository? transfers = _transfers;
     if (transfers == null) return;
+    const PlayerValuationService valuation = PlayerValuationService();
+    final int askingPrice = valuation.calculateAskingPrice(
+      marketValue: player.value,
+      contractMonthsRemaining: 24,
+      isTransferListed: true,
+    );
     final List<Team> candidates = (await _registeredClubs())
         .where(
           (Team team) =>
               team.teamId != userTeamId &&
-              team.budget >= (player.value * 0.8).round(),
+              team.budget >= (askingPrice * 0.75).round(),
         )
         .toList();
     if (candidates.isEmpty) return;
 
     final Team buyer = candidates[_rng.nextInt(candidates.length)];
-    final int offerAmount = (player.value * (0.85 + _rng.nextDouble() * 0.20))
+    final double offerFactor = 0.85 + _rng.nextDouble() * 0.25;
+    final int offerAmount = (askingPrice * offerFactor)
         .round()
         .clamp(1, buyer.budget);
     final int offerId = await transfers.createOffer(
@@ -2107,18 +2115,25 @@ class CareerService {
         'MIN(potential - power, 1 + (player_id * 7 + age * 13) % 3)';
     const String prime =
         'MIN(potential - power, (player_id * 7 + age * 13) % 2)';
-    // Value follows the same curve as SquadRepository.valueAfterOverallChange.
-    Future<void> raise(String where, String inc, String rate) => db.execute(
+
+    await db.execute(
       '''
       UPDATE ${t.players}
-      SET value = value + CAST(ROUND(value * $rate * (0.6 + power / 100.0) * ($inc)) AS INTEGER),
-          power = power + ($inc)
-      WHERE status_id = ? AND power < potential AND $where
+      SET power = power + ($grow)
+      WHERE status_id = ? AND power < potential AND age <= 23
     ''',
       <Object?>[t.statusActive],
     );
-    await raise('age <= 23', grow, '0.16');
-    await raise('age BETWEEN 24 AND 27', prime, '0.14');
+
+    await db.execute(
+      '''
+      UPDATE ${t.players}
+      SET power = power + ($prime)
+      WHERE status_id = ? AND power < potential AND age BETWEEN 24 AND 27
+    ''',
+      <Object?>[t.statusActive],
+    );
+
     await db.execute(
       '''
       UPDATE ${t.players}
@@ -2129,6 +2144,44 @@ class CareerService {
     ''',
       <Object?>[t.statusActive],
     );
+
+    // Recompute Market Values cleanly for affected players using canonical valuation service.
+    // Young developing players grow towards their target MV, while declining veterans lose value.
+    final List<Map<String, Object?>> changed = await db.rawQuery(
+      '''
+      SELECT player_id, power, potential, age, position_id, value
+      FROM ${t.players}
+      WHERE status_id = ? AND ((power < potential AND age <= 27) OR age >= 31)
+    ''',
+      <Object?>[t.statusActive],
+    );
+
+    final Batch batch = db.batch();
+    const PlayerValuationService valuation = PlayerValuationService();
+    for (final Map<String, Object?> r in changed) {
+      final int pid = r['player_id'] as int;
+      final int pwr = (r['power'] as int?) ?? 50;
+      final int pot = (r['potential'] as int?) ?? pwr;
+      final int age = (r['age'] as int?) ?? 25;
+      final int pos = (r['position_id'] as int?) ?? 7;
+      final int curVal = (r['value'] as int?) ?? 0;
+
+      final int targetVal = valuation.calculateTargetMarketValue(
+        power: pwr,
+        potential: pot,
+        age: age,
+        positionId: pos,
+      );
+      final int newVal = valuation.smoothValueUpdate(
+        currentValue: curVal,
+        targetValue: targetVal,
+      );
+      batch.rawUpdate(
+        'UPDATE ${t.players} SET value = ? WHERE player_id = ?',
+        <Object?>[newVal, pid],
+      );
+    }
+    await batch.commit(noResult: true);
   }
 
   /// Advances the stage the manager is on. Returns an error message when the
