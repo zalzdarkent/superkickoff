@@ -699,7 +699,7 @@ class _TeamDetailSheetState extends State<TeamDetailSheet>
 
               // Pitch Player Slots Layout (ATT on top, MID, DEF, GK at bottom)
               Padding(
-                padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 14),
                 child: Column(
                   children: <Widget>[
                     for (final int group in <int>[4, 3, 2, 1])
@@ -708,7 +708,8 @@ class _TeamDetailSheetState extends State<TeamDetailSheet>
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: <Widget>[
                             for (final _PitchSlot s in slots)
-                              if (s.group == group) _playerPitchNode(s),
+                              if (s.group == group)
+                                Flexible(child: _playerPitchNode(s)),
                           ],
                         ),
                       ),
@@ -796,7 +797,7 @@ class _TeamDetailSheetState extends State<TeamDetailSheet>
         splashColor: AppTheme.accent.withValues(alpha: 0.3),
         onTap: () => showPlayerDetail(context, player.playerId),
         child: Container(
-          constraints: const BoxConstraints(minWidth: 58, maxWidth: 68),
+          constraints: const BoxConstraints(minWidth: 44, maxWidth: 64),
           padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
           child: Column(
             mainAxisSize: MainAxisSize.min,

@@ -1400,16 +1400,31 @@ class MiniStandingsCard extends StatelessWidget {
                       ),
                     ),
                     Expanded(
-                      child: Text(
-                        row.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: row.teamId == game.userTeamId
-                              ? AppTheme.accent
-                              : Colors.white,
-                        ),
+                      child: Row(
+                        children: <Widget>[
+                          CrestAvatar.raw(
+                            teamId: row.teamId,
+                            name: row.name,
+                            abbreviation: row.abbreviation,
+                            logoBase64: row.logoBase64 ??
+                                game.teamCache[row.teamId]?.logoBase64,
+                            radius: 8,
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              row.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: row.teamId == game.userTeamId
+                                    ? AppTheme.accent
+                                    : Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     Text(

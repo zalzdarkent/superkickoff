@@ -92,21 +92,110 @@ class ClubLogoService {
     return successCount;
   }
 
+  /// Syncs online logos for all division 1 clubs across Asian countries (confederation 5)
+  /// that currently lack a logo in the database.
+  Future<int> syncTopAsianLogos(
+    Database db, {
+    void Function(int current, int total, String name)? onProgress,
+  }) async {
+    final List<Map<String, Object?>> missing = await db.rawQuery(
+      '''
+      SELECT t.team_id, t.name, c.name AS country_name
+      FROM ${t.teams} t
+      JOIN ${t.countries} c ON c.country_id = t.country_id
+      WHERE c.confederation = 5 AND t.division = 1
+        AND (t.logo_base64 IS NULL OR LENGTH(t.logo_base64) = 0)
+      ORDER BY c.name, t.power DESC
+      ''',
+    );
+    int successCount = 0;
+    for (int i = 0; i < missing.length; i++) {
+      final int teamId = missing[i]['team_id'] as int;
+      final String name = missing[i]['name'] as String;
+      onProgress?.call(i + 1, missing.length, name);
+      final String? result = await fetchAndSaveLogo(db, teamId, name);
+      if (result != null) {
+        successCount++;
+      }
+    }
+    return successCount;
+  }
+
   Future<String?> _lookupBadgeUrl(String name) async {
+    // 1. Wikipedia PageImages API (with pilicense=any for official club crests)
+    try {
+      final String query = Uri.encodeComponent('$name football club');
+      final Uri searchUri = Uri.parse(
+        'https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=$query&format=json',
+      );
+      final HttpClient client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 6);
+      final HttpClientRequest req = await client.getUrl(searchUri);
+      req.headers.set(
+        'User-Agent',
+        'SuperkickoffApp/1.0 (contact@superkickoff.com)',
+      );
+      final HttpClientResponse resp = await req.close();
+      if (resp.statusCode == 200) {
+        final String body = await resp.transform(utf8.decoder).join();
+        final Map<String, dynamic> json =
+            jsonDecode(body) as Map<String, dynamic>;
+        final List<dynamic>? searchResults =
+            json['query']?['search'] as List<dynamic>?;
+        if (searchResults != null && searchResults.isNotEmpty) {
+          final String title = searchResults.first['title'] as String;
+          if (!title.toLowerCase().contains('season') &&
+              !title.toLowerCase().contains('list of')) {
+            final Uri imgUri = Uri.parse(
+              'https://en.wikipedia.org/w/api.php?action=query&titles=${Uri.encodeComponent(title)}&prop=pageimages&pilicense=any&pithumbsize=128&format=json',
+            );
+            final HttpClientRequest imgReq = await client.getUrl(imgUri);
+            imgReq.headers.set(
+              'User-Agent',
+              'SuperkickoffApp/1.0 (contact@superkickoff.com)',
+            );
+            final HttpClientResponse imgResp = await imgReq.close();
+            if (imgResp.statusCode == 200) {
+              final String imgBody =
+                  await imgResp.transform(utf8.decoder).join();
+              final Map<String, dynamic> imgJson =
+                  jsonDecode(imgBody) as Map<String, dynamic>;
+              final Map<String, dynamic>? pages =
+                  imgJson['query']?['pages'] as Map<String, dynamic>?;
+              if (pages != null) {
+                for (final dynamic page in pages.values) {
+                  final String? thumb =
+                      page['thumbnail']?['source'] as String?;
+                  if (thumb != null && thumb.isNotEmpty) {
+                    return thumb;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 2. Fallback to TheSportsDB API
     final String clean = name
         .replaceAll(
           RegExp(r'\s+(FC|United|City|1973)$', caseSensitive: false),
           '',
         )
         .trim();
-    final List<String> queries = <String>[name, if (clean != name) clean];
+    final List<String> queries = <String>[
+      name,
+      if (clean != name) clean,
+      name.replaceAll('-', ' '),
+    ];
     for (final String q in queries) {
       try {
         final Uri uri = Uri.parse(
           '$_sportsDbBase/searchteams.php?t=${Uri.encodeComponent(q)}',
         );
         final HttpClient client = HttpClient();
-        client.connectionTimeout = const Duration(seconds: 8);
+        client.connectionTimeout = const Duration(seconds: 6);
         final HttpClientRequest request = await client.getUrl(uri);
         request.headers.set('User-Agent', 'Mozilla/5.0 Superkickoff/1.0');
         final HttpClientResponse response = await request.close();

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../data/models/models.dart';
 import '../../state/career_provider.dart';
 import '../theme.dart';
+import '../widgets/common.dart';
 import 'annual_awards_gala_sheet.dart';
 import 'team_detail_sheet.dart';
 
@@ -350,15 +351,30 @@ class _SeasonHistoryScreenState extends State<SeasonHistoryScreen> {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: Text(
-                row.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: isUser ? FontWeight.w700 : FontWeight.w400,
-                  color: isUser ? AppTheme.accent : Colors.white,
-                ),
+              child: Row(
+                children: <Widget>[
+                  CrestAvatar.raw(
+                    teamId: row.teamId,
+                    name: row.name,
+                    abbreviation: row.abbreviation,
+                    logoBase64: row.logoBase64 ??
+                        game.teamCache[row.teamId]?.logoBase64,
+                    radius: 9,
+                  ),
+                  const SizedBox(width: 7),
+                  Flexible(
+                    child: Text(
+                      row.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: isUser ? FontWeight.w700 : FontWeight.w400,
+                        color: isUser ? AppTheme.accent : Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

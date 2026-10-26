@@ -188,7 +188,7 @@ class SeasonRepository {
     final Map<int, StandingRow> byTeam = <int, StandingRow>{};
     final teamRows = await db.rawQuery(
       '''
-      SELECT tm.team_id, tm.name, tm.abbreviation
+      SELECT tm.team_id, tm.name, tm.abbreviation, tm.logo_base64
       FROM season_teams st
       JOIN teams tm ON tm.team_id = st.team_id
       WHERE st.season_id = ? AND st.team_id IN (
@@ -213,6 +213,7 @@ class SeasonRepository {
         teamId: r['team_id'] as int,
         name: r['name'] as String,
         abbreviation: r['abbreviation'] as String? ?? '',
+        logoBase64: r['logo_base64'] as String?,
         played: 0,
         wins: 0,
         draws: 0,

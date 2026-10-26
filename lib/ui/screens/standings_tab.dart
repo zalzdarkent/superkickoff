@@ -576,6 +576,15 @@ class _LeagueTableState extends State<_LeagueTable> {
               padding: const EdgeInsets.only(right: 8),
               child: Row(
                 children: <Widget>[
+                  CrestAvatar.raw(
+                    teamId: row.teamId,
+                    name: row.name,
+                    abbreviation: row.abbreviation,
+                    logoBase64: row.logoBase64 ??
+                        game.teamCache[row.teamId]?.logoBase64,
+                    radius: 9,
+                  ),
+                  const SizedBox(width: 7),
                   Flexible(
                     child: Text(
                       row.name,
@@ -756,16 +765,36 @@ class _LeaderList extends StatelessWidget {
                             ),
                             GestureDetector(
                               onTap: () => showTeamDetail(context, row.teamId),
-                              child: Text(
-                                row.clubName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: AppTheme.textDim,
-                                  decoration: TextDecoration.underline,
-                                  decorationColor: Colors.white24,
-                                ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  CrestAvatar.raw(
+                                    teamId: row.teamId,
+                                    name: row.clubName,
+                                    abbreviation: row.clubName.length >= 3
+                                        ? row.clubName.substring(0, 3)
+                                        : row.clubName,
+                                    logoBase64: context
+                                        .read<CareerProvider>()
+                                        .teamCache[row.teamId]
+                                        ?.logoBase64,
+                                    radius: 6,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      row.clubName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: AppTheme.textDim,
+                                        decoration: TextDecoration.underline,
+                                        decorationColor: Colors.white24,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],

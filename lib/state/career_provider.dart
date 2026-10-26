@@ -1236,14 +1236,22 @@ class CareerProvider extends ChangeNotifier {
   }
 
   /// Seeds default bundled club logos into SQLite and optionally syncs missing
-  /// logos via API (e.g. TheSportsDB), updating [userTeam] and [teamCache].
-  Future<int> syncClubLogos({bool fetchOnline = false}) async {
+  /// logos via API (e.g. TheSportsDB / Wikipedia), updating [userTeam] and [teamCache].
+  Future<int> syncClubLogos({
+    bool fetchOnline = false,
+    bool syncAsianTopLeagues = true,
+  }) async {
     int updated = await const ClubLogoService().seedDefaultLogos(_db);
-    if (fetchOnline && userTeam != null) {
-      updated += await const ClubLogoService().syncMissingLogos(
-        _db,
-        countryId: userTeam!.countryId,
-      );
+    if (fetchOnline) {
+      if (userTeam != null) {
+        updated += await const ClubLogoService().syncMissingLogos(
+          _db,
+          countryId: userTeam!.countryId,
+        );
+      }
+      if (syncAsianTopLeagues) {
+        updated += await const ClubLogoService().syncTopAsianLogos(_db);
+      }
     }
     if (userTeam != null) {
       userTeam = await _refs.teamById(userTeam!.teamId);

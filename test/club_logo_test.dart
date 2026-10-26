@@ -127,6 +127,23 @@ void main() {
         expect(persibLogo!.isNotEmpty, isTrue);
         expect(() => base64Decode(persibLogo), returnsNormally);
 
+        // Top Asian division 1 clubs check
+        final List<Map<String, Object?>> asianClubs = await db.rawQuery(
+          '''
+          SELECT t.name, t.logo_base64
+          FROM teams t
+          JOIN countries c ON c.country_id = t.country_id
+          WHERE c.confederation = 5 AND t.division = 1 AND t.name IN ('Al-Nassr', 'Vissel Kobe', 'Johor', 'Buriram United')
+          ''',
+        );
+        expect(asianClubs.length, equals(4));
+        for (final Map<String, Object?> row in asianClubs) {
+          final String? logo = row['logo_base64'] as String?;
+          expect(logo, isNotNull, reason: 'Logo for ${row['name']} should be present');
+          expect(logo!.isNotEmpty, isTrue);
+          expect(() => base64Decode(logo), returnsNormally);
+        }
+
         await db.close();
       },
     );

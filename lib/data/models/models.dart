@@ -485,6 +485,7 @@ class StandingRow {
     required this.teamId,
     required this.name,
     required this.abbreviation,
+    this.logoBase64,
     required this.played,
     required this.wins,
     required this.draws,
@@ -497,6 +498,7 @@ class StandingRow {
   final int teamId;
   final String name;
   final String abbreviation;
+  final String? logoBase64;
   int played, wins, draws, losses, goalsFor, goalsAgainst, points;
 
   int get goalDifference => goalsFor - goalsAgainst;

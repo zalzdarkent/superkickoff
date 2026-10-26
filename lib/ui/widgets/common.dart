@@ -9,17 +9,42 @@ import '../../data/models/models.dart';
 
 /// Club crest image or rounded placeholder built from the club colors + abbreviation.
 class CrestAvatar extends StatelessWidget {
-  const CrestAvatar({super.key, required this.team, this.radius = 18});
+  const CrestAvatar({
+    super.key,
+    required Team this.team,
+    this.radius = 18,
+  })  : teamId = null,
+        name = null,
+        abbreviation = null,
+        logoBase64 = null;
 
-  final Team team;
+  const CrestAvatar.raw({
+    super.key,
+    required this.teamId,
+    required this.name,
+    required this.abbreviation,
+    this.logoBase64,
+    this.radius = 18,
+  }) : team = null;
+
+  final Team? team;
+  final int? teamId;
+  final String? name;
+  final String? abbreviation;
+  final String? logoBase64;
   final double radius;
+
+  int get effectiveTeamId => team?.teamId ?? teamId ?? 0;
+  String get effectiveName => team?.name ?? name ?? '';
+  String get effectiveAbbreviation => team?.abbreviation ?? abbreviation ?? '';
+  String? get effectiveLogoBase64 => team?.logoBase64 ?? logoBase64;
 
   @override
   Widget build(BuildContext context) {
-    final String? logoBase64 = team.logoBase64;
-    if (logoBase64 != null && logoBase64.isNotEmpty) {
+    final String? b64 = effectiveLogoBase64;
+    if (b64 != null && b64.isNotEmpty) {
       try {
-        final Uint8List bytes = base64Decode(logoBase64);
+        final Uint8List bytes = base64Decode(b64);
         return SizedBox(
           width: radius * 2,
           height: radius * 2,
@@ -39,12 +64,14 @@ class CrestAvatar extends StatelessWidget {
   }
 
   Widget _buildPlaceholder() {
-    final Color primary = _colorFor(team.teamId);
-    final String initials = team.abbreviation.isNotEmpty
-        ? team.abbreviation.toUpperCase()
-        : (team.name.length >= 2
-            ? team.name.substring(0, 2).toUpperCase()
-            : team.name.toUpperCase());
+    final Color primary = _colorFor(effectiveTeamId);
+    final String abbr = effectiveAbbreviation;
+    final String tName = effectiveName;
+    final String initials = abbr.isNotEmpty
+        ? abbr.toUpperCase()
+        : (tName.length >= 2
+            ? tName.substring(0, 2).toUpperCase()
+            : tName.toUpperCase());
     return CircleAvatar(
       radius: radius,
       backgroundColor: primary,
