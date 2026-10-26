@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../data/models/models.dart';
+import '../theme.dart';
 
 /// Shared small widgets used across screens.
 
@@ -98,6 +99,65 @@ class CrestAvatar extends StatelessWidget {
       const Color(0xFFEC4899),
     ];
     return palette[id % palette.length];
+  }
+}
+
+/// Tournament / League crest badge or rounded placeholder with trophy icon.
+class TournamentAvatar extends StatelessWidget {
+  const TournamentAvatar({
+    super.key,
+    this.tournament,
+    this.tournamentId,
+    this.name,
+    this.logoBase64,
+    this.radius = 18,
+  });
+
+  final Tournament? tournament;
+  final int? tournamentId;
+  final String? name;
+  final String? logoBase64;
+  final double radius;
+
+  int get effectiveTournamentId =>
+      tournament?.tournamentId ?? tournamentId ?? 0;
+  String get effectiveName => tournament?.name ?? name ?? '';
+  String? get effectiveLogoBase64 => tournament?.logoBase64 ?? logoBase64;
+
+  @override
+  Widget build(BuildContext context) {
+    final String? b64 = effectiveLogoBase64;
+    if (b64 != null && b64.isNotEmpty) {
+      try {
+        final Uint8List bytes = base64Decode(b64);
+        return SizedBox(
+          width: radius * 2,
+          height: radius * 2,
+          child: Image.memory(
+            bytes,
+            width: radius * 2,
+            height: radius * 2,
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) => _buildPlaceholder(),
+          ),
+        );
+      } catch (_) {
+        return _buildPlaceholder();
+      }
+    }
+    return _buildPlaceholder();
+  }
+
+  Widget _buildPlaceholder() {
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: AppTheme.surfaceCard,
+      child: Icon(
+        Icons.emoji_events_outlined,
+        size: radius * 1.1,
+        color: AppTheme.accent,
+      ),
+    );
   }
 }
 

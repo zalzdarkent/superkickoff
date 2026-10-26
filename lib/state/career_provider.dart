@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../core/country_names.dart';
 import '../core/format.dart' as fmt;
 import '../data/db/app_database.dart';
 import '../data/db/schema.dart' as t;
@@ -373,10 +374,12 @@ class CareerProvider extends ChangeNotifier {
                 (Team tm) => <String, Object?>{
                   'team_id': tm.teamId,
                   'name': tm.name,
+                  'abbreviation': tm.abbreviation,
                   'power': tm.power,
                   'value': tm.value,
                   'budget': tm.budget,
                   'division': tm.division,
+                  'logo_base64': tm.logoBase64,
                 },
               )
               .toList(),
@@ -1180,8 +1183,13 @@ class CareerProvider extends ChangeNotifier {
   Future<PlayerDetail?> playerDetail(int playerId) =>
       _squads.playerDetail(playerId, seasonId: season?.seasonId);
 
-  Future<String> countryName(int countryId) async =>
-      (await _refs.countryById(countryId))?.name ?? 'Unknown country';
+  Future<String> countryName(int countryId, {bool withFlag = true}) async {
+    final Country? c = await _refs.countryById(countryId);
+    if (c == null) return 'Unknown country';
+    if (!withFlag) return c.name;
+    final String flag = countryFlag(c.iso2, countryId: countryId, name: c.name);
+    return flag.isEmpty ? c.name : '$flag ${c.name}';
+  }
 
   Future<ClubOverview?> clubOverview() async {
     final ManagerProfile? profile = managerProfile;

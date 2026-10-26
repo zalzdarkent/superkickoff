@@ -199,6 +199,7 @@ class Tournament {
     required this.prizeMvp,
     required this.playDays,
     required this.rounds,
+    this.logoBase64,
   });
 
   final int tournamentId;
@@ -214,6 +215,7 @@ class Tournament {
   final int prizeMvp;
   final String playDays;
   final int rounds;
+  final String? logoBase64;
 
   bool get isLeague => organization == DbOrg.orgLeague;
   bool get isInternational => organization == DbOrg.orgInternational;
@@ -233,7 +235,25 @@ class Tournament {
     prizeMvp: (m['prize_mvp'] as int?) ?? 0,
     playDays: m['play_days'] as String? ?? '6,7',
     rounds: (m['rounds'] as int?) ?? 1,
+    logoBase64: m['logo_base64'] as String?,
   );
+
+  Map<String, Object?> toMap() => <String, Object?>{
+    'tournament_id': tournamentId,
+    'name': name,
+    'organization': organization,
+    'division_id': divisionId,
+    'slots': slots,
+    'promotion_slots': promotionSlots,
+    'relegation_spots': relegationSpots,
+    'points': points,
+    'prize_teams': prizeTeams,
+    'prize_top_scorer': prizeTopScorer,
+    'prize_mvp': prizeMvp,
+    'play_days': playDays,
+    'rounds': rounds,
+    'logo_base64': logoBase64,
+  };
 }
 
 /// Alias so model files do not each import the DB constants.
@@ -688,6 +708,7 @@ class PlayerDetail {
     required this.clubId,
     required this.clubName,
     required this.countryName,
+    this.countryIso2 = '',
     required this.contract,
     required this.stats,
     required this.transfers,
@@ -700,6 +721,7 @@ class PlayerDetail {
   final int? clubId;
   final String clubName;
   final String countryName;
+  final String countryIso2;
   final ContractInfo? contract;
   final PlayerSeasonSummary stats;
   final List<TransferRecord> transfers;
@@ -713,6 +735,7 @@ class ClubOverview {
   ClubOverview({
     required this.team,
     required this.countryName,
+    this.countryIso2 = '',
     required this.stadiumName,
     required this.stadiumCity,
     required this.general,
@@ -736,6 +759,7 @@ class ClubOverview {
 
   final Team team;
   final String countryName;
+  final String countryIso2;
   final String stadiumName;
   final String stadiumCity;
   final int general;

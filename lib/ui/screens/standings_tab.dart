@@ -90,6 +90,11 @@ class _StandingsTabState extends State<StandingsTab> {
                                     value: tournament.tournamentId,
                                     child: Row(
                                       children: <Widget>[
+                                        TournamentAvatar(
+                                          tournament: tournament,
+                                          radius: 12,
+                                        ),
+                                        const SizedBox(width: 8),
                                         Expanded(
                                           child: Text(
                                             tournament.name,

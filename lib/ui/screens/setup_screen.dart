@@ -5,6 +5,7 @@ import '../../core/format.dart';
 import '../../data/models/models.dart';
 import '../../state/career_provider.dart';
 import '../theme.dart';
+import '../widgets/common.dart';
 import 'home_screen.dart';
 
 typedef _Row = Map<String, Object?>;
@@ -454,7 +455,11 @@ class _SetupScreenState extends State<SetupScreen> {
                 itemBuilder: (BuildContext context, int i) {
                   final _Row l = leagueOptions[i];
                   return _tile(
-                    leading: '${l['division_id']}',
+                    leadingWidget: TournamentAvatar(
+                      name: l['name'].toString(),
+                      logoBase64: l['logo_base64'] as String?,
+                      radius: 20,
+                    ),
                     title: l['name'].toString(),
                     subtitle: '${l['team_count']} clubs',
                     onTap: () => _selectLeague(l),
@@ -470,9 +475,41 @@ class _SetupScreenState extends State<SetupScreen> {
     final List<_Row> shown = teamOptions
         .where((_Row t) => t['name'].toString().toLowerCase().contains(q))
         .toList();
+    final String leagueName = selectedLeague!['name'].toString();
+    final String? leagueLogo = selectedLeague!['logo_base64'] as String?;
     return Column(
       children: <Widget>[
-        _header('${selectedLeague!['name']}', 'Choose your club.'),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+          child: Row(
+            children: <Widget>[
+              if (leagueLogo != null && leagueLogo.isNotEmpty) ...<Widget>[
+                TournamentAvatar(
+                  name: leagueName,
+                  logoBase64: leagueLogo,
+                  radius: 20,
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      leagueName,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Choose your club.',
+                      style: TextStyle(fontSize: 12, color: AppTheme.textDim),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
         _searchBox('Search club'),
         Expanded(
           child: loadingOptions
@@ -484,10 +521,17 @@ class _SetupScreenState extends State<SetupScreen> {
                     final bool picked =
                         selectedTeam?['team_id'] == t['team_id'];
                     return _tile(
-                      leading: '${(t['power'] as int?) ?? 0}',
+                      leadingWidget: CrestAvatar.raw(
+                        teamId: (t['team_id'] as int?) ?? 0,
+                        name: t['name'].toString(),
+                        abbreviation: (t['abbreviation'] as String?) ?? '',
+                        logoBase64: t['logo_base64'] as String?,
+                        radius: 20,
+                      ),
                       title: t['name'].toString(),
                       subtitle:
                           'Value ${money((t['value'] as int?) ?? 0)} • Budget ${money((t['budget'] as int?) ?? 0)}',
+                      ratingBadge: '${(t['power'] as int?) ?? 0}',
                       selected: picked,
                       onTap: () => setState(() => selectedTeam = t),
                     );
@@ -502,7 +546,13 @@ class _SetupScreenState extends State<SetupScreen> {
               padding: const EdgeInsets.only(bottom: 10),
               child: Row(
                 children: <Widget>[
-                  const Icon(Icons.flag, size: 14, color: AppTheme.accent),
+                  CrestAvatar.raw(
+                    teamId: (selectedTeam!['team_id'] as int?) ?? 0,
+                    name: selectedTeam!['name'].toString(),
+                    abbreviation: (selectedTeam!['abbreviation'] as String?) ?? '',
+                    logoBase64: selectedTeam!['logo_base64'] as String?,
+                    radius: 12,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -519,13 +569,16 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 
-  /// Shared list row: [leading] is an emoji flag or a short number badge.
+  /// Shared list row: [leading] is an emoji flag or a short number badge,
+  /// or [leadingWidget] for custom badges/crests.
   Widget _tile({
-    required String leading,
+    String? leading,
+    Widget? leadingWidget,
     required String title,
     required String subtitle,
     required VoidCallback onTap,
     String? badge,
+    String? ratingBadge,
     bool selected = false,
   }) => Card(
     shape: RoundedRectangleBorder(
@@ -537,23 +590,48 @@ class _SetupScreenState extends State<SetupScreen> {
     ),
     child: ListTile(
       onTap: onTap,
-      leading: CircleAvatar(
-        backgroundColor: AppTheme.surface,
-        child: Text(leading, style: const TextStyle(fontSize: 18)),
-      ),
+      leading: leadingWidget ??
+          CircleAvatar(
+            backgroundColor: AppTheme.surface,
+            child: Text(leading ?? '', style: const TextStyle(fontSize: 18)),
+          ),
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
-      trailing: badge != null
-          ? Chip(
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (ratingBadge != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              margin: const EdgeInsets.only(right: 6),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceCard,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Text(
+                ratingBadge,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: AppTheme.accent,
+                ),
+              ),
+            ),
+          if (badge != null)
+            Chip(
               label: Text(badge),
               backgroundColor: AppTheme.accentDim,
               side: BorderSide.none,
               visualDensity: VisualDensity.compact,
             )
-          : Icon(
+          else
+            Icon(
               selected ? Icons.check_circle : Icons.chevron_right,
               color: selected ? AppTheme.accent : AppTheme.textDim,
             ),
+        ],
+      ),
     ),
   );
 }

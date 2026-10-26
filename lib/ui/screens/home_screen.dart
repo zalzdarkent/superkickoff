@@ -1364,7 +1364,7 @@ class MiniStandingsCard extends StatelessWidget {
       );
     }
     return SectionCard(
-      title: 'Top of the table',
+      title: game.league?.name ?? 'Top of the table',
       trailing: onViewAll == null
           ? null
           : TextButton.icon(

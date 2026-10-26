@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/country_names.dart';
 import '../../core/format.dart';
 import '../../data/db/schema.dart' as t;
 import '../../data/models/models.dart';
@@ -368,14 +369,36 @@ class _PlayerDetailSheetState extends State<PlayerDetailSheet>
                             style: TextStyle(color: AppTheme.textDim),
                           ),
                           Flexible(
-                            child: Text(
-                              detail.countryName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: AppTheme.textDim,
-                              ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                if (countryFlag(
+                                  detail.countryIso2,
+                                  name: detail.countryName,
+                                  countryId: detail.player.countryId,
+                                ).isNotEmpty) ...<Widget>[
+                                  Text(
+                                    countryFlag(
+                                      detail.countryIso2,
+                                      name: detail.countryName,
+                                      countryId: detail.player.countryId,
+                                    ),
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  const SizedBox(width: 4),
+                                ],
+                                Flexible(
+                                  child: Text(
+                                    detail.countryName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppTheme.textDim,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -528,6 +551,12 @@ class _PlayerDetailSheetState extends State<PlayerDetailSheet>
                         : 'Not listed',
                     width,
                   ),
+                  if (detail.countryName.isNotEmpty)
+                    _info(
+                      'Asal Negara',
+                      '${countryFlag(detail.countryIso2, name: detail.countryName, countryId: p.countryId)} ${detail.countryName}'.trim(),
+                      width,
+                    ),
                   if (detail.suspensionMatches > 0)
                     _info(
                       'Suspension',

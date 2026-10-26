@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../repositories/club_logo_service.dart';
+import '../repositories/league_logo_service.dart';
 import '../repositories/squad_repository.dart';
 import 'schema.dart' as t;
 
@@ -509,6 +510,97 @@ class AppDatabase {
       } catch (_) {}
     }
     await const ClubLogoService().seedDefaultLogos(db);
+
+    final List<Map<String, Object?>> tournamentColumns = await db.rawQuery(
+      'PRAGMA table_info(${t.tournaments})',
+    );
+    if (!tournamentColumns.any(
+      (Map<String, Object?> column) => column['name'] == 'logo_base64',
+    )) {
+      try {
+        await db.execute(
+          'ALTER TABLE ${t.tournaments} ADD COLUMN logo_base64 TEXT',
+        );
+      } catch (_) {}
+    }
+    await const LeagueLogoService().seedDefaultLogos(db);
+
+    // Normalize country names from Spanish to standard Indonesian
+    try {
+      await db.rawUpdate('''
+        UPDATE ${t.countries} SET name = CASE country_id
+          WHEN 124 THEN 'Jepang'
+          WHEN 3 THEN 'Jerman'
+          WHEN 49 THEN 'Korea Selatan'
+          WHEN 48 THEN 'Korea Utara'
+          WHEN 64 THEN 'Spanyol'
+          WHEN 65 THEN 'Amerika Serikat'
+          WHEN 71 THEN 'Prancis'
+          WHEN 185 THEN 'Inggris'
+          WHEN 249 THEN 'Skotlandia'
+          WHEN 250 THEN 'Wales'
+          WHEN 251 THEN 'Irlandia Utara'
+          WHEN 172 THEN 'Belanda'
+          WHEN 17 THEN 'Belgia'
+          WHEN 218 THEN 'Swiss'
+          WHEN 217 THEN 'Swedia'
+          WHEN 168 THEN 'Norwegia'
+          WHEN 55 THEN 'Denmark'
+          WHEN 58 THEN 'Mesir'
+          WHEN 150 THEN 'Maroko'
+          WHEN 215 THEN 'Afrika Selatan'
+          WHEN 37 THEN 'Kamerun'
+          WHEN 50 THEN 'Pantai Gading'
+          WHEN 187 THEN 'Ceko'
+          WHEN 62 THEN 'Slowakia'
+          WHEN 63 THEN 'Slovenia'
+          WHEN 52 THEN 'Kroasia'
+          WHEN 181 THEN 'Polandia'
+          WHEN 192 THEN 'Rumania'
+          WHEN 193 THEN 'Rusia'
+          WHEN 235 THEN 'Turki'
+          WHEN 237 THEN 'Ukraina'
+          WHEN 78 THEN 'Yunani'
+          WHEN 92 THEN 'Hungaria'
+          WHEN 15 THEN 'Austria'
+          WHEN 41 THEN 'Tiongkok'
+          WHEN 223 THEN 'Thailand'
+          WHEN 243 THEN 'Vietnam'
+          WHEN 68 THEN 'Filipina'
+          WHEN 210 THEN 'Singapura'
+          WHEN 146 THEN 'Malaysia'
+          WHEN 36 THEN 'Kamboja'
+          WHEN 26 THEN 'Myanmar'
+          WHEN 170 THEN 'Selandia Baru'
+          WHEN 10 THEN 'Arab Saudi'
+          WHEN 60 THEN 'Uni Emirat Arab'
+          WHEN 141 THEN 'Meksiko'
+          WHEN 30 THEN 'Brasil'
+          WHEN 11 THEN 'Argentina'
+          WHEN 184 THEN 'Qatar'
+          WHEN 131 THEN 'Kuwait'
+          WHEN 95 THEN 'Iran'
+          WHEN 96 THEN 'Irak'
+          WHEN 126 THEN 'Yordania'
+          WHEN 132 THEN 'Lebanon'
+          WHEN 240 THEN 'Uzbekistan'
+          WHEN 127 THEN 'Kazakhstan'
+          WHEN 14 THEN 'Australia'
+          ELSE name
+        END
+        WHERE name IN (
+          'Japón', 'Alemania', 'España', 'Francia', 'Inglaterra', 'Países Bajos',
+          'Bélgica', 'Corea del Sur', 'Corea del Norte', 'Estados Unidos', 'Suiza',
+          'Suecia', 'Noruega', 'Dinamarca', 'Egipto', 'Marruecos', 'Sudáfrica',
+          'Camerún', 'Costa de Marfil', 'República Checa', 'Rusia', 'Turquía',
+          'Grecia', 'Hungría', 'Austria', 'China', 'Tailandia', 'Filipinas',
+          'Singapur', 'Malasia', 'Camboya', 'Birmania', 'Nueva Zelanda',
+          'Arabia Saudita', 'Emiratos Árabes Unidos', 'México', 'Brasil',
+          'Argentina', 'Polonia', 'Ucrania', 'Croacia', 'Eslovaquia',
+          'Eslovenia', 'Rumanía', 'Escocia', 'Gales', 'Irlanda del Norte'
+        )
+      ''');
+    } catch (_) {}
   }
 
   /// Test/dev helper: open an arbitrary file directly.

@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../db/schema.dart' as t;
 import '../models/models.dart';
+import '../../core/country_names.dart';
 import '../../game/formation.dart';
 import '../../game/match_engine.dart';
 import '../../game/training.dart';
@@ -646,7 +647,7 @@ class SquadRepository {
     final List<Map<String, Object?>> rows = await db.rawQuery(
       '''
       SELECT p.*, tp.team_id AS club_id, tm.name AS club_name,
-             c.name AS country_name
+             c.name AS country_name, c.iso2 AS country_iso2
       FROM players p
       LEFT JOIN team_players tp ON tp.player_id = p.player_id
       LEFT JOIN teams tm ON tm.team_id = tp.team_id
@@ -763,7 +764,12 @@ class SquadRepository {
       player: Player.fromMap(row),
       clubId: row['club_id'] as int?,
       clubName: (row['club_name'] as String?) ?? '',
-      countryName: (row['country_name'] as String?) ?? '',
+      countryName: displayCountryName(
+        (row['country_name'] as String?) ?? '',
+        (row['country_iso2'] as String?) ?? '',
+        countryId: row['country_id'] as int?,
+      ),
+      countryIso2: (row['country_iso2'] as String?) ?? '',
       contract: contract,
       stats: stats,
       transfers: <TransferRecord>[
@@ -826,13 +832,13 @@ class SquadRepository {
         .substring(0, 10);
     final List<Map<String, Object?>> rows = await db.rawQuery(
       '''
-      SELECT t.*, c.name AS country_name,
+      SELECT t.*, c.name AS country_name, c.iso2 AS country_iso2,
              s.name AS stadium_name, s.city AS stadium_city,
              s.capacity_general, s.capacity_stand, s.capacity_terrace,
              s.capacity_boxes, s.max_general, s.max_stand, s.max_terrace,
              s.max_boxes,
              co.name AS coach_name, co.age AS coach_age, co.points AS coach_points,
-             cc.name AS coach_country,
+             cc.name AS coach_country, cc.iso2 AS coach_country_iso2,
              (SELECT COALESCE(SUM(p.value), 0)
                 FROM players p JOIN team_players tp ON tp.player_id = p.player_id
                WHERE tp.team_id = t.team_id AND p.status_id = ?) AS squad_value,
@@ -860,7 +866,12 @@ class SquadRepository {
     final Map<String, Object?> r = rows.first;
     return ClubOverview(
       team: Team.fromMap(r),
-      countryName: (r['country_name'] as String?) ?? '',
+      countryName: displayCountryName(
+        (r['country_name'] as String?) ?? '',
+        (r['country_iso2'] as String?) ?? '',
+        countryId: r['country_id'] as int?,
+      ),
+      countryIso2: (r['country_iso2'] as String?) ?? '',
       stadiumName: (r['stadium_name'] as String?) ?? 'Unknown stadium',
       stadiumCity: (r['stadium_city'] as String?) ?? '',
       general: (r['capacity_general'] as int?) ?? 0,
@@ -874,7 +885,11 @@ class SquadRepository {
       coachName: managerName ?? (r['coach_name'] as String?) ?? 'No coach',
       coachAge: managerName == null ? (r['coach_age'] as int?) ?? 0 : 0,
       coachPoints: managerName == null ? (r['coach_points'] as int?) ?? 0 : 0,
-      coachCountry: managerCountry ?? (r['coach_country'] as String?) ?? '',
+      coachCountry: managerCountry ??
+          displayCountryName(
+            (r['coach_country'] as String?) ?? '',
+            (r['coach_country_iso2'] as String?) ?? '',
+          ),
       squadValue: (r['squad_value'] as int?) ?? 0,
       wageBill: (r['wage_bill'] as int?) ?? 0,
       expiringContracts: (r['expiring'] as int?) ?? 0,

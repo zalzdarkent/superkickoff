@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/country_names.dart';
 import '../../core/format.dart';
 import '../../data/models/models.dart';
 import '../../game/formation.dart';
@@ -336,12 +337,32 @@ class _TeamDetailSheetState extends State<TeamDetailSheet>
                             ' · ',
                             style: TextStyle(color: AppTheme.textDim),
                           ),
-                          Text(
-                            _overview!.countryName,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: AppTheme.textDim,
-                            ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              if (countryFlag(
+                                _overview!.countryIso2,
+                                name: _overview!.countryName,
+                                countryId: team.countryId,
+                              ).isNotEmpty) ...<Widget>[
+                                Text(
+                                  countryFlag(
+                                    _overview!.countryIso2,
+                                    name: _overview!.countryName,
+                                    countryId: team.countryId,
+                                  ),
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                                const SizedBox(width: 3),
+                              ],
+                              Text(
+                                _overview!.countryName,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppTheme.textDim,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ],
@@ -1651,7 +1672,7 @@ class _TeamDetailSheetState extends State<TeamDetailSheet>
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
-                      'Usia: ${ov.coachAge} thn · ${ov.coachCountry} · ${ov.coachPoints} poin taktik',
+                      'Usia: ${ov.coachAge} thn · ${'${countryFlag('', name: ov.coachCountry)} ${ov.coachCountry}'.trim()} · ${ov.coachPoints} poin taktik',
                       style: const TextStyle(
                         fontSize: 11,
                         color: AppTheme.textDim,

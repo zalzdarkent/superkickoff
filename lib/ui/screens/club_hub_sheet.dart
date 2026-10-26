@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:provider/provider.dart';
 
+import '../../core/country_names.dart';
 import '../../core/format.dart';
 import '../../data/models/models.dart';
 import '../../state/career_provider.dart';
@@ -155,7 +156,7 @@ class _ClubHubSheetState extends State<ClubHubSheet>
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '${club.countryName} \u00b7 Division ${club.team.division}',
+                      '${'${countryFlag(club.countryIso2, name: club.countryName, countryId: club.team.countryId)} ${club.countryName}'.trim()} \u00b7 Division ${club.team.division}',
                       style: const TextStyle(
                         fontSize: 12,
                         color: AppTheme.textDim,
@@ -233,7 +234,11 @@ class _ClubHubSheetState extends State<ClubHubSheet>
                 spacing: 10,
                 runSpacing: 10,
                 children: <Widget>[
-                  _info('Country', club.countryName, width),
+                  _info(
+                    'Country',
+                    '${countryFlag(club.countryIso2, name: club.countryName, countryId: club.team.countryId)} ${club.countryName}'.trim(),
+                    width,
+                  ),
                   _info('Founded', '${club.team.foundedYear}', width),
                   _info('Division', '${club.team.division}', width),
                   _info('Stadium', club.stadiumName, width),
@@ -247,7 +252,9 @@ class _ClubHubSheetState extends State<ClubHubSheet>
                   ),
                   _info(
                     'Coach country',
-                    club.coachCountry.isEmpty ? '\u2014' : club.coachCountry,
+                    club.coachCountry.isEmpty
+                        ? '\u2014'
+                        : '${countryFlag('', name: club.coachCountry)} ${club.coachCountry}'.trim(),
                     width,
                   ),
                   _info('Coach points', '${club.coachPoints}', width),
@@ -271,79 +278,6 @@ class _ClubHubSheetState extends State<ClubHubSheet>
                   child: Text(
                     '${club.stadiumName} \u00b7 ${_number(club.capacity)} seats',
                     style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTheme.surfaceCard,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white10),
-            ),
-            child: Row(
-              children: <Widget>[
-                CrestAvatar(team: club.team, radius: 18),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      const Text(
-                        'Logo Klub (Base64)',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        club.team.logoBase64 != null
-                            ? 'Logo resmi tersimpan di SQLite.'
-                            : 'Menggunakan placeholder inisial.',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppTheme.textDim,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: _busy
-                      ? null
-                      : () async {
-                          setState(() => _busy = true);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Menyinkronkan logo klub...'),
-                              duration: Duration(seconds: 1),
-                            ),
-                          );
-                          final int count = await context
-                              .read<CareerProvider>()
-                              .syncClubLogos(fetchOnline: true);
-                          if (!mounted) return;
-                          setState(() => _busy = false);
-                          _reload();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                count > 0
-                                    ? 'Berhasil memperbarui $count logo klub!'
-                                    : 'Logo klub sudah mutakhir.',
-                              ),
-                            ),
-                          );
-                        },
-                  icon: const Icon(Icons.sync, size: 16),
-                  label: const Text('Sync API', style: TextStyle(fontSize: 12)),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppTheme.accent,
-                    visualDensity: VisualDensity.compact,
                   ),
                 ),
               ],

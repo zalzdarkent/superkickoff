@@ -45,7 +45,7 @@ class ReferenceRepository {
   Future<List<Map<String, Object?>>> leaguesForCountry(int countryId) =>
       db.rawQuery(
         '''
-    SELECT tu.tournament_id, tu.name, tu.division_id, tu.play_days, tu.slots,
+    SELECT tu.tournament_id, tu.name, tu.division_id, tu.play_days, tu.slots, tu.logo_base64,
            (SELECT COUNT(*) FROM teams tm
              WHERE tm.country_id = ? AND tm.division = tu.division_id)
            AS team_count
@@ -136,7 +136,7 @@ class ReferenceRepository {
   Future<Map<String, Object?>?> nationalCup(int countryId) async {
     final rows = await db.rawQuery(
       '''
-      SELECT tu.tournament_id, tu.name
+      SELECT tu.tournament_id, tu.name, tu.logo_base64
       FROM tournaments tu
       JOIN tournament_countries tc ON tc.tournament_id = tu.tournament_id
       WHERE tu.organization = ? AND tc.country_id = ?
