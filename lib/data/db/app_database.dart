@@ -58,6 +58,17 @@ class AppDatabase {
   /// Tables that belong to the save game rather than the bundled reference
   /// data. Created lazily so existing installs pick them up on the next run.
   static Future<void> ensureLocalTables(Database db) async {
+    final List<Map<String, Object?>> playerColumns = await db.rawQuery(
+      'PRAGMA table_info(${t.players})',
+    );
+    if (!playerColumns.any(
+      (Map<String, Object?> column) =>
+          column['name'] == 'injury_return_date',
+    )) {
+      await db.execute(
+        'ALTER TABLE ${t.players} ADD COLUMN injury_return_date TEXT',
+      );
+    }
     await db.execute('''
       CREATE TABLE IF NOT EXISTS ${t.managerProfile} (
         id INTEGER PRIMARY KEY CHECK (id = 1),

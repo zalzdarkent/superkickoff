@@ -8,6 +8,44 @@ import '../theme.dart';
 
 /// Shared small widgets used across screens.
 
+class LoadingButtonContent extends StatelessWidget {
+  const LoadingButtonContent({
+    super.key,
+    required this.isLoading,
+    required this.child,
+  });
+
+  final bool isLoading;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isLoading) return child;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        const ButtonLoadingIndicator(),
+        const SizedBox(width: 8),
+        child,
+      ],
+    );
+  }
+}
+
+class ButtonLoadingIndicator extends StatelessWidget {
+  const ButtonLoadingIndicator({super.key});
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 16,
+    height: 16,
+    child: CircularProgressIndicator(
+      strokeWidth: 2,
+      color: IconTheme.of(context).color,
+    ),
+  );
+}
+
 /// Club crest image or rounded placeholder built from the club colors + abbreviation.
 class CrestAvatar extends StatelessWidget {
   const CrestAvatar({

@@ -150,10 +150,16 @@ class _SquadTabState extends State<SquadTab> {
                   fontWeight: FontWeight.w600,
                 ),
                 items: const <DropdownMenuItem<String>>[
-                  DropdownMenuItem<String>(value: 'power', child: Text('Overall')),
+                  DropdownMenuItem<String>(
+                    value: 'power',
+                    child: Text('Overall'),
+                  ),
                   DropdownMenuItem<String>(value: 'value', child: Text('MV')),
                   DropdownMenuItem<String>(value: 'age', child: Text('Age')),
-                  DropdownMenuItem<String>(value: 'position', child: Text('Position')),
+                  DropdownMenuItem<String>(
+                    value: 'position',
+                    child: Text('Position'),
+                  ),
                 ],
                 onChanged: (String? val) {
                   if (val != null) setState(() => _sortBy = val);
@@ -166,7 +172,8 @@ class _SquadTabState extends State<SquadTab> {
                   color: AppTheme.accent,
                 ),
                 tooltip: _sortDescending ? 'Highest first' : 'Lowest first',
-                onPressed: () => setState(() => _sortDescending = !_sortDescending),
+                onPressed: () =>
+                    setState(() => _sortDescending = !_sortDescending),
                 visualDensity: VisualDensity.compact,
               ),
             ],
@@ -622,7 +629,8 @@ class _SquadTabState extends State<SquadTab> {
                         ),
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onTap: () => showPlayerDetail(context, player.playerId),
+                          onTap: () =>
+                              showPlayerDetail(context, player.playerId),
                           child: _playerChip(player, color),
                         ),
                       ),
@@ -704,7 +712,8 @@ class _SquadTabState extends State<SquadTab> {
                             ),
                             child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
-                              onTap: () => showPlayerDetail(context, p.playerId),
+                              onTap: () =>
+                                  showPlayerDetail(context, p.playerId),
                               child: _benchChip(p),
                             ),
                           ),
@@ -901,6 +910,9 @@ class _SquadTabState extends State<SquadTab> {
   }
 
   Widget _playerTile(BuildContext context, CareerProvider game, Player p) {
+    final int? injuryDaysRemaining = p.injuryDaysRemaining(
+      game.squadInjuryReferenceDate,
+    );
     final bool inStartingLineup = game.lineup.values.contains(p.playerId);
     final String roleLabel = p.squadStatus == t.squadFirstTeam
         ? (inStartingLineup ? 'Pemain Inti (XI)' : 'Pemain Inti')
@@ -998,6 +1010,25 @@ class _SquadTabState extends State<SquadTab> {
                 ),
                 child: Text(
                   'SUSP ${suspensions[p.playerId]}',
+                  style: const TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.danger,
+                  ),
+                ),
+              ),
+            if (injuryDaysRemaining != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: AppTheme.danger.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: AppTheme.danger.withValues(alpha: 0.5),
+                  ),
+                ),
+                child: Text(
+                  'CEDERA · $injuryDaysRemaining hari lagi',
                   style: const TextStyle(
                     fontSize: 9,
                     fontWeight: FontWeight.bold,

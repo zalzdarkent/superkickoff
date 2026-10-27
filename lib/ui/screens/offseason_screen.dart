@@ -78,7 +78,10 @@ class OffseasonView extends StatelessWidget {
               width: double.infinity,
               child: FilledButton(
                 onPressed: game.busy ? null : () => _next(context, game, state),
-                child: Text(_nextLabel(state, game)),
+                child: LoadingButtonContent(
+                  isLoading: game.busy,
+                  child: Text(_nextLabel(state, game)),
+                ),
               ),
             ),
           ),
@@ -271,6 +274,7 @@ class _ContractsList extends StatefulWidget {
 
 class _ContractsListState extends State<_ContractsList> {
   late Future<List<ExpiringContract>> _future;
+  int? _renewingPlayerId;
 
   @override
   void initState() {
@@ -279,14 +283,20 @@ class _ContractsListState extends State<_ContractsList> {
   }
 
   Future<void> _renew(ExpiringContract c) async {
+    if (_renewingPlayerId != null) return;
+    setState(() => _renewingPlayerId = c.player.playerId);
     final CareerProvider game = context.read<CareerProvider>();
-    final String? error = await game.renewContract(c.player.playerId);
-    if (!mounted) return;
-    if (error != null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(error)));
+    try {
+      final String? error = await game.renewContract(c.player.playerId);
+      if (!mounted) return;
+      if (error != null) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error)));
+      }
+      setState(() => _future = game.expiringContracts());
+    } finally {
+      if (mounted) setState(() => _renewingPlayerId = null);
     }
-    setState(() => _future = game.expiringContracts());
   }
 
   @override
@@ -318,8 +328,13 @@ class _ContractsListState extends State<_ContractsList> {
                       style: const TextStyle(fontSize: 11),
                     ),
                     trailing: FilledButton.tonal(
-                      onPressed: () => _renew(c),
-                      child: const Text('Renew'),
+                      onPressed: _renewingPlayerId == null
+                          ? () => _renew(c)
+                          : null,
+                      child: LoadingButtonContent(
+                        isLoading: _renewingPlayerId == c.player.playerId,
+                        child: const Text('Renew'),
+                      ),
                     ),
                   ),
               ],
@@ -343,7 +358,7 @@ class _TransferStageState extends State<_TransferStage> {
 
   @override
   Widget build(BuildContext context) {
-    final CareerProvider game = context.read<CareerProvider>();
+    final CareerProvider game = context.watch<CareerProvider>();
     final int weeks = widget.state.windowWeeks;
     return Column(
       children: <Widget>[
@@ -368,7 +383,10 @@ class _TransferStageState extends State<_TransferStage> {
                           onPressed: game.busy
                               ? null
                               : game.advanceTransferWindow,
-                          child: const Text('Advance 1 week'),
+                          child: LoadingButtonContent(
+                            isLoading: game.busy,
+                            child: const Text('Advance 1 week'),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -379,7 +397,10 @@ class _TransferStageState extends State<_TransferStage> {
                               : () => game.advanceTransferWindow(
                                   toDeadline: true,
                                 ),
-                          child: const Text('Skip to deadline'),
+                          child: LoadingButtonContent(
+                            isLoading: game.busy,
+                            child: const Text('Skip to deadline'),
+                          ),
                         ),
                       ),
                     ],

@@ -144,8 +144,16 @@ class CareerService {
     if (home == null || away == null) {
       throw StateError('Missing teams for match ${match.matchId}');
     }
-    final List<Player> homeSquad = await _squads.squadForTeam(home.teamId);
-    final List<Player> awaySquad = await _squads.squadForTeam(away.teamId);
+    final List<Player> homeSquad = (await _squads.squadForTeam(home.teamId))
+        .where(
+          (Player player) => player.injuryDaysRemaining(match.date) == null,
+        )
+        .toList();
+    final List<Player> awaySquad = (await _squads.squadForTeam(away.teamId))
+        .where(
+          (Player player) => player.injuryDaysRemaining(match.date) == null,
+        )
+        .toList();
     final Formation homeFormation = Formation.parse(
       await _squads.formationForTeam(home.teamId),
     );
@@ -534,6 +542,18 @@ class CareerService {
         events = <MatchEvent>[...result.events, ...shootout.events];
       }
     }
+    final DateTime? matchDate = DateTime.tryParse(match.date ?? '');
+    final Map<int, String> injuryReturnDates = <int, String>{
+      if (matchDate != null)
+        for (final MatchEvent event in result.events.where(
+          (MatchEvent event) =>
+              event.type == MatchEvent.injury && event.playerId != null,
+        ))
+          event.playerId!: matchDate
+              .add(Duration(days: _rng.nextInt(14) + 1))
+              .toIso8601String()
+              .substring(0, 10),
+    };
     await _matchRepo.saveResult(
       matchId: match.matchId,
       homeGoals: result.homeGoals,
@@ -553,6 +573,7 @@ class CareerService {
           .map((MatchEvent e) => e.playerId ?? 0)
           .where((int id) => id > 0)
           .toList(),
+      injuryReturnDates: injuryReturnDates,
       suspendedPlayerIds: result.events
           .where((MatchEvent e) => e.type == MatchEvent.red)
           .map((MatchEvent e) => e.playerId ?? 0)

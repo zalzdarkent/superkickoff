@@ -333,7 +333,7 @@ class OverviewTab extends StatefulWidget {
     this.initialSubTab = 0,
   });
 
-  final VoidCallback onPlayPressed;
+  final Future<void> Function() onPlayPressed;
   final VoidCallback? onOpenInbox;
   final void Function(int tabIndex, [int subIndex])? onNavigateTab;
   final int initialSubTab;
@@ -345,6 +345,7 @@ class OverviewTab extends StatefulWidget {
 class _OverviewTabState extends State<OverviewTab>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  bool _actionLoading = false;
 
   @override
   void initState() {
@@ -360,6 +361,33 @@ class _OverviewTabState extends State<OverviewTab>
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _runAction(Future<void> Function() action) async {
+    if (_actionLoading) return;
+    setState(() => _actionLoading = true);
+    try {
+      await action();
+    } finally {
+      if (mounted) setState(() => _actionLoading = false);
+    }
+  }
+
+  Future<void> _simulateWeek() async {
+    final CareerProvider provider = context.read<CareerProvider>();
+    await provider.playAiMatchday();
+    if (!mounted) return;
+    await showMatchdayResults(
+      context,
+      matches: provider.lastMatchday,
+      teams: provider.lastMatchdayTeams,
+      userTeamId: provider.userTeamId,
+      competitionLabel: provider.competitionLabel,
+      aggregates: provider.lastMatchdayAggregates,
+      date: provider.lastMatchday.isEmpty
+          ? null
+          : provider.lastMatchday.first.date,
+    );
   }
 
   @override
@@ -716,42 +744,37 @@ class _OverviewTabState extends State<OverviewTab>
                   child: SizedBox(
                     height: 48,
                     child: FilledButton.icon(
-                      icon: Icon(
-                        game.nextUserMatch != null
-                            ? Icons.play_circle
-                            : Icons.fast_forward,
-                      ),
+                      icon: _actionLoading || game.busy
+                          ? const ButtonLoadingIndicator()
+                          : Icon(
+                              game.nextUserMatch != null
+                                  ? Icons.play_circle
+                                  : Icons.fast_forward,
+                            ),
                       label: Text(
                         game.nextUserMatch != null
                             ? 'Play Match'
                             : 'Advance Week',
                       ),
-                      onPressed: game.nextDate == null ? null : widget.onPlayPressed,
+                      onPressed: game.nextDate == null ||
+                              _actionLoading ||
+                              game.busy
+                          ? null
+                          : () => _runAction(widget.onPlayPressed),
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton(
-                  onPressed: game.nextDate == null
+                  onPressed: game.nextDate == null ||
+                          _actionLoading ||
+                          game.busy
                       ? null
-                      : () async {
-                          final CareerProvider provider = context
-                              .read<CareerProvider>();
-                          await provider.playAiMatchday();
-                          if (!context.mounted) return;
-                          await showMatchdayResults(
-                            context,
-                            matches: provider.lastMatchday,
-                            teams: provider.lastMatchdayTeams,
-                            userTeamId: provider.userTeamId,
-                            competitionLabel: provider.competitionLabel,
-                            aggregates: provider.lastMatchdayAggregates,
-                            date: provider.lastMatchday.isEmpty
-                                ? null
-                                : provider.lastMatchday.first.date,
-                          );
-                        },
-                  child: const Text('Simulate week'),
+                      : () => _runAction(_simulateWeek),
+                  child: LoadingButtonContent(
+                    isLoading: _actionLoading || game.busy,
+                    child: const Text('Simulate week'),
+                  ),
                 ),
               ],
             ),

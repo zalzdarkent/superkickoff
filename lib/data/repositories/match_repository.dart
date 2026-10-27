@@ -37,6 +37,7 @@ class MatchRepository {
     required List<Map<String, Object?>> events,
     required List<Map<String, Object?>> playerRows,
     required List<int> injuredPlayerIds,
+    Map<int, String> injuryReturnDates = const <int, String>{},
     required List<int> suspendedPlayerIds,
   }) {
     return db.transaction((Transaction txn) async {
@@ -110,13 +111,21 @@ class MatchRepository {
           'matches_remaining': 2,
         });
       }
-      // 5. Injuries marginally reduce fitness for the next weeks.
+      // 5. Injuries reduce fitness and persist a recovery date.
       for (final int playerId in injuredPlayerIds) {
-        await txn.update(
-          t.players,
-          <String, Object?>{'fitness': 40},
-          where: 'player_id = ?',
-          whereArgs: <Object?>[playerId],
+        final String? returnDate = injuryReturnDates[playerId];
+        await txn.rawUpdate(
+          '''
+          UPDATE ${t.players}
+          SET fitness = 40,
+              injury_return_date = CASE
+                WHEN injury_return_date IS NULL OR injury_return_date < ?
+                THEN ?
+                ELSE injury_return_date
+              END
+          WHERE player_id = ?
+          ''',
+          <Object?>[returnDate, returnDate, playerId],
         );
       }
     });

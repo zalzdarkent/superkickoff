@@ -773,10 +773,12 @@ class _ClubHubSheetState extends State<ClubHubSheet>
                     child: const Text('Level Maksimal Terpenuhi'),
                   )
                 : FilledButton.icon(
-                    icon: const Icon(Icons.upgrade, size: 18),
-                    label: Text('Tingkatkan Fasilitas (${money(upgradeCost)})'),
-                    onPressed: onUpgrade,
-                  ),
+                      icon: _busy
+                          ? const ButtonLoadingIndicator()
+                          : const Icon(Icons.upgrade, size: 18),
+                      label: Text('Tingkatkan Fasilitas (${money(upgradeCost)})'),
+                      onPressed: _busy ? null : onUpgrade,
+                    ),
           ),
         ],
       ),
@@ -926,12 +928,18 @@ class _ClubHubSheetState extends State<ClubHubSheet>
                 const SizedBox(width: 6),
               ],
               TextButton(
-                onPressed: () => _showHireStaffSheet(role),
+                onPressed: _busy ? null : () => _showHireStaffSheet(role),
                 child: const Text('Ganti'),
               ),
-              TextButton(
-                onPressed: () => _fireStaff(role),
-                child: const Text('Pecat', style: TextStyle(color: AppTheme.danger)),
+              TextButton.icon(
+                onPressed: _busy ? null : () => _fireStaff(role),
+                icon: _busy
+                    ? const ButtonLoadingIndicator()
+                    : const Icon(Icons.person_remove_outlined, size: 16),
+                label: const Text(
+                  'Pecat',
+                  style: TextStyle(color: AppTheme.danger),
+                ),
               ),
             ],
           ),
@@ -1064,7 +1072,9 @@ class _ClubHubSheetState extends State<ClubHubSheet>
                   onPressed: _busy || academy.isMaxLevel
                       ? null
                       : _upgradeAcademy,
-                  icon: const Icon(Icons.upgrade),
+                  icon: _busy
+                      ? const ButtonLoadingIndicator()
+                      : const Icon(Icons.upgrade),
                   label: Text(
                     academy.isMaxLevel
                         ? 'Academy Maxed'
@@ -2360,11 +2370,7 @@ class _ClubHubSheetState extends State<ClubHubSheet>
                     FilledButton.icon(
                       onPressed: atMax || _busy ? null : _expand,
                       icon: _busy
-                          ? const SizedBox(
-                              width: 15,
-                              height: 15,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
+                          ? const ButtonLoadingIndicator()
                           : const Icon(Icons.add_home_work, size: 17),
                       label: Text(atMax ? 'Maxed out' : 'Expand 10%'),
                     ),

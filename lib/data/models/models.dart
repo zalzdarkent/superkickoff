@@ -133,6 +133,7 @@ class Player {
     required this.skillB,
     required this.height,
     required this.championships,
+    this.injuryReturnDate,
   });
 
   final int playerId;
@@ -158,6 +159,15 @@ class Player {
   final int skillB;
   final int height;
   final String? championships;
+  final String? injuryReturnDate;
+
+  int? injuryDaysRemaining(String? currentDate) {
+    final DateTime? returnDate = _dateOnly(injuryReturnDate);
+    final DateTime? referenceDate = _dateOnly(currentDate);
+    if (returnDate == null || referenceDate == null) return null;
+    final int days = returnDate.difference(referenceDate).inDays;
+    return days > 0 ? days : null;
+  }
 
   factory Player.fromMap(Map<String, Object?> m) => Player(
     playerId: m['player_id'] as int,
@@ -181,7 +191,14 @@ class Player {
     skillB: m['skill_b'] as int? ?? 0,
     height: (m['height'] as int?) ?? 175,
     championships: m['championships'] as String?,
+    injuryReturnDate: m['injury_return_date'] as String?,
   );
+}
+
+DateTime? _dateOnly(String? value) {
+  final DateTime? date = DateTime.tryParse(value ?? '');
+  if (date == null) return null;
+  return DateTime.utc(date.year, date.month, date.day);
 }
 
 class Tournament {

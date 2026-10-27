@@ -896,6 +896,13 @@ void main() {
         date: '2025-09-06',
       );
       final MatchRepository repository = MatchRepository(db);
+      final int injuredPlayerId =
+          (await db.query(
+                t.players,
+                columns: <String>['player_id'],
+                limit: 1,
+              )).single['player_id']!
+              as int;
       Future<void> save() => repository.saveResult(
         matchId: matchId,
         homeGoals: 1,
@@ -910,11 +917,20 @@ void main() {
           <String, Object?>{'type': MatchRepository.evGoal},
         ],
         playerRows: const <Map<String, Object?>>[],
-        injuredPlayerIds: const <int>[],
+        injuredPlayerIds: <int>[injuredPlayerId],
+        injuryReturnDates: <int, String>{injuredPlayerId: '2025-09-10'},
         suspendedPlayerIds: const <int>[],
       );
 
       await save();
+      final Map<String, Object?> injuredPlayer = (await db.query(
+        t.players,
+        columns: <String>['fitness', 'injury_return_date'],
+        where: 'player_id = ?',
+        whereArgs: <Object?>[injuredPlayerId],
+      )).single;
+      expect(injuredPlayer['fitness'], 40);
+      expect(injuredPlayer['injury_return_date'], '2025-09-10');
       await expectLater(save(), throwsA(isA<StateError>()));
       expect(
         await db.query(

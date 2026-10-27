@@ -85,10 +85,15 @@ class CareerProvider extends ChangeNotifier {
   List<FixtureMatch> upcoming = <FixtureMatch>[];
   String? nextDate;
   List<FixtureMatch> matchesToday = <FixtureMatch>[];
+  String? lastPlayedDate;
 
   /// The matchday that just finished, kept after the world advances so the
   /// results screen can show every game played on that date.
   List<FixtureMatch> lastMatchday = <FixtureMatch>[];
+  String? get squadInjuryReferenceDate => lastMatchday.isEmpty
+      ? lastPlayedDate ?? nextDate
+      : lastMatchday.first.date ?? lastPlayedDate ?? nextDate;
+
   Map<int, Team> lastMatchdayTeams = <int, Team>{};
 
   /// Aggregate (home, away) of finished leg-2 cup ties in [lastMatchday].
@@ -244,10 +249,13 @@ class CareerProvider extends ChangeNotifier {
     final Tournament? lg = league;
     if (current == null || lg == null) return;
 
-    final List<Map<String, Object?>> userCupRows = await _db.rawQuery('''
+    final List<Map<String, Object?>> userCupRows = await _db.rawQuery(
+      '''
       SELECT DISTINCT tournament_id FROM matches
       WHERE season_id = ? AND (home_team_id = ? OR away_team_id = ?)
-    ''', <Object?>[current.seasonId, uTeamId, uTeamId]);
+    ''',
+      <Object?>[current.seasonId, uTeamId, uTeamId],
+    );
 
     final Set<int> activeTours = <int>{
       lg.tournamentId,
@@ -261,10 +269,7 @@ class CareerProvider extends ChangeNotifier {
       t.matches,
       where:
           'season_id = ? AND status = ? AND tournament_id NOT IN (${activeTours.join(',')})',
-      whereArgs: <Object?>[
-        current.seasonId,
-        t.matchScheduled,
-      ],
+      whereArgs: <Object?>[current.seasonId, t.matchScheduled],
     );
   }
 
@@ -310,7 +315,8 @@ class CareerProvider extends ChangeNotifier {
     domesticLeagues = rows.map(Tournament.fromMap).toList();
     if (domesticLeagues.isNotEmpty) {
       final int userDiv = userTeam?.division ?? 1;
-      league = domesticLeagues
+      league =
+          domesticLeagues
               .where((Tournament l) => l.divisionId == userDiv)
               .firstOrNull ??
           domesticLeagues.first;
@@ -521,11 +527,8 @@ class CareerProvider extends ChangeNotifier {
     );
 
     // Initial pre-season arrival date: opening day of the summer transfer window
-    final List<TransferWindow> countryWins =
-        await _service.windowManager.windowsForCountry(
-          plan.season.seasonId,
-          countryId,
-        );
+    final List<TransferWindow> countryWins = await _service.windowManager
+        .windowsForCountry(plan.season.seasonId, countryId);
     final TransferWindow? summerWin = countryWins
         .where((TransferWindow w) => w.windowType == 'summer')
         .firstOrNull;
@@ -597,6 +600,17 @@ class CareerProvider extends ChangeNotifier {
           ? <FixtureMatch>[]
           : await _service.matchesOnDate(season!.seasonId, nextDate!);
     }
+    final List<Map<String, Object?>> latestPlayedRows = await _db.query(
+      t.matches,
+      columns: <String>['date'],
+      where: 'season_id = ? AND status = ? AND date IS NOT NULL',
+      whereArgs: <Object?>[season!.seasonId, t.matchFinished],
+      orderBy: 'date DESC',
+      limit: 1,
+    );
+    lastPlayedDate = latestPlayedRows.isEmpty
+        ? null
+        : latestPlayedRows.first['date'] as String?;
     formation = Formation.parse(await _squads.formationForTeam(userTeamId));
     lineup = await _squads.lineupForTeam(userTeamId);
     await _ensureLineup();
@@ -655,16 +669,11 @@ class CareerProvider extends ChangeNotifier {
       userTeamId,
       todayDate,
     );
-    currentTransferWindow ??=
-        await _service.windowManager.nextRegistrationWindowForTeam(
-          season!.seasonId,
-          userTeamId,
-          todayDate,
-        );
+    currentTransferWindow ??= await _service.windowManager
+        .nextRegistrationWindowForTeam(season!.seasonId, userTeamId, todayDate);
     isTransferWindowOpen =
         currentTransferWindow?.isWindowOpen(todayDate) ?? false;
-    isDeadlineDay =
-        currentTransferWindow?.isDeadlineDay(todayDate) ?? false;
+    isDeadlineDay = currentTransferWindow?.isDeadlineDay(todayDate) ?? false;
     notifyListeners();
   }
 
@@ -899,7 +908,8 @@ class CareerProvider extends ChangeNotifier {
     if (season == null || nextDate == null) return;
     final int seasonId = season!.seasonId;
     final String date = nextDate!;
-    final int? tourId = nextUserMatch?.tournamentId ??
+    final int? tourId =
+        nextUserMatch?.tournamentId ??
         (matchesToday.isNotEmpty ? matchesToday.first.tournamentId : null);
     await _service.simulateMatchday(
       seasonId: seasonId,
@@ -989,9 +999,11 @@ class CareerProvider extends ChangeNotifier {
       scheduledOnly: false,
     );
     lastMatchday = played
-        .where((FixtureMatch m) =>
-            m.isPlayed &&
-            (tournamentId == null || m.tournamentId == tournamentId))
+        .where(
+          (FixtureMatch m) =>
+              m.isPlayed &&
+              (tournamentId == null || m.tournamentId == tournamentId),
+        )
         .toList();
     lastMatchdayTeams = Map<int, Team>.of(teamCache);
     lastMatchdayAggregates = <int, (int, int)>{};
@@ -1832,8 +1844,8 @@ class CareerProvider extends ChangeNotifier {
       );
     } else {
       // Destination club's window is closed -> schedule move
-      final TransferWindow nextWindow =
-          await _service.windowManager.nextRegistrationWindowForTeam(
+      final TransferWindow nextWindow = await _service.windowManager
+          .nextRegistrationWindowForTeam(
             season?.seasonId ?? 0,
             offer.toTeamId,
             currentDate,
@@ -1954,8 +1966,8 @@ class CareerProvider extends ChangeNotifier {
         date: currentDate,
       );
     } else {
-      final TransferWindow nextWindow =
-          await _service.windowManager.nextRegistrationWindowForTeam(
+      final TransferWindow nextWindow = await _service.windowManager
+          .nextRegistrationWindowForTeam(
             season?.seasonId ?? 0,
             offer.toTeamId,
             currentDate,
@@ -2054,8 +2066,8 @@ class CareerProvider extends ChangeNotifier {
 
     if (accepted) {
       // Check destination club registration window
-      final bool isWindowOpen =
-          await _service.windowManager.isWindowOpenForTeam(
+      final bool isWindowOpen = await _service.windowManager
+          .isWindowOpenForTeam(
             season?.seasonId ?? 0,
             offer.toTeamId,
             currentDate,
@@ -2084,8 +2096,8 @@ class CareerProvider extends ChangeNotifier {
         await _transfers.completeTransfer(offerId, effectiveDate: currentDate);
       } else {
         // Window is closed: schedule transfer for next window
-        final TransferWindow nextWindow =
-            await _service.windowManager.nextRegistrationWindowForTeam(
+        final TransferWindow nextWindow = await _service.windowManager
+            .nextRegistrationWindowForTeam(
               season?.seasonId ?? 0,
               offer.toTeamId,
               currentDate,
@@ -2200,8 +2212,8 @@ class CareerProvider extends ChangeNotifier {
         date: currentDate,
       );
     } else {
-      final TransferWindow nextWindow =
-          await _service.windowManager.nextRegistrationWindowForTeam(
+      final TransferWindow nextWindow = await _service.windowManager
+          .nextRegistrationWindowForTeam(
             season?.seasonId ?? 0,
             userTeamId,
             currentDate,
