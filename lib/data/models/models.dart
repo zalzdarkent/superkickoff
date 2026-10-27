@@ -4,6 +4,7 @@ library;
 
 import '../db/schema.dart' as t;
 import '../../core/country_names.dart';
+export 'international_models.dart';
 
 class Country {
   Country({

@@ -6,6 +6,7 @@ import '../data/db/schema.dart' as t;
 import '../data/models/models.dart';
 import 'competition_config.dart';
 import 'fixture_validator.dart';
+import 'international_calendar.dart';
 
 /// Result of postponing or moving one fixture.
 class FixtureRescheduleResult {
@@ -42,6 +43,8 @@ class FixtureSchedulingService {
   /// Minimum practical gap between two matches of the same club.
   static const int preferredRestDays = 3;
 
+  Future<int> resolveFixtureClashes(int seasonId) => resolveSeasonConflicts(seasonId);
+
   /// Moves conflicting scheduled fixtures to the nearest valid date and records
   /// the reason. Completed fixtures are never moved. Returns the number of
   /// fixtures whose date changed.
@@ -65,12 +68,29 @@ class FixtureSchedulingService {
 
     final DateTime seasonStart = await _seasonStart(seasonId);
     final DateTime seasonEnd = await _seasonEnd(seasonId, seasonStart);
+    final List<DateTime> mandatoryDates =
+        await InternationalCalendarService(db).mandatoryUnavailableDates(seasonId);
     final Map<int, Future<CompetitionConfig>> configs =
         <int, Future<CompetitionConfig>>{};
     Future<CompetitionConfig> configFor(int tournamentId) =>
         configs.putIfAbsent(
           tournamentId,
-          () => _configForTournament(tournamentId, seasonStart.year),
+          () async {
+            final CompetitionConfig c = await _configForTournament(
+              tournamentId,
+              seasonStart.year,
+            );
+            if (mandatoryDates.isEmpty ||
+                !(c.type == CompetitionType.league ||
+                    c.type == CompetitionType.domesticCup)) {
+              return c;
+            }
+            final Set<DateTime> combined = <DateTime>{
+              ...c.unavailableDates,
+              ...mandatoryDates,
+            };
+            return c.copyWith(unavailableDates: combined.toList());
+          },
         );
 
     // Finished fixtures are fixed points; scheduled fixtures are placed in
@@ -259,10 +279,22 @@ class FixtureSchedulingService {
     );
     final DateTime start = await _seasonStart(seasonId);
     final DateTime end = await _seasonEnd(seasonId, start);
-    final CompetitionConfig config = await _configForTournament(
+    final CompetitionConfig baseConfig = await _configForTournament(
       tournamentId,
       start.year,
     );
+    final List<DateTime> mandatoryDates =
+        await InternationalCalendarService(db).mandatoryUnavailableDates(seasonId);
+    final bool isDomesticClub = baseConfig.type == CompetitionType.league ||
+        baseConfig.type == CompetitionType.domesticCup;
+    final CompetitionConfig config = (mandatoryDates.isEmpty || !isDomesticClub)
+        ? baseConfig
+        : baseConfig.copyWith(
+            unavailableDates: <DateTime>{
+              ...baseConfig.unavailableDates,
+              ...mandatoryDates,
+            }.toList(),
+          );
     final int minRestDays = max(2, config.minRestDays);
     final DateTime preferred =
         newDate ?? DateTime.tryParse(oldDate ?? '') ?? start;

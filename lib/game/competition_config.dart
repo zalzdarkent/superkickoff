@@ -1,5 +1,8 @@
 import 'dart:convert';
 
+import 'package:sqflite/sqflite.dart';
+
+import '../data/db/schema.dart' as t;
 import '../data/models/models.dart';
 
 /// The kind of competition. Kept deliberately small: the scheduling system only
@@ -57,12 +60,13 @@ class CompetitionConfig {
     this.awayGoals = false,
     this.useByes = true,
     this.trimToPowerOfTwo = false,
-    this.fieldSize,
+    int? fieldSize,
     this.promotionSlots = 0,
     this.relegationSlots = 0,
     List<DateTime> unavailableDates = const <DateTime>[],
     List<int> allowedWeekdays = const <int>[],
-  }) : unavailableDates = List<DateTime>.unmodifiable(unavailableDates),
+  }) : fieldSize = fieldSize ?? participantCount,
+       unavailableDates = List<DateTime>.unmodifiable(unavailableDates),
        allowedWeekdays = List<int>.unmodifiable(allowedWeekdays);
 
   final int tournamentId;
@@ -213,6 +217,42 @@ class CompetitionConfig {
         ? _knownProfiles[tournament.tournamentId]!(tournament, seasonStartYear)
         : _fallback(tournament, seasonStartYear);
     return base;
+  }
+
+  /// Derives a config directly from the tournament ID by querying the database.
+  static Future<CompetitionConfig> forTournamentId(
+    Database db,
+    int tournamentId, {
+    int? seasonStartYear,
+  }) async {
+    final List<Map<String, Object?>> rows = await db.query(
+      t.tournaments,
+      where: 'tournament_id = ?',
+      whereArgs: <Object?>[tournamentId],
+      limit: 1,
+    );
+    if (rows.isEmpty) {
+      final Tournament synthetic = Tournament(
+        tournamentId: tournamentId,
+        name: 'Tournament $tournamentId',
+        organization: DbOrg.orgInternational,
+        divisionId: 1,
+        slots: 16,
+        promotionSlots: 0,
+        relegationSpots: 0,
+        points: 3.0,
+        prizeTeams: 0,
+        prizeTopScorer: 0,
+        prizeMvp: 0,
+        playDays: '6,7',
+        rounds: 1,
+      );
+      return forTournament(synthetic, seasonStartYear: seasonStartYear);
+    }
+    return forTournament(
+      Tournament.fromMap(rows.first),
+      seasonStartYear: seasonStartYear,
+    );
   }
 
   static CompetitionConfig _fallback(
@@ -378,6 +418,172 @@ class CompetitionConfig {
       extraTime: true,
       penalties: true,
       useByes: true,
+    ),
+    // ---------------- International National-Team Competitions ----------------
+    57: (Tournament t, int? y) => CompetitionConfig(
+      tournamentId: t.tournamentId,
+      name: t.name,
+      type: CompetitionType.international,
+      format: CompetitionFormat.groupStage,
+      seasonStartYear: y,
+      participantCount: (y != null && y >= 2026) ? 48 : 32,
+      fieldSize: (y != null && y >= 2026) ? 48 : 32,
+      groupCount: (y != null && y >= 2026) ? 12 : 8,
+      groupSize: 4,
+      groupDoubleRoundRobin: false,
+      knockoutLegs: 1,
+      finalSingleMatch: true,
+      neutralFinal: true,
+      extraTime: true,
+      penalties: true,
+      useByes: true,
+    ),
+    95: (Tournament t, int? y) => CompetitionConfig(
+      tournamentId: t.tournamentId,
+      name: t.name,
+      type: CompetitionType.international,
+      format: CompetitionFormat.groupStage,
+      seasonStartYear: y,
+      participantCount: 24,
+      fieldSize: 24,
+      groupSize: 4,
+      groupCount: 6,
+      groupDoubleRoundRobin: false,
+      knockoutLegs: 1,
+      finalSingleMatch: true,
+      neutralFinal: true,
+      extraTime: true,
+      penalties: true,
+      useByes: true,
+    ),
+    98: (Tournament t, int? y) => CompetitionConfig(
+      tournamentId: t.tournamentId,
+      name: t.name,
+      type: CompetitionType.international,
+      format: CompetitionFormat.groupStage,
+      seasonStartYear: y,
+      participantCount: 24,
+      fieldSize: 24,
+      groupSize: 4,
+      groupCount: 6,
+      groupDoubleRoundRobin: false,
+      knockoutLegs: 1,
+      finalSingleMatch: true,
+      neutralFinal: true,
+      extraTime: true,
+      penalties: true,
+      useByes: true,
+    ),
+    94: (Tournament t, int? y) => CompetitionConfig(
+      tournamentId: t.tournamentId,
+      name: t.name,
+      type: CompetitionType.international,
+      format: CompetitionFormat.groupStage,
+      seasonStartYear: y,
+      participantCount: 16,
+      groupSize: 4,
+      groupDoubleRoundRobin: false,
+      knockoutLegs: 1,
+      finalSingleMatch: true,
+      neutralFinal: true,
+      extraTime: true,
+      penalties: true,
+      useByes: true,
+    ),
+    96: (Tournament t, int? y) => CompetitionConfig(
+      tournamentId: t.tournamentId,
+      name: t.name,
+      type: CompetitionType.international,
+      format: CompetitionFormat.groupStage,
+      seasonStartYear: y,
+      participantCount: 16,
+      groupSize: 4,
+      groupDoubleRoundRobin: false,
+      knockoutLegs: 1,
+      finalSingleMatch: true,
+      neutralFinal: true,
+      extraTime: true,
+      penalties: true,
+      useByes: true,
+    ),
+    97: (Tournament t, int? y) => CompetitionConfig(
+      tournamentId: t.tournamentId,
+      name: t.name,
+      type: CompetitionType.international,
+      format: CompetitionFormat.groupStage,
+      seasonStartYear: y,
+      participantCount: 24,
+      groupSize: 4,
+      groupDoubleRoundRobin: false,
+      knockoutLegs: 1,
+      finalSingleMatch: true,
+      neutralFinal: true,
+      extraTime: true,
+      penalties: true,
+      useByes: true,
+    ),
+    900: (Tournament t, int? y) => CompetitionConfig(
+      tournamentId: t.tournamentId,
+      name: t.name,
+      type: CompetitionType.friendly,
+      format: CompetitionFormat.singleMatch,
+      seasonStartYear: y,
+      finalSingleMatch: true,
+      knockoutLegs: 1,
+      extraTime: false,
+      penalties: false,
+    ),
+    901: (Tournament t, int? y) => CompetitionConfig(
+      tournamentId: t.tournamentId,
+      name: t.name,
+      type: CompetitionType.international,
+      format: CompetitionFormat.groupStage,
+      seasonStartYear: y,
+      participantCount: 16,
+      fieldSize: 16,
+      doubleRoundRobin: true,
+      groupSize: 4,
+      groupDoubleRoundRobin: true,
+      knockoutLegs: 1,
+      finalSingleMatch: true,
+      neutralFinal: true,
+      extraTime: true,
+      penalties: true,
+      promotionSlots: 4,
+      relegationSlots: 4,
+    ),
+    902: (Tournament t, int? y) => CompetitionConfig(
+      tournamentId: t.tournamentId,
+      name: t.name,
+      type: CompetitionType.international,
+      format: CompetitionFormat.groupStage,
+      seasonStartYear: y,
+      participantCount: 10,
+      fieldSize: 10,
+      groupCount: 2,
+      groupSize: 5,
+      groupDoubleRoundRobin: false,
+      knockoutLegs: 2,
+      finalSingleMatch: false,
+      extraTime: true,
+      penalties: true,
+    ),
+    903: (Tournament t, int? y) => CompetitionConfig(
+      tournamentId: t.tournamentId,
+      name: t.name,
+      type: CompetitionType.international,
+      format: CompetitionFormat.groupStage,
+      seasonStartYear: y,
+      participantCount: 14,
+      fieldSize: 14,
+      groupCount: 3,
+      groupSize: 4,
+      groupDoubleRoundRobin: false,
+      knockoutLegs: 1,
+      finalSingleMatch: true,
+      neutralFinal: true,
+      extraTime: true,
+      penalties: true,
     ),
   };
 

@@ -28,6 +28,10 @@ import '../game/offseason.dart';
 import '../game/season_generator.dart';
 import '../game/training.dart';
 import '../game/transfer_window_manager.dart';
+import '../game/international_calendar.dart';
+import '../game/international_tournament_service.dart';
+import '../game/national_team_service.dart';
+import '../game/national_team_selection_service.dart';
 
 /// Presentation-facing career state. One instance lives above the app and
 /// notifies widgets whenever the career world changes.
@@ -118,6 +122,16 @@ class CareerProvider extends ChangeNotifier {
   List<Message> inbox = <Message>[];
   int unreadCount = 0;
   int week = 0;
+
+  List<InternationalWindow> internationalWindows = <InternationalWindow>[];
+  List<CountryMatch> internationalMatches = <CountryMatch>[];
+  List<InternationalDuty> userClubPlayersOnDuty = <InternationalDuty>[];
+  Set<int> userClubPlayerIdsOnDuty = <int>{};
+
+  InternationalCalendarService get internationalCalendar => _service.internationalCalendar;
+  NationalTeamService get nationalTeams => _service.nationalTeams;
+  NationalTeamSelectionService get nationalTeamSelection => _service.nationalTeamSelection;
+  InternationalTournamentService get internationalTournaments => _service.internationalTournaments;
 
   // Live match session (filled while watching a match).
   LiveMatchSession? liveSession;
@@ -674,7 +688,52 @@ class CareerProvider extends ChangeNotifier {
     isTransferWindowOpen =
         currentTransferWindow?.isWindowOpen(todayDate) ?? false;
     isDeadlineDay = currentTransferWindow?.isDeadlineDay(todayDate) ?? false;
+    await refreshInternationalData();
     notifyListeners();
+  }
+
+  Future<void> refreshInternationalData() async {
+    if (season == null) return;
+    try {
+      internationalWindows = await _service.internationalCalendar.windowsForSeason(season!.seasonId);
+      internationalMatches = await _service.countryMatchesForSeason(season!.seasonId);
+      if (userTeamId > 0) {
+        userClubPlayersOnDuty = await _service.dutiesForClub(userTeamId);
+        userClubPlayerIdsOnDuty = userClubPlayersOnDuty.map((InternationalDuty d) => d.playerId).toSet();
+      } else {
+        userClubPlayersOnDuty = <InternationalDuty>[];
+        userClubPlayerIdsOnDuty = <int>{};
+      }
+    } catch (_) {
+      // In case tables do not exist yet
+    }
+  }
+
+  Future<List<InternationalStanding>> getInternationalStandings(int tournamentId, {int? groupId}) {
+    return _service.internationalTournaments.getStandings(
+      seasonId: season?.seasonId ?? 1,
+      tournamentId: tournamentId,
+      groupId: groupId,
+    );
+  }
+
+  Future<List<CountryMatch>> getInternationalTournamentMatches(int tournamentId) {
+    return _service.internationalTournaments.matchesForTournament(
+      seasonId: season?.seasonId ?? 1,
+      tournamentId: tournamentId,
+    );
+  }
+
+  Future<List<PlayerNationalStats>> getCountrySquad(int countryId) {
+    return _service.nationalTeams.getCountrySquad(countryId);
+  }
+
+  Future<PlayerNationalStats?> getPlayerNationalStats(int playerId) {
+    return _service.nationalTeams.getPlayerStats(playerId);
+  }
+
+  bool isPlayerOnInternationalDuty(int playerId) {
+    return userClubPlayerIdsOnDuty.contains(playerId);
   }
 
   static String _todayIso() {

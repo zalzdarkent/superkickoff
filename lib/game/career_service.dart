@@ -23,6 +23,11 @@ import 'player_valuation_service.dart';
 import 'prize_engine.dart';
 import 'competition_config.dart';
 import 'fixture_scheduler.dart';
+import 'international_calendar.dart';
+import 'international_simulation_service.dart';
+import 'international_tournament_service.dart';
+import 'national_team_selection_service.dart';
+import 'national_team_service.dart';
 import 'season_generator.dart';
 import 'training.dart';
 import 'transfer_window_manager.dart';
@@ -63,9 +68,29 @@ class CareerService {
            windowManager ?? TransferWindowManager(db, messages: messages),
        _engine = engine,
        _gen = generator,
-       _rng = random ?? Random();
+       _rng = random ?? Random(),
+       internationalCalendar = InternationalCalendarService(db),
+       internationalSimulation = InternationalSimulationService(
+         db,
+         engine: engine,
+         random: random ?? Random(),
+       ),
+       internationalTournaments = InternationalTournamentService(
+         db,
+         random: random ?? Random(),
+       ),
+       nationalTeamSelection = NationalTeamSelectionService(
+         db,
+         random: random ?? Random(),
+       ),
+       nationalTeams = NationalTeamService(db);
 
   final Database db;
+  final InternationalCalendarService internationalCalendar;
+  final InternationalSimulationService internationalSimulation;
+  final InternationalTournamentService internationalTournaments;
+  final NationalTeamSelectionService nationalTeamSelection;
+  final NationalTeamService nationalTeams;
   final ReferenceRepository _refs;
   final SeasonRepository _seasons;
   final SquadRepository _squads;
@@ -144,14 +169,23 @@ class CareerService {
     if (home == null || away == null) {
       throw StateError('Missing teams for match ${match.matchId}');
     }
+    final String? matchDate = match.date;
+    final Set<int> onDuty = await _dutyPlayerIds(
+      matchDate,
+      <int>[home.teamId, away.teamId],
+    );
     final List<Player> homeSquad = (await _squads.squadForTeam(home.teamId))
         .where(
-          (Player player) => player.injuryDaysRemaining(match.date) == null,
+          (Player player) =>
+              player.injuryDaysRemaining(match.date) == null &&
+              !onDuty.contains(player.playerId),
         )
         .toList();
     final List<Player> awaySquad = (await _squads.squadForTeam(away.teamId))
         .where(
-          (Player player) => player.injuryDaysRemaining(match.date) == null,
+          (Player player) =>
+              player.injuryDaysRemaining(match.date) == null &&
+              !onDuty.contains(player.playerId),
         )
         .toList();
     final Formation homeFormation = Formation.parse(
@@ -635,7 +669,7 @@ class CareerService {
     return isCup;
   }
 
-  /// Player ids currently suspended for either club in [match].
+  /// Player ids currently suspended or on active international duty for either club in [match].
   Future<Set<int>> _suspendedPlayerIds(FixtureMatch match) async {
     final List<Map<String, Object?>> rows = await db.query(
       t.suspensions,
@@ -645,9 +679,34 @@ class CareerService {
           'WHERE team_id IN (?, ?))',
       whereArgs: <Object?>[match.homeTeamId, match.awayTeamId],
     );
-    return <int>{
+    final Set<int> banned = <int>{
       for (final Map<String, Object?> row in rows) row['player_id'] as int,
     };
+    if (match.date != null) {
+      final Set<int> onDuty = await _dutyPlayerIds(
+        match.date,
+        <int>[match.homeTeamId, match.awayTeamId],
+      );
+      banned.addAll(onDuty);
+    }
+    return banned;
+  }
+
+  Future<Set<int>> _dutyPlayerIds(String? date, List<int> teamIds) async {
+    if (date == null || date.isEmpty || teamIds.isEmpty) return <int>{};
+    final String clean = date.length >= 10 ? date.substring(0, 10) : date;
+    final List<Map<String, Object?>> rows = await db.rawQuery(
+      '''
+      SELECT d.player_id
+      FROM ${t.internationalDuty} d
+      JOIN ${t.teamPlayers} tp ON tp.player_id = d.player_id
+      WHERE tp.team_id IN (${teamIds.join(',')})
+        AND d.status = 'active'
+        AND d.release_date <= ? AND d.return_date >= ?
+      ''',
+      <Object?>[clean, clean],
+    );
+    return rows.map((r) => r['player_id'] as int).toSet();
   }
 
   static Map<String, Object?> _playerRowToDb(MatchPlayerRow row) =>
@@ -688,13 +747,23 @@ class CareerService {
         userLeagueId: userLeagueId,
       );
     }
+
+    // Simulate scheduled international country matches on this date
+    final InternationalWindow? win =
+        await internationalCalendar.windowForDate(seasonId, date);
+    await internationalSimulation.simulateMatchesOnDate(
+      seasonId,
+      date,
+      window: win,
+    );
+
     return results;
   }
 
   // ------------------------------------------------------------ housekeeping
 
   /// Weekly post-matchday tasks: suspension countdown, fitness recovery,
-  /// per-team salaries and the AI transfer market.
+  /// per-team salaries, release concluded international duties and the AI transfer market.
   Future<void> weeklyHousekeeping({
     required int seasonId,
     required int userTeamId,
@@ -702,6 +771,7 @@ class CareerService {
   }) async {
     final Set<int> stillBanned = await _matchRepo.tickSuspensions();
     stillBanned.clear(); // ids already tracked in DB; provider re-reads
+    await nationalTeamSelection.releaseConcludedDuties(currentDate ?? '');
     // Only clubs registered for this season need recovery; touching all 55k
     // players every week would be needlessly slow.
     await db.execute(
@@ -3040,5 +3110,47 @@ class CareerService {
     for (final Team club in seasonClubs) {
       await _squads.refreshTeamPower(club.teamId);
     }
+  }
+
+  /// Fetches scheduled or finished national team matches for [seasonId].
+  Future<List<CountryMatch>> countryMatchesForSeason(
+    int seasonId, {
+    int? tournamentId,
+  }) async {
+    final List<Map<String, Object?>> rows = await db.query(
+      t.countryMatches,
+      where:
+          'season_id = ? ${tournamentId != null ? 'AND tournament_id = $tournamentId' : ''}',
+      whereArgs: tournamentId != null
+          ? <Object?>[seasonId, tournamentId]
+          : <Object?>[seasonId],
+      orderBy: 'date ASC, match_id ASC',
+    );
+    return rows.map(CountryMatch.fromMap).toList();
+  }
+
+  /// Returns players of [teamId] who are on international duty on [date].
+  Future<List<Player>> playersOnDutyForClub(int teamId, [String? date]) async {
+    final String targetDate = date ?? _todayIso();
+    final Set<int> ids = await _dutyPlayerIds(targetDate, <int>[teamId]);
+    if (ids.isEmpty) return <Player>[];
+    final List<Player> squad = await _squads.squadForTeam(teamId);
+    return squad.where((p) => ids.contains(p.playerId)).toList();
+  }
+
+  /// Returns active duty records for players belonging to [teamId].
+  Future<List<InternationalDuty>> dutiesForClub(int teamId, [String? date]) async {
+    final String clean = date != null && date.length >= 10 ? date.substring(0, 10) : _todayIso();
+    final List<Map<String, Object?>> rows = await db.rawQuery(
+      '''
+      SELECT d.*
+      FROM ${t.internationalDuty} d
+      JOIN ${t.teamPlayers} tp ON tp.player_id = d.player_id
+      WHERE tp.team_id = ? AND d.status = 'active'
+        AND d.release_date <= ? AND d.return_date >= ?
+      ''',
+      <Object?>[teamId, clean, clean],
+    );
+    return rows.map(InternationalDuty.fromMap).toList();
   }
 }

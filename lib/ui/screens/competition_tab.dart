@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import 'fixtures_tab.dart';
+import 'international_tab.dart';
 import 'standings_tab.dart';
 
-/// Combined competition screen integrating league standings/leaderboards
-/// and matchday fixtures into a single cohesive tab.
+/// Combined competition screen integrating league standings/leaderboards,
+/// matchday fixtures, and international football into a single cohesive tab.
 class CompetitionTab extends StatefulWidget {
   const CompetitionTab({super.key, this.initialIndex = 0});
 
@@ -19,8 +20,8 @@ class _CompetitionTabState extends State<CompetitionTab> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
-      initialIndex: widget.initialIndex.clamp(0, 1),
+      length: 3,
+      initialIndex: widget.initialIndex.clamp(0, 2),
       child: Column(
         children: <Widget>[
           Material(
@@ -58,6 +59,16 @@ class _CompetitionTabState extends State<CompetitionTab> {
                     ],
                   ),
                 ),
+                Tab(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      Icon(Icons.public_outlined, size: 16),
+                      SizedBox(width: 6),
+                      Text('Timnas'),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -67,6 +78,7 @@ class _CompetitionTabState extends State<CompetitionTab> {
               children: <Widget>[
                 StandingsTab(),
                 FixturesTab(),
+                InternationalTab(),
               ],
             ),
           ),

@@ -65,6 +65,23 @@ const String offseasonState = 'offseason_state';
 const String boardObjectives = 'board_objectives';
 const String teamFacilities = 'team_facilities';
 const String teamStaff = 'team_staff';
+const String internationalWindows = 'international_windows';
+const String internationalDuty = 'international_duty';
+const String playerNationalEligibility = 'player_national_eligibility';
+
+// --------------------------------------------- international tournament IDs
+const int tournamentWorldCup = 57;
+const int tournamentCopaAmerica = 94;
+const int tournamentEuroCup = 95;
+const int tournamentEuro = tournamentEuroCup;
+const int tournamentGoldCup = 96;
+const int tournamentAfricaCup = 97;
+const int tournamentAsianCup = 98;
+const int tournamentFriendlies = 900;
+const int tournamentNationsLeague = 901;
+const int tournamentAseanChampionship = 902;
+const int tournamentFifaAseanCup = 903;
+const int tournamentWorldCupQualifiers = 904;
 
 // ------------------------------------------------------- match statuses
 const int matchScheduled = 1;
@@ -117,4 +134,10 @@ const int offerCompleted = 8;
 const int offerAwaitingWindow = 9;
 const int offerCancelled = 10;
 const int offerFailed = 11;
+
+// ---------------------------------------------------- position groups
+const int posGoalkeeper = 1;
+const int posDefender = 2;
+const int posMidfielder = 3;
+const int posAttacker = 4;
 

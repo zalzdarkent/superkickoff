@@ -529,6 +529,165 @@ class AppDatabase {
       (163, 94, 1),  -- Indonesia
       (163, 58, 1)   -- Egypt
     ''');
+
+    // ---------------- International football tables & migrations ----------------
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ${t.internationalWindows} (
+        window_id TEXT PRIMARY KEY,
+        season_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        window_type TEXT NOT NULL,
+        start_date TEXT NOT NULL,
+        end_date TEXT NOT NULL,
+        release_start_date TEXT NOT NULL,
+        return_date TEXT NOT NULL,
+        is_mandatory INTEGER NOT NULL DEFAULT 1,
+        max_matches INTEGER NOT NULL DEFAULT 2,
+        club_fixtures_allowed INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ${t.internationalDuty} (
+        duty_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        season_id INTEGER NOT NULL,
+        country_id INTEGER NOT NULL,
+        player_id INTEGER NOT NULL,
+        window_id TEXT NOT NULL,
+        release_date TEXT NOT NULL,
+        return_date TEXT NOT NULL,
+        squad_number INTEGER DEFAULT 0,
+        is_captain INTEGER DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'active',
+        UNIQUE(season_id, player_id, window_id)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ${t.playerNationalEligibility} (
+        player_id INTEGER NOT NULL,
+        country_id INTEGER NOT NULL,
+        is_primary INTEGER NOT NULL DEFAULT 1,
+        is_locked INTEGER NOT NULL DEFAULT 0,
+        notes TEXT,
+        PRIMARY KEY (player_id, country_id)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ${t.countryMatches} (
+        match_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tournament_id INTEGER,
+        season_id INTEGER,
+        referee_id INTEGER,
+        stadium_id INTEGER,
+        home_country_id INTEGER DEFAULT 0,
+        away_country_id INTEGER DEFAULT 0,
+        home_goals INTEGER DEFAULT 0,
+        away_goals INTEGER DEFAULT 0,
+        winner_id INTEGER DEFAULT 0,
+        attendance_general INTEGER DEFAULT 0,
+        attendance_stand INTEGER DEFAULT 0,
+        attendance_terrace INTEGER DEFAULT 0,
+        attendance_boxes INTEGER DEFAULT 0,
+        revenue INTEGER DEFAULT 0,
+        phase INTEGER DEFAULT 0,
+        round INTEGER DEFAULT 0,
+        status INTEGER DEFAULT 1,
+        leg INTEGER DEFAULT 1,
+        date TEXT,
+        penalty_home_goals INTEGER,
+        penalty_away_goals INTEGER,
+        group_id INTEGER,
+        window_id TEXT,
+        original_date TEXT,
+        reschedule_reason TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ${t.countryCallups} (
+        country_id INTEGER,
+        player_id INTEGER,
+        season_id INTEGER,
+        PRIMARY KEY (season_id, player_id, country_id)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ${t.matchPlayersCountries} (
+        player_id INTEGER NOT NULL,
+        match_id INTEGER NOT NULL,
+        country_id INTEGER NOT NULL,
+        starter INTEGER,
+        minutes INTEGER,
+        points INTEGER,
+        rating INTEGER,
+        mvp INTEGER,
+        goals INTEGER,
+        yellow_cards INTEGER,
+        red_cards INTEGER,
+        assists INTEGER
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ${t.playerSeasonStatsCountries} (
+        player_id INTEGER NOT NULL,
+        country_id INTEGER NOT NULL,
+        season_id INTEGER NOT NULL,
+        matches_played INTEGER,
+        minutes INTEGER,
+        rating INTEGER,
+        starts INTEGER,
+        yellow_cards INTEGER,
+        red_cards INTEGER,
+        mvps INTEGER,
+        goals INTEGER,
+        assists INTEGER,
+        PRIMARY KEY (player_id, country_id, season_id)
+      )
+    ''');
+    await db.execute('''
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_pssc_player_country_season
+      ON ${t.playerSeasonStatsCountries} (player_id, country_id, season_id);
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ${t.seasonCountries} (
+        country_id INTEGER,
+        season_id INTEGER,
+        coach_id INTEGER,
+        position INTEGER DEFAULT 0,
+        PRIMARY KEY (country_id, season_id)
+      )
+    ''');
+
+    final List<Map<String, Object?>> countryMatchColumns = await db.rawQuery(
+      'PRAGMA table_info(${t.countryMatches})',
+    );
+    bool hasCountryMatchColumn(String name) =>
+        countryMatchColumns.any((Map<String, Object?> c) => c['name'] == name);
+    if (!hasCountryMatchColumn('group_id')) {
+      await db.execute('ALTER TABLE ${t.countryMatches} ADD COLUMN group_id INTEGER');
+    }
+    if (!hasCountryMatchColumn('window_id')) {
+      await db.execute('ALTER TABLE ${t.countryMatches} ADD COLUMN window_id TEXT');
+    }
+    if (!hasCountryMatchColumn('original_date')) {
+      await db.execute('ALTER TABLE ${t.countryMatches} ADD COLUMN original_date TEXT');
+    }
+    if (!hasCountryMatchColumn('reschedule_reason')) {
+      await db.execute(
+        'ALTER TABLE ${t.countryMatches} ADD COLUMN reschedule_reason TEXT',
+      );
+    }
+
+    await db.execute('''
+      INSERT OR IGNORE INTO ${t.tournaments} (
+        tournament_id, name, division_id, status, organization, rounds,
+        play_days, slots, points, promotion_slots, relegation_spots,
+        prize_teams, prize_top_scorer, prize_mvp
+      ) VALUES
+      (900, 'International Friendly', 0, 1, 2, 1, '2,5,6', '0', 0, 0, 0, 0, 0, 0),
+      (901, 'UEFA Nations League', 0, 1, 2, 2, '2,5,6', '16', 3, 4, 4, 15000000, 2000000, 500000),
+      (902, 'ASEAN Championship', 0, 1, 2, 1, '2,5,6', '10', 3, 0, 0, 3000000, 500000, 100000),
+      (903, 'FIFA ASEAN Cup', 0, 1, 2, 1, '2,5,6', '14', 3, 0, 0, 4000000, 600000, 150000),
+      (904, 'World Cup Qualifiers', 0, 1, 2, 2, '2,5,6', '0', 3, 0, 0, 5000000, 1000000, 250000)
+    ''');
     final List<Map<String, Object?>> offerColumns = await db.rawQuery(
       'PRAGMA table_info(${t.transferOffers})',
     );

@@ -1036,6 +1036,32 @@ class _SquadTabState extends State<SquadTab> {
                   ),
                 ),
               ),
+            if (game.isPlayerOnInternationalDuty(p.playerId))
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E88E5).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: const Color(0xFF1E88E5).withValues(alpha: 0.5),
+                  ),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(Icons.public, size: 9, color: Color(0xFF64B5F6)),
+                    SizedBox(width: 3),
+                    Text(
+                      'TIMNAS',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF64B5F6),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             Text(
               '${p.age}y · ${money(p.value)} · ${money(p.salary)}/w',
               style: const TextStyle(fontSize: 11, color: AppTheme.textDim),

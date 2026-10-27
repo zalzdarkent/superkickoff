@@ -431,6 +431,37 @@ class _PlayerDetailSheetState extends State<PlayerDetailSheet>
                         ),
                       ),
                     ],
+                    if (context.read<CareerProvider>().isPlayerOnInternationalDuty(p.playerId)) ...<Widget>[
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1E88E5).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(5),
+                          border: Border.all(
+                            color: const Color(0xFF1E88E5).withValues(alpha: 0.5),
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Icon(Icons.public, size: 9, color: Color(0xFF64B5F6)),
+                            SizedBox(width: 3),
+                            Text(
+                              'TIMNAS \u00b7 Tugas Negara',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF64B5F6),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -564,6 +595,51 @@ class _PlayerDetailSheetState extends State<PlayerDetailSheet>
                       width,
                     ),
                 ],
+              );
+            },
+          ),
+          FutureBuilder<PlayerNationalStats?>(
+            future: context.read<CareerProvider>().getPlayerNationalStats(p.playerId),
+            builder: (BuildContext context, AsyncSnapshot<PlayerNationalStats?> snap) {
+              final PlayerNationalStats? stats = snap.data;
+              if (stats == null || stats.caps == 0) return const SizedBox.shrink();
+              return Container(
+                margin: const EdgeInsets.only(top: 14),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceCard,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white10),
+                ),
+                child: Row(
+                  children: <Widget>[
+                    const Icon(Icons.public, size: 20, color: Color(0xFF64B5F6)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          const Text(
+                            'Karier Tim Nasional',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white70,
+                            ),
+                          ),
+                          Text(
+                            '${stats.caps} Caps · ${stats.goals} Gol · ${stats.assists} Assist',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               );
             },
           ),

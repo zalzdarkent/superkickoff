@@ -7,6 +7,8 @@ import '../data/models/models.dart';
 import 'competition_config.dart';
 import 'fixture_calendar.dart';
 import 'fixture_scheduler.dart';
+import 'international_calendar.dart';
+import 'international_tournament_service.dart';
 
 export 'fixture_scheduler.dart' show FixtureSlot;
 
@@ -45,6 +47,20 @@ class SeasonGenerator {
     ];
 
     final Season season = await _insertSeason(startYear);
+    final InternationalCalendarService intlCalendar =
+        InternationalCalendarService(db);
+    final List<InternationalWindow> windows =
+        await intlCalendar.generateWindowsForSeason(season.seasonId, startYear);
+    final InternationalTournamentService intlTournaments =
+        InternationalTournamentService(db);
+    for (final InternationalWindow win in windows) {
+      if (win.windowType == InternationalWindowType.fifaWindow) {
+        await intlTournaments.scheduleFriendliesForWindow(
+          seasonId: season.seasonId,
+          window: win,
+        );
+      }
+    }
     for (final Tournament tour in allDomesticLeagues) {
       await db.insert(t.seasonTournaments, <String, Object?>{
         'season_id': season.seasonId,
@@ -241,6 +257,7 @@ class SeasonGenerator {
       teamCount: allTeams.length,
       matchCount: matchRows.length,
       internationalTournamentIds: internationalEntrants.keys.toList(),
+      internationalWindows: windows,
     );
   }
 
@@ -1451,6 +1468,7 @@ class CareerPlan {
     required this.teamCount,
     required this.matchCount,
     this.internationalTournamentIds = const <int>[],
+    this.internationalWindows = const <InternationalWindow>[],
   });
 
   final Season season;
@@ -1461,6 +1479,7 @@ class CareerPlan {
   final int teamCount;
   final int matchCount;
   final List<int> internationalTournamentIds;
+  final List<InternationalWindow> internationalWindows;
 }
 
 /// Backwards-compatible wrapper around [RoundRobinScheduler]. Kept because
