@@ -179,9 +179,56 @@ void main() {
     expect(await next(), contains('objective'));
     final List<BoardOption> options = await service.boardOptions(user.teamId);
     expect(options, hasLength(3));
+    final BoardOption balancedOption = options.singleWhere(
+      (BoardOption option) => option.ambition == BoardAmbition.balanced,
+    );
+    final List<StandingRow> finalTable = await SeasonRepository(db)
+        .standings(seasonId, league.tournamentId);
+    final int actualRank =
+        finalTable.indexWhere((StandingRow row) => row.teamId == user.teamId) +
+        1;
+    final List<int> rankedByPower = finalTable
+        .map((StandingRow row) => row.teamId)
+        .toList();
+    final List<Map<String, Object?>> powerRows = await db.query(
+      t.teams,
+      columns: <String>['team_id'],
+      where:
+          'team_id IN (${List<String>.filled(rankedByPower.length, '?').join(',')})',
+      whereArgs: rankedByPower,
+      orderBy: 'power DESC, team_id ASC',
+    );
+    final int expectedRank =
+        powerRows.indexWhere(
+          (Map<String, Object?> row) => row['team_id'] == user.teamId,
+        ) +
+        1;
+    final Team boardTeam = (await refs.teamById(user.teamId))!;
+    final double performanceMultiplier =
+        (1 + (expectedRank - actualRank) / (finalTable.length - 1)).clamp(
+          0.5,
+          1.5,
+        );
+    expect(
+      balancedOption.managementGrant,
+      (max(300000, boardTeam.budget * 0.05) * performanceMultiplier).round(),
+      reason:
+          'budget=${boardTeam.budget}, actualRank=$actualRank, expectedRank=$expectedRank, '
+          'tableSize=${finalTable.length}, grant=${balancedOption.managementGrant}',
+    );
+    final int budgetBeforeBoard = boardTeam.budget;
     expect(
       await service.chooseBoardAmbition(user.teamId, BoardAmbition.balanced),
       isNull,
+    );
+    final Team boardTeamAfter = (await refs.teamById(user.teamId))!;
+    expect(
+      boardTeamAfter.budget - budgetBeforeBoard,
+      balancedOption.advance + balancedOption.managementGrant,
+    );
+    expect(
+      (await service.offseasonState())!.report,
+      contains('management grant'),
     );
 
     // 7. New season.

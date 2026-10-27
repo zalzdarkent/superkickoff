@@ -129,11 +129,13 @@ class BoardOption {
     required this.ambition,
     required this.targetRank,
     required this.bonus,
+    required this.managementGrant,
   });
 
   final BoardAmbition ambition;
   final int targetRank;
   final int bonus;
+  final int managementGrant;
 
   /// Paid up front as extra transfer budget.
   int get advance => bonus ~/ 2;

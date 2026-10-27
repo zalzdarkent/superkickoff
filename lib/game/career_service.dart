@@ -2477,6 +2477,15 @@ class CareerService {
   Future<List<BoardOption>> boardOptions(int userTeamId) async {
     final Team? team = await _refs.teamById(userTeamId);
     if (team == null) return <BoardOption>[];
+    final Season? current = await _seasons.currentSeason();
+    final double performanceMultiplier = current == null
+        ? 1.0
+        : await _previousSeasonPerformanceMultiplier(
+            seasonId: current.seasonId,
+            teamId: userTeamId,
+          );
+    final int managementGrant =
+        (max(300000, team.budget * 0.05) * performanceMultiplier).round();
     final List<Map<String, Object?>> rows = await db.query(
       t.teams,
       columns: <String>['team_id'],
@@ -2495,8 +2504,58 @@ class CareerService {
           ambition: a,
           targetRank: (expected + a.rankOffset).clamp(1, size),
           bonus: ((max(300000, team.budget * a.rate) / 10000).round()) * 10000,
+          managementGrant: managementGrant,
         ),
     ];
+  }
+
+  Future<double> _previousSeasonPerformanceMultiplier({
+    required int seasonId,
+    required int teamId,
+  }) async {
+    final List<Map<String, Object?>> leagueRows = await db.rawQuery(
+      '''
+      SELECT DISTINCT m.tournament_id
+      FROM ${t.matches} m
+      JOIN ${t.tournaments} tu ON tu.tournament_id = m.tournament_id
+      WHERE m.season_id = ? AND tu.organization = ?
+        AND (m.home_team_id = ? OR m.away_team_id = ?)
+      LIMIT 1
+      ''',
+      <Object?>[seasonId, t.orgLeague, teamId, teamId],
+    );
+    if (leagueRows.isEmpty) return 1.0;
+
+    final int tournamentId = leagueRows.first['tournament_id'] as int;
+    final List<StandingRow> table = await _seasons.standings(
+      seasonId,
+      tournamentId,
+    );
+    final int actualRank =
+        table.indexWhere((StandingRow row) => row.teamId == teamId) + 1;
+    if (actualRank == 0 || table.length < 2) return 1.0;
+
+    final List<int> teamIds = table
+        .map((StandingRow row) => row.teamId)
+        .toList();
+    final List<Map<String, Object?>> powerRows = await db.query(
+      t.teams,
+      columns: <String>['team_id'],
+      where:
+          'team_id IN (${List<String>.filled(teamIds.length, '?').join(',')})',
+      whereArgs: teamIds,
+      orderBy: 'power DESC, team_id ASC',
+    );
+    final int expectedRank =
+        powerRows.indexWhere(
+          (Map<String, Object?> row) => row['team_id'] == teamId,
+        ) +
+        1;
+    if (expectedRank == 0) return 1.0;
+
+    final double rankImprovement =
+        (expectedRank - actualRank) / (table.length - 1);
+    return (1 + rankImprovement).clamp(0.5, 1.5);
   }
 
   /// Agrees the objective: the advance is paid now, the bonus on success.
@@ -2521,14 +2580,17 @@ class CareerService {
     }, conflictAlgorithm: ConflictAlgorithm.replace);
     await db.execute(
       'UPDATE teams SET budget = budget + ? WHERE team_id = ?',
-      <Object?>[option.advance, userTeamId],
+      <Object?>[option.advance + option.managementGrant, userTeamId],
     );
     await _saveOffseason(
       s,
       ambition: ambition.name,
       report:
+          'The board provides a new-season management grant of '
+          '${_money(option.managementGrant)}, based on club finances and last '
+          'season\'s performance. '
           'Target: finish in the top ${option.targetRank}. '
-          'The board adds ${_money(option.advance)} to the transfer budget now '
+          'The board also adds ${_money(option.advance)} as an objective advance '
           'and pays ${_money(option.bonus)} if we deliver.',
     );
     return null;

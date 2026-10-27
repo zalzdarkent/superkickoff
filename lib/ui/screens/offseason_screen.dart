@@ -455,7 +455,9 @@ class _BoardOptionsState extends State<_BoardOptions> {
               _ChoiceCard(
                 title: '${o.ambition.label}: finish top ${o.targetRank}',
                 description:
-                    '${o.ambition.description} Advance ${money(o.advance)} '
+                    '${o.ambition.description} Management grant '
+                    '${money(o.managementGrant)} + objective advance '
+                    '${money(o.advance)} '
                     'now, bonus ${money(o.bonus)} if we deliver.',
                 selected: false,
                 locked: false,
