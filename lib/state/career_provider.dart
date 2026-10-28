@@ -740,8 +740,17 @@ class CareerProvider extends ChangeNotifier {
       internationalWindows = await _service.internationalCalendar.windowsForSeason(season!.seasonId);
       internationalMatches = await _service.countryMatchesForSeason(season!.seasonId);
       if (userTeamId > 0) {
-        userClubPlayersOnDuty = await _service.dutiesForClub(userTeamId);
+        final String today = nextDate ?? _todayIso();
+        await _service.ensureInternationalCallups(
+          seasonId: season!.seasonId,
+          date: today,
+          userTeamId: userTeamId,
+        );
+        userClubPlayersOnDuty = await _service.dutiesForClub(userTeamId, today);
+        inbox = await _messages.latest(teamId: userTeamId);
+        unreadCount = inbox.where((Message m) => !m.isRead).length;
         userClubPlayerIdsOnDuty = userClubPlayersOnDuty.map((InternationalDuty d) => d.playerId).toSet();
+        await _ensureLineup(); // swap called-up players out of the XI
       } else {
         userClubPlayersOnDuty = <InternationalDuty>[];
         userClubPlayerIdsOnDuty = <int>{};
@@ -1153,6 +1162,7 @@ class CareerProvider extends ChangeNotifier {
     await _service.weeklyHousekeeping(
       seasonId: season!.seasonId,
       userTeamId: userTeamId,
+      currentDate: nextDate,
     );
     await refreshWorld();
     // End of season?
@@ -1639,7 +1649,11 @@ class CareerProvider extends ChangeNotifier {
   Future<void> autoFillLineup() async {
     _lineupCleared = false;
     final List<Player> squad = await squadForUser();
-    final Lineup xi = Lineup.best(squad, formation: formation);
+    final Lineup xi = Lineup.best(
+      squad,
+      formation: formation,
+      bannedIds: userClubPlayerIdsOnDuty,
+    );
     lineup = <int, int>{
       for (int i = 0; i < xi.starters.length; i++) i: xi.starters[i].playerId,
     };
@@ -1655,7 +1669,11 @@ class CareerProvider extends ChangeNotifier {
       final Set<int> ids = (await squadForUser())
           .map((Player p) => p.playerId)
           .toSet();
-      if (lineup.values.every(ids.contains)) return;
+      if (lineup.values.every(
+        (int id) => ids.contains(id) && !userClubPlayerIdsOnDuty.contains(id),
+      )) {
+        return;
+      }
     }
     await autoFillLineup();
   }

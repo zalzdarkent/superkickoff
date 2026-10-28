@@ -99,6 +99,9 @@ class InternationalDuty {
     this.squadNumber = 0,
     this.isCaptain = false,
     this.status = 'active',
+    this.playerName = '',
+    this.positionAbbr = '',
+    this.countryName = '',
   });
 
   final int dutyId;
@@ -111,6 +114,10 @@ class InternationalDuty {
   final int squadNumber;
   final bool isCaptain;
   final String status;
+  // Display-only; filled by joins in CareerService.dutiesForClub.
+  final String playerName;
+  final String positionAbbr;
+  final String countryName;
 
   String get releaseStartDate => releaseDate;
 
@@ -133,6 +140,9 @@ class InternationalDuty {
     squadNumber: (m['squad_number'] as int?) ?? 0,
     isCaptain: ((m['is_captain'] as int?) ?? 0) == 1,
     status: (m['status'] as String?) ?? 'active',
+    playerName: (m['player_name'] as String?) ?? '',
+    positionAbbr: (m['position_abbr'] as String?) ?? '',
+    countryName: (m['country_name'] as String?) ?? '',
   );
 
   Map<String, Object?> toMap() => <String, Object?>{

@@ -323,7 +323,10 @@ class NationalTeamSelectionService {
         await db.insert(
           t.messages,
           <String, Object?>{
-            'subject': 'Panggilan Tim Nasional: ${p.name}',
+            'title': 'Panggilan Tim Nasional: ${p.name}',
+            'sender': 'Timnas $countryName',
+            'player_id': p.playerId,
+            'team_id': userTeamId,
             'body': '${p.name} telah dipanggil membela $countryName untuk agenda ${window.name} '
                 '(${window.startDate} s/d ${window.endDate}). Pemain akan bertugas dari '
                 '${window.releaseStartDate} dan kembali ke klub pada ${window.returnDate}.',

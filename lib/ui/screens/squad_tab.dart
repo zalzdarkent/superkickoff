@@ -389,7 +389,11 @@ class _SquadTabState extends State<SquadTab> {
     );
   }
 
-  Widget _formationTab(CareerProvider game, List<Player> players) {
+  Widget _formationTab(CareerProvider game, List<Player> allPlayers) {
+    // Players away on national duty can't be picked; the XI auto-replaces them.
+    final List<Player> players = allPlayers
+        .where((Player p) => !game.isPlayerOnInternationalDuty(p.playerId))
+        .toList();
     final Formation formation = game.formation;
     final List<_SlotSpec> slots = _slotsFor(formation);
     final Map<int, Player> byId = <int, Player>{

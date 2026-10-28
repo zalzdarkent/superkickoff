@@ -3186,18 +3186,60 @@ class CareerService {
     return squad.where((p) => ids.contains(p.playerId)).toList();
   }
 
-  /// Returns active duty records for players belonging to [teamId].
+  /// Runs national-team call-ups for any window whose release period starts within
+  /// a week of [date] (or is running), so the user gets inbox messages and squad labels
+  /// before players leave. Idempotent: already-selected squads are reused silently.
+  Future<void> ensureInternationalCallups({
+    required int seasonId,
+    required String date,
+    required int userTeamId,
+  }) async {
+    final DateTime? now = DateTime.tryParse(date);
+    if (now == null) return;
+    final String ahead = now
+        .add(const Duration(days: 7))
+        .toIso8601String()
+        .substring(0, 10);
+    final String today = date.substring(0, 10);
+    for (final InternationalWindow w
+        in await internationalCalendar.windowsForSeason(seasonId)) {
+      if (w.releaseStartDate.compareTo(ahead) > 0 || w.returnDate.compareTo(today) < 0) {
+        continue;
+      }
+      final List<Map<String, Object?>> rows = await db.rawQuery(
+        '''
+        SELECT home_country_id AS c FROM ${t.countryMatches} WHERE window_id = ?
+        UNION SELECT away_country_id FROM ${t.countryMatches} WHERE window_id = ?
+        ''',
+        <Object?>[w.windowId, w.windowId],
+      );
+      for (final Map<String, Object?> r in rows) {
+        await nationalTeamSelection.selectSquadForCountry(
+          countryId: r['c'] as int,
+          seasonId: seasonId,
+          window: w,
+          userTeamId: userTeamId,
+        );
+      }
+    }
+  }
+
+  /// Returns active duty records (running or upcoming) for players belonging to [teamId].
   Future<List<InternationalDuty>> dutiesForClub(int teamId, [String? date]) async {
     final String clean = date != null && date.length >= 10 ? date.substring(0, 10) : _todayIso();
     final List<Map<String, Object?>> rows = await db.rawQuery(
       '''
-      SELECT d.*
+      SELECT d.*, p.name AS player_name, pos.abbreviation AS position_abbr,
+             c.name AS country_name
       FROM ${t.internationalDuty} d
       JOIN ${t.teamPlayers} tp ON tp.player_id = d.player_id
+      JOIN players p ON p.player_id = d.player_id
+      LEFT JOIN positions pos ON pos.position_id = p.position_id
+      LEFT JOIN ${t.countries} c ON c.country_id = d.country_id
       WHERE tp.team_id = ? AND d.status = 'active'
-        AND d.release_date <= ? AND d.return_date >= ?
+        AND d.return_date >= ?
       ''',
-      <Object?>[teamId, clean, clean],
+      <Object?>[teamId, clean],
     );
     return rows.map(InternationalDuty.fromMap).toList();
   }

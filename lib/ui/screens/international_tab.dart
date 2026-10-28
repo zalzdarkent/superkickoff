@@ -28,6 +28,13 @@ class _InternationalTabState extends State<InternationalTab> {
   List<Country> _allCountries = <Country>[];
   bool _loadingCountries = false;
 
+  String _countryName(int id) {
+    for (final Country c in _allCountries) {
+      if (c.countryId == id) return c.name;
+    }
+    return 'Tim #$id';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -238,7 +245,9 @@ class _InternationalTabState extends State<InternationalTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  'Pemain #${duty.playerId}',
+                  duty.playerName.isEmpty
+                      ? 'Pemain #${duty.playerId}'
+                      : '${duty.playerName} (${duty.positionAbbr})',
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
@@ -246,7 +255,7 @@ class _InternationalTabState extends State<InternationalTab> {
                   ),
                 ),
                 Text(
-                  'Negara #${duty.countryId} · Pelepasan: ${duty.releaseStartDate} s/d ${duty.returnDate}',
+                  '${duty.countryName.isEmpty ? 'Negara #${duty.countryId}' : duty.countryName} · Pelepasan: ${duty.releaseStartDate} s/d ${duty.returnDate}',
                   style: const TextStyle(fontSize: 11, color: AppTheme.textDim),
                 ),
               ],
@@ -580,7 +589,7 @@ class _InternationalTabState extends State<InternationalTab> {
           ),
           Expanded(
             child: Text(
-              s.countryName.isNotEmpty ? s.countryName : 'Tim #${s.countryId}',
+              s.countryName.isNotEmpty ? s.countryName : _countryName(s.countryId),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 12, color: Colors.white),
@@ -649,7 +658,7 @@ class _InternationalTabState extends State<InternationalTab> {
           ),
           Expanded(
             child: Text(
-              'Tim #${m.homeCountryId}',
+              _countryName(m.homeCountryId),
               textAlign: TextAlign.end,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -674,7 +683,7 @@ class _InternationalTabState extends State<InternationalTab> {
           ),
           Expanded(
             child: Text(
-              'Tim #${m.awayCountryId}',
+              _countryName(m.awayCountryId),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 12, color: Colors.white),
