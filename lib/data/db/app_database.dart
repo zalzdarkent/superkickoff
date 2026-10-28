@@ -32,7 +32,7 @@ class AppDatabase {
   /// [sqflite_common_ffi]; Android/iOS use the default sqflite bindings.
   static Future<Database> open() async {
     if (_db != null) return _db!;
-    if (!Platform.isAndroid && !Platform.isIOS) {
+    if (!kIsWeb && !Platform.isAndroid && !Platform.isIOS) {
       sqfliteFfiInit();
       databaseFactory = databaseFactoryFfi;
     }
@@ -1049,12 +1049,83 @@ class AppDatabase {
           }, conflictAlgorithm: ConflictAlgorithm.ignore);
         }
       }
+
+      // Recreate triggers with INSERT OR REPLACE and proper join conditions
+      await db.execute('DROP TRIGGER IF EXISTS t_clear_season_countries');
+      await db.execute('''
+        CREATE TRIGGER t_clear_season_countries
+        BEFORE UPDATE OF status ON ${t.seasonTournaments}
+        WHEN NEW.status = 0
+        BEGIN
+            INSERT OR REPLACE INTO ${t.playerSeasonStatsCountries} (
+                player_id, country_id, season_id, matches_played, minutes, rating,
+                starts, yellow_cards, red_cards, mvps, goals, assists
+            )
+            SELECT
+                p.player_id, p.country_id, s.season_id,
+                COUNT(CASE WHEN mpc.minutes > 0 THEN 1 ELSE NULL END),
+                SUM(mpc.minutes), SUM(mpc.rating),
+                SUM(CASE WHEN mpc.starter = 1 THEN 1 ELSE 0 END),
+                IFNULL(SUM(mpc.yellow_cards), 0), IFNULL(SUM(mpc.red_cards), 0),
+                IFNULL(SUM(CASE WHEN mpc.mvp = 1 THEN 1 ELSE 0 END), 0),
+                IFNULL(SUM(mpc.goals), 0), IFNULL(SUM(mpc.assists), 0)
+            FROM ${t.players} p
+            INNER JOIN ${t.matchPlayersCountries} mpc ON mpc.player_id = p.player_id
+            INNER JOIN ${t.countryMatches} cm ON cm.match_id = mpc.match_id
+            INNER JOIN ${t.seasons} s ON s.season_id = cm.season_id
+            WHERE s.season_id = NEW.season_id
+            GROUP BY p.player_id, p.country_id;
+            DELETE FROM ${t.matchPlayersCountries} WHERE match_id IN (
+                SELECT cm.match_id
+                FROM ${t.countryMatches} cm
+                INNER JOIN ${t.seasons} s ON s.season_id = cm.season_id
+                WHERE s.season_id = NEW.season_id);
+        END;
+      ''');
+
+      await db.execute('DROP TRIGGER IF EXISTS t_clear_season');
+      await db.execute('''
+        CREATE TRIGGER t_clear_season
+        BEFORE UPDATE OF status ON ${t.seasonTournaments}
+        WHEN NEW.status = 0
+        BEGIN
+            INSERT OR REPLACE INTO ${t.playerSeasonStats} (
+                player_id, team_id, season_id, matches_played, minutes, rating,
+                starts, yellow_cards, red_cards, mvps, goals, assists
+            )
+            SELECT
+                p.player_id, t.team_id, s.season_id,
+                COUNT(CASE WHEN mp.minutes > 0 THEN 1 ELSE NULL END),
+                SUM(mp.minutes), SUM(mp.rating),
+                SUM(CASE WHEN mp.starter = 1 THEN 1 ELSE 0 END),
+                IFNULL(SUM(mp.yellow_cards), 0), IFNULL(SUM(mp.red_cards), 0),
+                IFNULL(SUM(CASE WHEN mp.mvp = 1 THEN 1 ELSE 0 END), 0),
+                IFNULL(SUM(mp.goals), 0), IFNULL(SUM(mp.assists), 0)
+            FROM ${t.players} p
+            JOIN ${t.matchPlayers} mp ON mp.player_id = p.player_id
+            JOIN ${t.matches} m ON m.match_id = mp.match_id
+            JOIN ${t.seasons} s ON s.season_id = m.season_id
+            JOIN ${t.teams} t ON t.team_id = mp.team_id
+            WHERE s.season_id = NEW.season_id
+            GROUP BY p.player_id, t.team_id;
+            DELETE FROM ${t.matchPlayers} WHERE match_id IN (
+                SELECT m.match_id
+                FROM ${t.matches} m
+                JOIN ${t.seasons} s ON s.season_id = m.season_id
+                WHERE s.season_id = NEW.season_id);
+            DELETE FROM ${t.matchIncidents} WHERE match_id IN (
+                SELECT m.match_id
+                FROM ${t.matches} m
+                JOIN ${t.seasons} s ON s.season_id = m.season_id
+                WHERE s.season_id = NEW.season_id);
+        END;
+      ''');
     } catch (_) {}
   }
 
   /// Test/dev helper: open an arbitrary file directly.
   static Future<Database> openFile(String path) async {
-    if (!Platform.isAndroid && !Platform.isIOS) {
+    if (!kIsWeb && !Platform.isAndroid && !Platform.isIOS) {
       sqfliteFfiInit();
       databaseFactory = databaseFactoryFfi;
     }

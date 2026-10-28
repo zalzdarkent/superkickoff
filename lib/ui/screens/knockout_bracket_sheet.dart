@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import '../../data/models/models.dart';
@@ -11,6 +13,7 @@ Future<void> showKnockoutBracket(
   required Tournament tournament,
   required List<FixtureMatch> matches,
   required Map<int, Team> teams,
+  int? totalRounds,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -22,6 +25,7 @@ Future<void> showKnockoutBracket(
         tournament: tournament,
         matches: matches,
         teams: teams,
+        totalRounds: totalRounds,
       ),
     ),
   );
@@ -32,26 +36,35 @@ class _KnockoutBracketSheet extends StatelessWidget {
     required this.tournament,
     required this.matches,
     required this.teams,
+    this.totalRounds,
   });
 
   final Tournament tournament;
   final List<FixtureMatch> matches;
   final Map<int, Team> teams;
+  final int? totalRounds;
 
   @override
   Widget build(BuildContext context) {
-    final int totalRounds = knockoutTotalRounds(matches);
+    final int computedTotal = knockoutTotalRounds(matches);
+    final int finalTotalRounds = totalRounds != null
+        ? max(totalRounds!, computedTotal)
+        : computedTotal;
     final Map<int, List<FixtureMatch>> rounds = <int, List<FixtureMatch>>{};
     for (final FixtureMatch match in matches) {
       rounds.putIfAbsent(match.phase, () => <FixtureMatch>[]).add(match);
     }
-    final List<FixtureMatch>? finalRound = rounds[totalRounds];
-    final FixtureMatch? finalMatch = finalRound == null || finalRound.isEmpty
-        ? null
-        : finalRound.first;
-    final Team? champion = finalMatch?.winnerId == null
-        ? null
-        : teams[finalMatch!.winnerId!];
+    final int maxPhase = rounds.keys.isEmpty ? 1 : rounds.keys.reduce(max);
+    final List<FixtureMatch> finalMatches =
+        rounds[maxPhase] ?? const <FixtureMatch>[];
+    final List<KnockoutTie> finalTies = groupTies(finalMatches);
+    final KnockoutTie? finalTie =
+        (finalTies.length == 1 && maxPhase >= finalTotalRounds)
+            ? finalTies.first
+            : null;
+    final int? championId =
+        (finalTie != null && finalTie.complete) ? finalTie.winnerId : null;
+    final Team? champion = championId == null ? null : teams[championId];
 
     return Container(
       decoration: const BoxDecoration(
@@ -98,9 +111,9 @@ class _KnockoutBracketSheet extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  for (int phase = 1; phase <= totalRounds; phase++)
+                  for (int phase = 1; phase <= finalTotalRounds; phase++)
                     _RoundColumn(
-                      title: knockoutRoundName(phase, totalRounds),
+                      title: knockoutRoundName(phase, finalTotalRounds),
                       ties: groupTies(rounds[phase] ?? const <FixtureMatch>[]),
                       teams: teams,
                     ),
@@ -356,21 +369,30 @@ class _ChampionColumn extends StatelessWidget {
 
 int knockoutTotalRounds(List<FixtureMatch> matches) {
   if (matches.isEmpty) return 1;
-  final int firstPhase = matches
-      .map((FixtureMatch match) => match.phase)
-      .reduce((int a, int b) => a < b ? a : b);
-  // Count ties, not matches: a two-legged round has two matches per tie.
-  final int firstRoundMatches = matches
-      .where(
-        (FixtureMatch match) => match.phase == firstPhase && match.leg == 1,
-      )
-      .length;
-  return (firstRoundMatches * 2).bitLength - 1;
+  final int maxPhase = matches.map((FixtureMatch m) => m.phase).reduce(max);
+  final Map<int, int> tiesPerPhase = <int, int>{};
+  for (final FixtureMatch match in matches) {
+    if (match.leg == 1) {
+      tiesPerPhase[match.phase] = (tiesPerPhase[match.phase] ?? 0) + 1;
+    }
+  }
+  int maxRoundsEstimated = maxPhase;
+  for (final MapEntry<int, int> entry in tiesPerPhase.entries) {
+    final int phase = entry.key;
+    final int ties = entry.value;
+    final int roundsFromHere = (ties * 2).bitLength - 1;
+    final int estimatedTotal = phase + roundsFromHere - 1;
+    if (estimatedTotal > maxRoundsEstimated) {
+      maxRoundsEstimated = estimatedTotal;
+    }
+  }
+  return maxRoundsEstimated.clamp(1, 10);
 }
 
 String knockoutRoundName(int phase, int totalRounds) {
   final int teamsLeft = 1 << (totalRounds - phase + 1);
-  if (teamsLeft <= 2) return 'Final';
-  if (teamsLeft == 4) return 'Semi-finals';
+  if (teamsLeft <= 2 || phase >= totalRounds) return 'Final';
+  if (teamsLeft == 4 || phase == totalRounds - 1) return 'Semi-finals';
+  if (teamsLeft == 8 || phase == totalRounds - 2) return 'Quarter-finals';
   return 'Round of $teamsLeft';
 }

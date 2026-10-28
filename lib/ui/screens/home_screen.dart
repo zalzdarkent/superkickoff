@@ -235,6 +235,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     if (tournament == null || !context.mounted) return;
     final List<FixtureMatch> fixtures = await game.seasonFixtures();
+    final Map<int, int> cupRounds = await game.cupTotalRounds();
     if (!context.mounted) return;
     showKnockoutBracket(
       context,
@@ -247,6 +248,7 @@ class _HomeScreenState extends State<HomeScreen> {
           )
           .toList(),
       teams: game.teamCache,
+      totalRounds: cupRounds[tournament.tournamentId],
     );
   }
 

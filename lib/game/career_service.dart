@@ -1858,10 +1858,10 @@ class CareerService {
       '''
       SELECT team_id, MAX(round_reached) AS round_reached FROM (
         SELECT home_team_id AS team_id, phase AS round_reached FROM matches
-        WHERE season_id = ? AND tournament_id = ?
+        WHERE season_id = ? AND tournament_id = ? AND group_id IS NULL
         UNION ALL
         SELECT away_team_id, phase FROM matches
-        WHERE season_id = ? AND tournament_id = ?
+        WHERE season_id = ? AND tournament_id = ? AND group_id IS NULL
       )
       GROUP BY team_id
     ''',
@@ -1885,6 +1885,12 @@ class CareerService {
       SELECT home_team_id, away_team_id FROM matches
       WHERE season_id = ? AND tournament_id = ? AND phase = ?
         AND status = ? AND winner_id IS NOT NULL
+        AND (group_id IS NULL OR NOT EXISTS (
+          SELECT 1 FROM matches m_ko
+          WHERE m_ko.season_id = matches.season_id
+            AND m_ko.tournament_id = matches.tournament_id
+            AND m_ko.group_id IS NULL
+        ))
       LIMIT 1
     ''',
       <Object?>[seasonId, tournamentId, maxRound, t.matchFinished],
@@ -2430,64 +2436,68 @@ class CareerService {
     required int userTeamId,
     required void Function(String) onProgress,
   }) async {
-    final OffseasonState? s = await offseasonState();
-    if (s == null) return 'No off-season in progress.';
-    final Season? current = await _seasons.currentSeason();
-    if (current == null) return 'No season loaded.';
-    final OffseasonStep step = s.current;
-    switch (step) {
-      case OffseasonStep.summary:
-        onProgress('Contracts and retirements...');
-        await _saveOffseason(
-          s,
-          step: OffseasonStep.contracts.index,
-          report: await _enterContracts(current, userTeamId),
-        );
-      case OffseasonStep.contracts:
-        onProgress('Player development...');
-        final List<String> left = await _releaseUnrenewed(current, userTeamId);
-        final String dev = await _enterDevelopment(current, userTeamId);
-        await _saveOffseason(
-          s,
-          step: OffseasonStep.development.index,
-          report: <String>[...left, dev].join('\n'),
-        );
-      case OffseasonStep.development:
-        await _saveOffseason(
-          s,
-          step: OffseasonStep.transfers.index,
-          windowWeeks: _transferWindowWeeks,
-          report:
-              'The transfer window is open for $_transferWindowWeeks weeks. '
-              'Use the market below, then advance the weeks to the deadline.',
-        );
-      case OffseasonStep.transfers:
-        if (s.windowWeeks > 0) {
-          return 'The transfer window is still open — advance to the deadline.';
-        }
-        await _saveOffseason(
-          s,
-          step: OffseasonStep.preseason.index,
-          report: 'Choose how the squad prepares for the new season.',
-        );
-      case OffseasonStep.preseason:
-        if (s.camp == null) return 'Choose a pre-season camp first.';
-        await _saveOffseason(
-          s,
-          step: OffseasonStep.board.index,
-          report: 'The board will set a target for the coming season.',
-        );
-      case OffseasonStep.board:
-        if (s.ambition == null) return 'Agree an objective with the board.';
-        await _saveOffseason(
-          s,
-          step: OffseasonStep.newSeason.index,
-          report: 'Everything is in place. The fixtures are ready to be drawn.',
-        );
-      case OffseasonStep.newSeason:
-        return 'Start the new season instead.';
+    try {
+      final OffseasonState? s = await offseasonState();
+      if (s == null) return 'No off-season in progress.';
+      final Season? current = await _seasons.currentSeason();
+      if (current == null) return 'No season loaded.';
+      final OffseasonStep step = s.current;
+      switch (step) {
+        case OffseasonStep.summary:
+          onProgress('Contracts and retirements...');
+          await _saveOffseason(
+            s,
+            step: OffseasonStep.contracts.index,
+            report: await _enterContracts(current, userTeamId),
+          );
+        case OffseasonStep.contracts:
+          onProgress('Player development...');
+          final List<String> left = await _releaseUnrenewed(current, userTeamId);
+          final String dev = await _enterDevelopment(current, userTeamId);
+          await _saveOffseason(
+            s,
+            step: OffseasonStep.development.index,
+            report: <String>[...left, dev].join('\n'),
+          );
+        case OffseasonStep.development:
+          await _saveOffseason(
+            s,
+            step: OffseasonStep.transfers.index,
+            windowWeeks: _transferWindowWeeks,
+            report:
+                'The transfer window is open for $_transferWindowWeeks weeks. '
+                'Use the market below, then advance the weeks to the deadline.',
+          );
+        case OffseasonStep.transfers:
+          if (s.windowWeeks > 0) {
+            return 'The transfer window is still open — advance to the deadline.';
+          }
+          await _saveOffseason(
+            s,
+            step: OffseasonStep.preseason.index,
+            report: 'Choose how the squad prepares for the new season.',
+          );
+        case OffseasonStep.preseason:
+          if (s.camp == null) return 'Choose a pre-season camp first.';
+          await _saveOffseason(
+            s,
+            step: OffseasonStep.board.index,
+            report: 'The board will set a target for the coming season.',
+          );
+        case OffseasonStep.board:
+          if (s.ambition == null) return 'Agree an objective with the board.';
+          await _saveOffseason(
+            s,
+            step: OffseasonStep.newSeason.index,
+            report: 'Everything is in place. The fixtures are ready to be drawn.',
+          );
+        case OffseasonStep.newSeason:
+          return 'Start the new season instead.';
+      }
+      return null;
+    } catch (e) {
+      return 'Failed to advance off-season: $e';
     }
-    return null;
   }
 
   static const int _transferWindowWeeks = 4;
@@ -2869,13 +2879,31 @@ class CareerService {
       '''
       SELECT winner_id FROM matches
       WHERE season_id = ? AND tournament_id = ? AND status = ?
+        AND (group_id IS NULL OR NOT EXISTS (
+          SELECT 1 FROM matches m_ko
+          WHERE m_ko.season_id = matches.season_id
+            AND m_ko.tournament_id = matches.tournament_id
+            AND m_ko.group_id IS NULL
+        ))
         AND phase = (SELECT MAX(phase) FROM matches
-                     WHERE season_id = ? AND tournament_id = ?)
+                     WHERE season_id = ? AND tournament_id = ?
+                       AND (group_id IS NULL OR NOT EXISTS (
+                         SELECT 1 FROM matches m_ko2
+                         WHERE m_ko2.season_id = matches.season_id
+                           AND m_ko2.tournament_id = matches.tournament_id
+                           AND m_ko2.group_id IS NULL
+                       )))
         AND (leg = 2 OR leg = (
           SELECT MAX(m2.leg) FROM matches m2
           WHERE m2.season_id = matches.season_id
             AND m2.tournament_id = matches.tournament_id
             AND m2.phase = matches.phase
+            AND (m2.group_id IS NULL OR NOT EXISTS (
+              SELECT 1 FROM matches m_ko3
+              WHERE m_ko3.season_id = matches.season_id
+                AND m_ko3.tournament_id = matches.tournament_id
+                AND m_ko3.group_id IS NULL
+            ))
         ))
         AND winner_id IS NOT NULL
       LIMIT 1

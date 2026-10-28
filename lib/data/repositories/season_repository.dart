@@ -157,20 +157,71 @@ class SeasonRepository {
 
   /// Total knockout rounds for each cup in the season.
   Future<Map<int, int>> cupTotalRounds(int seasonId) async {
-    final List<Map<String, Object?>> rows = await db.rawQuery(
+    final List<Map<String, Object?>> matchRows = await db.rawQuery(
       '''
-      SELECT tournament_id, COUNT(*) AS cnt
+      SELECT tournament_id, phase, COUNT(*) AS cnt
       FROM matches
-      WHERE season_id = ? AND phase = 1 AND leg = 1 AND group_id IS NULL
-      GROUP BY tournament_id
+      WHERE season_id = ? AND leg = 1 AND group_id IS NULL
+      GROUP BY tournament_id, phase
     ''',
       <Object?>[seasonId],
     );
-    return <int, int>{
-      for (final Map<String, Object?> row in rows)
-        (row['tournament_id'] as int):
-            (((row['cnt'] as int) * 2).bitLength - 1).clamp(1, 10),
+    List<Map<String, Object?>> byeRows = const <Map<String, Object?>>[];
+    try {
+      byeRows = await db.rawQuery(
+        '''
+        SELECT tournament_id, phase, COUNT(*) AS cnt
+        FROM knockout_byes
+        WHERE season_id = ?
+        GROUP BY tournament_id, phase
+      ''',
+        <Object?>[seasonId],
+      );
+    } catch (_) {}
+
+    final Map<int, Map<int, int>> matchesPerTourPhase = <int, Map<int, int>>{};
+    for (final Map<String, Object?> row in matchRows) {
+      final int tourId = row['tournament_id'] as int;
+      final int phase = row['phase'] as int;
+      final int cnt = row['cnt'] as int;
+      (matchesPerTourPhase[tourId] ??= <int, int>{})[phase] = cnt;
+    }
+    final Map<int, Map<int, int>> byesPerTourPhase = <int, Map<int, int>>{};
+    for (final Map<String, Object?> row in byeRows) {
+      final int tourId = row['tournament_id'] as int;
+      final int phase = row['phase'] as int;
+      final int cnt = row['cnt'] as int;
+      (byesPerTourPhase[tourId] ??= <int, int>{})[phase] = cnt;
+    }
+
+    final Set<int> allTourIds = <int>{
+      ...matchesPerTourPhase.keys,
+      ...byesPerTourPhase.keys,
     };
+    final Map<int, int> result = <int, int>{};
+    for (final int tourId in allTourIds) {
+      final Map<int, int> phases =
+          matchesPerTourPhase[tourId] ?? const <int, int>{};
+      final Map<int, int> byes =
+          byesPerTourPhase[tourId] ?? const <int, int>{};
+      int maxEstimated = 1;
+      for (final MapEntry<int, int> entry in phases.entries) {
+        final int phase = entry.key;
+        final int ties = entry.value;
+        final int byeCount = byes[phase] ?? 0;
+        final int entrants = (ties * 2) + byeCount;
+        int nextPow2 = 1;
+        while (nextPow2 < entrants) {
+          nextPow2 <<= 1;
+        }
+        final int roundsFromHere = nextPow2.bitLength - 1;
+        final int totalEstimated = phase + roundsFromHere - 1;
+        if (phase > maxEstimated) maxEstimated = phase;
+        if (totalEstimated > maxEstimated) maxEstimated = totalEstimated;
+      }
+      result[tourId] = maxEstimated.clamp(1, 10);
+    }
+    return result;
   }
 
   /// League standings computed from played matches of [tournamentId].
@@ -1115,8 +1166,20 @@ class SeasonRepository {
           '''
           SELECT winner_id FROM matches
           WHERE season_id = ? AND tournament_id = ? AND status = ?
+            AND (group_id IS NULL OR NOT EXISTS (
+              SELECT 1 FROM matches m_ko
+              WHERE m_ko.season_id = matches.season_id
+                AND m_ko.tournament_id = matches.tournament_id
+                AND m_ko.group_id IS NULL
+            ))
             AND phase = (SELECT MAX(phase) FROM matches
-                         WHERE season_id = ? AND tournament_id = ?)
+                         WHERE season_id = ? AND tournament_id = ?
+                           AND (group_id IS NULL OR NOT EXISTS (
+                             SELECT 1 FROM matches m_ko2
+                             WHERE m_ko2.season_id = matches.season_id
+                               AND m_ko2.tournament_id = matches.tournament_id
+                               AND m_ko2.group_id IS NULL
+                           )))
             AND winner_id IS NOT NULL
           LIMIT 1
         ''',
