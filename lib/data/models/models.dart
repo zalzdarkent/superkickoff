@@ -466,6 +466,11 @@ class Position {
 }
 
 class Stadium {
+  static const int defaultGeneralTicketPrice = 14;
+  static const int defaultStandTicketPrice = 38;
+  static const int defaultTerraceTicketPrice = 21;
+  static const int defaultBoxesTicketPrice = 120;
+
   Stadium({
     required this.stadiumId,
     required this.name,
@@ -790,6 +795,10 @@ class ClubOverview {
     required this.stand,
     required this.terrace,
     required this.boxes,
+    required this.ticketPriceGeneral,
+    required this.ticketPriceStand,
+    required this.ticketPriceTerrace,
+    required this.ticketPriceBoxes,
     required this.maxGeneral,
     required this.maxStand,
     required this.maxTerrace,
@@ -814,6 +823,10 @@ class ClubOverview {
   final int stand;
   final int terrace;
   final int boxes;
+  final int ticketPriceGeneral;
+  final int ticketPriceStand;
+  final int ticketPriceTerrace;
+  final int ticketPriceBoxes;
   final int maxGeneral;
   final int maxStand;
   final int maxTerrace;
@@ -1678,7 +1691,8 @@ class ClubFacilities {
   int get trainingFitnessGain => (4 + (trainingLevel - 1)).clamp(4, 8);
 
   /// Percentage injury risk reduction in matches (0.0 to 0.35).
-  double get injuryReductionRate => ((medicalLevel - 1) * 0.07).clamp(0.0, 0.35);
+  double get injuryReductionRate =>
+      ((medicalLevel - 1) * 0.07).clamp(0.0, 0.35);
 
   /// Additional weekly fitness recovery points.
   int get weeklyFitnessBonus => (medicalLevel - 1).clamp(0, 4);

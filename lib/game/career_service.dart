@@ -202,6 +202,10 @@ class CareerService {
         'capacity_stand',
         'capacity_terrace',
         'capacity_boxes',
+        'ticket_price_general',
+        'ticket_price_stand',
+        'ticket_price_terrace',
+        'ticket_price_boxes',
       ],
       where: 'stadium_id = ?',
       whereArgs: <Object?>[match.stadiumId],
@@ -253,7 +257,20 @@ class CareerService {
       capacityStand: (cap['capacity_stand'] as int?) ?? 0,
       capacityTerrace: (cap['capacity_terrace'] as int?) ?? 0,
       capacityBoxes: (cap['capacity_boxes'] as int?) ?? 0,
+      ticketPriceGeneral:
+          (cap['ticket_price_general'] as int?) ??
+          Stadium.defaultGeneralTicketPrice,
+      ticketPriceStand:
+          (cap['ticket_price_stand'] as int?) ??
+          Stadium.defaultStandTicketPrice,
+      ticketPriceTerrace:
+          (cap['ticket_price_terrace'] as int?) ??
+          Stadium.defaultTerraceTicketPrice,
+      ticketPriceBoxes:
+          (cap['ticket_price_boxes'] as int?) ??
+          Stadium.defaultBoxesTicketPrice,
       homePower: home.power,
+      awayPower: away.power,
       homeFormation: homeFormation,
       awayFormation: awayFormation,
       homeTeamId: home.teamId,
@@ -428,6 +445,7 @@ class CareerService {
         capacityTerrace: 0,
         capacityBoxes: 0,
         homePower: homePower,
+        awayPower: awayPower,
         homeFormation: Formation.f442,
         awayFormation: Formation.f442,
         homeTeamId: match.homeTeamId,
@@ -1145,6 +1163,7 @@ class CareerService {
 
     int totalImproved = 0;
     final Set<int> improvedTeamIds = <int>{};
+    final Batch batch = db.batch();
 
     for (final Map<String, Object?> club in aiClubRows) {
       final int teamId = club['team_id'] as int;
@@ -1187,7 +1206,7 @@ class CareerService {
           age: age,
         );
 
-        await db.update(
+        batch.update(
           t.players,
           <String, Object?>{'power': newPower, 'value': newValue},
           where: 'player_id = ?',
@@ -1200,12 +1219,16 @@ class CareerService {
       if (teamImproved) {
         improvedTeamIds.add(teamId);
         if (budget >= TrainingRules.cost) {
-          await db.execute(
+          batch.rawUpdate(
             'UPDATE teams SET budget = budget - ? WHERE team_id = ?',
             <Object?>[TrainingRules.cost, teamId],
           );
         }
       }
+    }
+
+    if (totalImproved > 0) {
+      await batch.commit(noResult: true);
     }
 
     // Refresh overall team power in database for teams with upgraded players
@@ -2752,6 +2775,8 @@ class CareerService {
       }
     }
 
+    onProgress('Drawing league & continental fixtures...');
+    await Future<void>.delayed(Duration.zero);
     final CareerPlan plan = await _gen.generateCareer(
       countryId: userTeam.countryId,
       league: nextLeague,
@@ -2763,6 +2788,8 @@ class CareerService {
       startYear: current.startYear + 1,
       userTeamId: userTeamId,
     );
+    onProgress('Scheduling pre-season & transfer windows...');
+    await Future<void>.delayed(Duration.zero);
     final List<Team> seasonClubs = await _registeredClubs();
     final Map<int, Team> clubsMap = <int, Team>{
       for (final Team c in seasonClubs) c.teamId: c,
@@ -3046,6 +3073,9 @@ class CareerService {
       <Object?>[seasonId, t.matchFinished, t.statusActive],
     );
 
+    final Batch batch = db.batch();
+    int batchCount = 0;
+
     for (final Map<String, Object?> r in rows) {
       final int playerId = r['player_id'] as int;
       final int power = (r['power'] as int?) ?? 50;
@@ -3071,25 +3101,28 @@ class CareerService {
         }
       }
 
-      final int newPower = (power + powerGain).clamp(40, 99);
-      final int newPotential = max(potential, newPower);
-      final int newMv = SquadRepository.valueAfterOverallChange(
-        currentValue: currentValue,
-        previousPower: power,
-        newPower: newPower,
-        age: age,
-      );
+      if (powerGain > 0) {
+        final int newPower = (power + powerGain).clamp(40, 99);
+        final int newPotential = max(potential, newPower);
+        final int newMv = SquadRepository.valueAfterOverallChange(
+          currentValue: currentValue,
+          previousPower: power,
+          newPower: newPower,
+          age: age,
+        );
 
-      await db.update(
-        t.players,
-        <String, Object?>{
-          'power': newPower,
-          'potential': newPotential,
-          'value': newMv,
-        },
-        where: 'player_id = ?',
-        whereArgs: <Object?>[playerId],
-      );
+        batch.update(
+          t.players,
+          <String, Object?>{
+            'power': newPower,
+            'potential': newPotential,
+            'value': newMv,
+          },
+          where: 'player_id = ?',
+          whereArgs: <Object?>[playerId],
+        );
+        batchCount++;
+      }
 
       // If user's player had an outstanding season, request wage raise
       if (teamId == userTeamId && apps >= 10 && avgRating >= 7.0) {
@@ -3145,18 +3178,17 @@ class CareerService {
         newPower: newPwr,
         age: age,
       );
-      await db.update(
+      batch.update(
         t.players,
         <String, Object?>{'power': newPwr, 'value': newMv},
         where: 'player_id = ?',
         whereArgs: <Object?>[pid],
       );
+      batchCount++;
     }
 
-    // Refresh overall power for all registered clubs in the season after player progression
-    final List<Team> seasonClubs = await _registeredClubs();
-    for (final Team club in seasonClubs) {
-      await _squads.refreshTeamPower(club.teamId);
+    if (batchCount > 0) {
+      await batch.commit(noResult: true);
     }
   }
 

@@ -99,6 +99,7 @@ class InternationalSimulationService {
     if (awaySquad.isEmpty) awaySquad = await _fallbackCountrySquad(currentMatch.awayCountryId);
 
     final Country? homeCountry = await _nationalService.getNationalTeam(currentMatch.homeCountryId);
+    final Country? awayCountry = await _nationalService.getNationalTeam(currentMatch.awayCountryId);
 
     // 2. Prepare MatchInput
     final MatchInput input = MatchInput(
@@ -107,6 +108,7 @@ class InternationalSimulationService {
       homeTeamId: currentMatch.homeCountryId,
       awayTeamId: currentMatch.awayCountryId,
       homePower: homeCountry?.power ?? 70,
+      awayPower: awayCountry?.power ?? 70,
       homeFormation: Formation.f442,
       awayFormation: Formation.f442,
       capacityGeneral: 40000,

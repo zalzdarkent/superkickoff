@@ -29,6 +29,7 @@ class SeasonGenerator {
 
   DateTime _startDate = DateTime(2025, 8, 9);
   int? _userTeamId;
+  final Map<String, List<Team>> _qualifiersCache = <String, List<Team>>{};
 
   Future<CareerPlan> generateCareer({
     required int countryId,
@@ -41,6 +42,7 @@ class SeasonGenerator {
   }) async {
     _startDate = DateTime(startYear, 8, 9); // first Saturday of August-ish
     _userTeamId = userTeamId;
+    _qualifiersCache.clear();
 
     final List<Tournament> allDomesticLeagues = <Tournament>[
       league,
@@ -64,6 +66,8 @@ class SeasonGenerator {
         );
       }
     }
+    await Future<void>.delayed(Duration.zero);
+
     for (final Tournament tour in allDomesticLeagues) {
       await db.insert(t.seasonTournaments, <String, Object?>{
         'season_id': season.seasonId,
@@ -91,6 +95,7 @@ class SeasonGenerator {
 
     // ------------------------------------------------ participants
     final Map<int, Team> allTeams = <int, Team>{};
+    final Map<int, List<Team>> domesticTeamsByTournament = <int, List<Team>>{};
     for (final Tournament lg in allDomesticLeagues) {
       List<Team> divTeams = await _teamsOf(countryId, lg.divisionId);
       final int maxDivTeams = lg.slots > 0 ? lg.slots : 24;
@@ -99,6 +104,7 @@ class SeasonGenerator {
           ..sort((Team a, Team b) => b.power.compareTo(a.power));
         divTeams = divTeams.take(maxDivTeams).toList();
       }
+      domesticTeamsByTournament[lg.tournamentId] = divTeams;
       for (final Team tm in divTeams) {
         allTeams[tm.teamId] = tm;
       }
@@ -147,6 +153,7 @@ class SeasonGenerator {
         allTeams[id] = byId[id]!;
       }
     }
+    await Future<void>.delayed(Duration.zero);
 
     // ------------------------------------------------ registration
     // Coach per team comes from the team itself.
@@ -166,13 +173,8 @@ class SeasonGenerator {
     final List<Map<String, Object?>> matchRows = <Map<String, Object?>>[];
     int userLeagueRounds = 0;
     for (final Tournament lg in allDomesticLeagues) {
-      List<Team> divTeams = await _teamsOf(countryId, lg.divisionId);
-      final int maxDivTeams = lg.slots > 0 ? lg.slots : 24;
-      if (divTeams.length > maxDivTeams) {
-        divTeams = List<Team>.of(divTeams)
-          ..sort((Team a, Team b) => b.power.compareTo(a.power));
-        divTeams = divTeams.take(maxDivTeams).toList();
-      }
+      final List<Team> divTeams =
+          domesticTeamsByTournament[lg.tournamentId] ?? const <Team>[];
       final int teamCount = divTeams.length;
       final CompetitionConfig config = await _configForTournament(
         lg.tournamentId,
@@ -203,6 +205,7 @@ class SeasonGenerator {
             ),
           );
         }
+        await Future<void>.delayed(Duration.zero);
       }
     }
 
@@ -381,8 +384,10 @@ class SeasonGenerator {
       );
       added++;
     }
-    await resolveFixtureClashes(season.seasonId);
-    await repairSelfMatches(season.seasonId);
+    if (added > 0) {
+      await resolveFixtureClashes(season.seasonId);
+      await repairSelfMatches(season.seasonId);
+    }
     return added;
   }
 
@@ -1194,6 +1199,10 @@ class SeasonGenerator {
     int countryId, {
     int? beforeSeasonId,
   }) async {
+    final String cacheKey = '$countryId:${beforeSeasonId ?? -1}';
+    final List<Team>? cached = _qualifiersCache[cacheKey];
+    if (cached != null) return cached;
+
     final List<Map<String, Object?>> clubRows = await db.query(
       t.teams,
       where: 'country_id = ? AND division = 1',
@@ -1201,7 +1210,11 @@ class SeasonGenerator {
       orderBy: 'power DESC',
     );
     final List<Team> clubs = clubRows.map(Team.fromMap).toList();
-    if (beforeSeasonId == null) return _fallbackQualifiers(clubs);
+    if (beforeSeasonId == null) {
+      final List<Team> fallback = _fallbackQualifiers(clubs);
+      _qualifiersCache[cacheKey] = fallback;
+      return fallback;
+    }
     final List<Map<String, Object?>> seasonRows = await db.rawQuery(
       '''
       SELECT st.season_id, tu.tournament_id
@@ -1216,7 +1229,9 @@ class SeasonGenerator {
       <Object?>[t.orgLeague, countryId, beforeSeasonId],
     );
     if (seasonRows.isEmpty || seasonRows.first['season_id'] == null) {
-      return _fallbackQualifiers(clubs);
+      final List<Team> fallback = _fallbackQualifiers(clubs);
+      _qualifiersCache[cacheKey] = fallback;
+      return fallback;
     }
     final int seasonId = seasonRows.first['season_id'] as int;
     final int tournamentId = seasonRows.first['tournament_id'] as int;
@@ -1249,7 +1264,11 @@ class SeasonGenerator {
         t.matchFinished,
       ],
     );
-    if (results.isEmpty) return _fallbackQualifiers(clubs);
+    if (results.isEmpty) {
+      final List<Team> fallback = _fallbackQualifiers(clubs);
+      _qualifiersCache[cacheKey] = fallback;
+      return fallback;
+    }
     final Map<int, Team> byId = <int, Team>{
       for (final Team club in clubs) club.teamId: club,
     };
@@ -1258,6 +1277,7 @@ class SeasonGenerator {
         if (byId.remove(row['team_id']) case final Team club) club,
     ];
     ordered.addAll(byId.values);
+    _qualifiersCache[cacheKey] = ordered;
     return ordered;
   }
 

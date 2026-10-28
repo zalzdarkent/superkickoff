@@ -228,7 +228,8 @@ class SquadRepository {
     double bestScore = -1.0;
     for (final Formation f in Formation.all) {
       final Lineup lineup = Lineup.best(squad, formation: f);
-      final double score = Lineup.attackOn(lineup.starters) +
+      final double score =
+          Lineup.attackOn(lineup.starters) +
           Lineup.midfieldOn(lineup.starters) +
           Lineup.defenseOn(lineup.starters) +
           ((teamId.hashCode ^ f.name.hashCode).abs() % 100) * 0.05;
@@ -840,7 +841,8 @@ class SquadRepository {
              s.name AS stadium_name, s.city AS stadium_city,
              s.capacity_general, s.capacity_stand, s.capacity_terrace,
              s.capacity_boxes, s.max_general, s.max_stand, s.max_terrace,
-             s.max_boxes,
+             s.max_boxes, s.ticket_price_general, s.ticket_price_stand,
+             s.ticket_price_terrace, s.ticket_price_boxes,
              co.name AS coach_name, co.age AS coach_age, co.points AS coach_points,
              cc.name AS coach_country, cc.iso2 AS coach_country_iso2,
              (SELECT COALESCE(SUM(p.value), 0)
@@ -882,6 +884,16 @@ class SquadRepository {
       stand: (r['capacity_stand'] as int?) ?? 0,
       terrace: (r['capacity_terrace'] as int?) ?? 0,
       boxes: (r['capacity_boxes'] as int?) ?? 0,
+      ticketPriceGeneral:
+          (r['ticket_price_general'] as int?) ??
+          Stadium.defaultGeneralTicketPrice,
+      ticketPriceStand:
+          (r['ticket_price_stand'] as int?) ?? Stadium.defaultStandTicketPrice,
+      ticketPriceTerrace:
+          (r['ticket_price_terrace'] as int?) ??
+          Stadium.defaultTerraceTicketPrice,
+      ticketPriceBoxes:
+          (r['ticket_price_boxes'] as int?) ?? Stadium.defaultBoxesTicketPrice,
       maxGeneral: (r['max_general'] as int?) ?? 0,
       maxStand: (r['max_stand'] as int?) ?? 0,
       maxTerrace: (r['max_terrace'] as int?) ?? 0,
@@ -889,7 +901,8 @@ class SquadRepository {
       coachName: managerName ?? (r['coach_name'] as String?) ?? 'No coach',
       coachAge: managerName == null ? (r['coach_age'] as int?) ?? 0 : 0,
       coachPoints: managerName == null ? (r['coach_points'] as int?) ?? 0 : 0,
-      coachCountry: managerCountry ??
+      coachCountry:
+          managerCountry ??
           displayCountryName(
             (r['coach_country'] as String?) ?? '',
             (r['coach_country_iso2'] as String?) ?? '',
@@ -900,6 +913,30 @@ class SquadRepository {
       transferSpend: (r['transfer_spend'] as int?) ?? 0,
       transferIncome: (r['transfer_income'] as int?) ?? 0,
     );
+  }
+
+  /// Updates one ticket price for the stadium owned by [teamId].
+  Future<String?> setTicketPrice(
+    int teamId, {
+    required String seatType,
+    required int price,
+  }) async {
+    if (price < 0) return 'Ticket price cannot be negative.';
+    final String? column = switch (seatType) {
+      'general' => 'ticket_price_general',
+      'stand' => 'ticket_price_stand',
+      'terrace' => 'ticket_price_terrace',
+      'boxes' => 'ticket_price_boxes',
+      _ => null,
+    };
+    if (column == null) return 'Unknown seat type.';
+    final int updated = await db.rawUpdate(
+      'UPDATE ${t.stadiums} SET $column = ? '
+      'WHERE stadium_id = (SELECT stadium_id FROM ${t.teams} WHERE team_id = ?)',
+      <Object?>[price, teamId],
+    );
+    if (updated == 0) return 'Club or stadium not found.';
+    return null;
   }
 
   /// Adds roughly 10% to every stand, up to the stadium's maximum. Returns an
@@ -1408,8 +1445,9 @@ class SquadRepository {
         ? ((facRows.first['training_level'] as int?) ?? 1)
         : 1;
 
-    final Map<String, Object?> c =
-        countRows.isEmpty ? const <String, Object?>{} : countRows.first;
+    final Map<String, Object?> c = countRows.isEmpty
+        ? const <String, Object?>{}
+        : countRows.first;
 
     return TrainingState(
       doneFocuses: done,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'dart:math' as math;
 
@@ -87,6 +88,82 @@ class _ClubHubSheetState extends State<ClubHubSheet>
     _reload();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Stadium expanded successfully.')),
+    );
+  }
+
+  Future<void> _editTicketPrice({
+    required String seatType,
+    required String label,
+    required int currentPrice,
+  }) async {
+    final TextEditingController controller = TextEditingController(
+      text: '$currentPrice',
+    );
+    final GlobalKey<FormState> formKey = GlobalKey<FormState>();
+    final int? price = await showDialog<int>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text('Set $label ticket price'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: false),
+            inputFormatters: <TextInputFormatter>[
+              FilteringTextInputFormatter.digitsOnly,
+            ],
+            decoration: const InputDecoration(
+              labelText: 'Price per ticket',
+              prefixText: '\$ ',
+            ),
+            validator: (String? value) {
+              if (int.tryParse(value?.trim() ?? '') == null) {
+                return 'Enter a valid whole-number price.';
+              }
+              return null;
+            },
+            onFieldSubmitted: (_) {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(dialogContext, int.parse(controller.text.trim()));
+              }
+            },
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(dialogContext, int.parse(controller.text.trim()));
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (price == null || !mounted) return;
+    setState(() => _busy = true);
+    final String? error = await context.read<CareerProvider>().setTicketPrice(
+      seatType: seatType,
+      price: price,
+    );
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: AppTheme.danger),
+      );
+      return;
+    }
+    _reload();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Ticket price updated successfully.')),
     );
   }
 
@@ -225,8 +302,7 @@ class _ClubHubSheetState extends State<ClubHubSheet>
                                 children: <Widget>[
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                      crossAxisAlignment: CrossAxisAlignment.start,
                                       children: <Widget>[
                                         Text(
                                           c.name,
@@ -2121,7 +2197,8 @@ class _ClubHubSheetState extends State<ClubHubSheet>
                                   child: Padding(
                                     padding: const EdgeInsets.all(12),
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: <Widget>[
                                         Row(
                                           children: <Widget>[
@@ -2151,14 +2228,18 @@ class _ClubHubSheetState extends State<ClubHubSheet>
                                             ),
                                             const Spacer(),
                                             Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                horizontal: 8,
-                                                vertical: 3,
-                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 3,
+                                                  ),
                                               decoration: BoxDecoration(
                                                 color: AppTheme.surface,
-                                                borderRadius: BorderRadius.circular(6),
-                                                border: Border.all(color: Colors.white12),
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                                border: Border.all(
+                                                  color: Colors.white12,
+                                                ),
                                               ),
                                               child: Text(
                                                 offer.typeLabel,
@@ -2221,11 +2302,19 @@ class _ClubHubSheetState extends State<ClubHubSheet>
                                 decoration: BoxDecoration(
                                   color: AppTheme.surfaceCard,
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3)),
+                                  border: Border.all(
+                                    color: AppTheme.accent.withValues(
+                                      alpha: 0.3,
+                                    ),
+                                  ),
                                 ),
                                 child: const Row(
                                   children: <Widget>[
-                                    Icon(Icons.check_circle, color: AppTheme.accent, size: 24),
+                                    Icon(
+                                      Icons.check_circle,
+                                      color: AppTheme.accent,
+                                      size: 24,
+                                    ),
                                     SizedBox(width: 12),
                                     Expanded(
                                       child: Text(
@@ -2329,6 +2418,48 @@ class _ClubHubSheetState extends State<ClubHubSheet>
           _tier('Terrace', club.terrace, club.maxTerrace),
           _tier('Boxes', club.boxes, club.maxBoxes),
           const SizedBox(height: 18),
+          const Text(
+            'Ticket prices',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          _ticketPriceRow(
+            'General',
+            club.ticketPriceGeneral,
+            () => _editTicketPrice(
+              seatType: 'general',
+              label: 'General',
+              currentPrice: club.ticketPriceGeneral,
+            ),
+          ),
+          _ticketPriceRow(
+            'Stand',
+            club.ticketPriceStand,
+            () => _editTicketPrice(
+              seatType: 'stand',
+              label: 'Stand',
+              currentPrice: club.ticketPriceStand,
+            ),
+          ),
+          _ticketPriceRow(
+            'Terrace',
+            club.ticketPriceTerrace,
+            () => _editTicketPrice(
+              seatType: 'terrace',
+              label: 'Terrace',
+              currentPrice: club.ticketPriceTerrace,
+            ),
+          ),
+          _ticketPriceRow(
+            'Boxes',
+            club.ticketPriceBoxes,
+            () => _editTicketPrice(
+              seatType: 'boxes',
+              label: 'Boxes',
+              currentPrice: club.ticketPriceBoxes,
+            ),
+          ),
+          const SizedBox(height: 18),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(14),
@@ -2416,6 +2547,26 @@ class _ClubHubSheetState extends State<ClubHubSheet>
               textAlign: TextAlign.right,
               style: const TextStyle(fontSize: 11),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _ticketPriceRow(String label, int price, VoidCallback onEdit) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: <Widget>[
+          Expanded(child: Text(label, style: const TextStyle(fontSize: 12))),
+          Text(
+            money(price),
+            style: const TextStyle(fontSize: 12, color: AppTheme.textDim),
+          ),
+          IconButton(
+            tooltip: 'Edit $label ticket price',
+            onPressed: _busy ? null : onEdit,
+            icon: const Icon(Icons.edit, size: 17),
           ),
         ],
       ),

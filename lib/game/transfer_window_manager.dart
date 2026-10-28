@@ -209,46 +209,50 @@ class TransferWindowManager {
     };
     if (countryIds.isEmpty) countryIds.add(94); // Default to Indonesia if empty
 
-    for (final int countryId in countryIds) {
-      final CountryTransferWindowRule rule =
-          countryRules[countryId] ?? defaultRule(countryId);
+    await db.transaction((Transaction txn) async {
+      final Batch batch = txn.batch();
+      for (final int countryId in countryIds) {
+        final CountryTransferWindowRule rule =
+            countryRules[countryId] ?? defaultRule(countryId);
 
-      // Summer Window
-      final String summerStart = rule.summerStartDate(startYear);
-      final String summerEnd = rule.summerEndDate(startYear);
-      await db.insert(
-        t.transferWindows,
-        <String, Object?>{
-          'season_id': seasonId,
-          'country_id': countryId,
-          'tournament_id': 0,
-          'window_type': 'summer',
-          'start_date': summerStart,
-          'end_date': summerEnd,
-          'is_open': 0,
-          'allow_free_agents_outside': rule.allowFreeAgentsOutside ? 1 : 0,
-        },
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
+        // Summer Window
+        final String summerStart = rule.summerStartDate(startYear);
+        final String summerEnd = rule.summerEndDate(startYear);
+        batch.insert(
+          t.transferWindows,
+          <String, Object?>{
+            'season_id': seasonId,
+            'country_id': countryId,
+            'tournament_id': 0,
+            'window_type': 'summer',
+            'start_date': summerStart,
+            'end_date': summerEnd,
+            'is_open': 0,
+            'allow_free_agents_outside': rule.allowFreeAgentsOutside ? 1 : 0,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
 
-      // Winter Window
-      final String winterStart = rule.winterStartDate(startYear);
-      final String winterEnd = rule.winterEndDate(startYear);
-      await db.insert(
-        t.transferWindows,
-        <String, Object?>{
-          'season_id': seasonId,
-          'country_id': countryId,
-          'tournament_id': 0,
-          'window_type': 'winter',
-          'start_date': winterStart,
-          'end_date': winterEnd,
-          'is_open': 0,
-          'allow_free_agents_outside': rule.allowFreeAgentsOutside ? 1 : 0,
-        },
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
-    }
+        // Winter Window
+        final String winterStart = rule.winterStartDate(startYear);
+        final String winterEnd = rule.winterEndDate(startYear);
+        batch.insert(
+          t.transferWindows,
+          <String, Object?>{
+            'season_id': seasonId,
+            'country_id': countryId,
+            'tournament_id': 0,
+            'window_type': 'winter',
+            'start_date': winterStart,
+            'end_date': winterEnd,
+            'is_open': 0,
+            'allow_free_agents_outside': rule.allowFreeAgentsOutside ? 1 : 0,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   /// Get all transfer windows for [seasonId].

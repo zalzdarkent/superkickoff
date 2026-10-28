@@ -9,6 +9,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../repositories/club_logo_service.dart';
 import '../repositories/league_logo_service.dart';
 import '../repositories/squad_repository.dart';
+import '../models/models.dart';
 import 'schema.dart' as t;
 
 /// Single access point for the SQLite game database.
@@ -67,6 +68,26 @@ class AppDatabase {
       await db.execute(
         'ALTER TABLE ${t.players} ADD COLUMN injury_return_date TEXT',
       );
+    }
+    final List<Map<String, Object?>> stadiumColumns = await db.rawQuery(
+      'PRAGMA table_info(${t.stadiums})',
+    );
+    final Set<String> existingStadiumColumns = stadiumColumns
+        .map((Map<String, Object?> column) => column['name'] as String)
+        .toSet();
+    const Map<String, int> defaultTicketPrices = <String, int>{
+      'ticket_price_general': Stadium.defaultGeneralTicketPrice,
+      'ticket_price_stand': Stadium.defaultStandTicketPrice,
+      'ticket_price_terrace': Stadium.defaultTerraceTicketPrice,
+      'ticket_price_boxes': Stadium.defaultBoxesTicketPrice,
+    };
+    for (final MapEntry<String, int> entry in defaultTicketPrices.entries) {
+      if (!existingStadiumColumns.contains(entry.key)) {
+        await db.execute(
+          'ALTER TABLE ${t.stadiums} ADD COLUMN ${entry.key} '
+          'INTEGER NOT NULL DEFAULT ${entry.value}',
+        );
+      }
     }
     await db.execute('''
       CREATE TABLE IF NOT EXISTS ${t.managerProfile} (

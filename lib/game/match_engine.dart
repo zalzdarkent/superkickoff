@@ -112,6 +112,12 @@ class Lineup {
       }
     }
 
+    unassigned.sort((Player a, Player b) {
+      final int ga = groupOf(a) == 1 ? 1 : 0;
+      final int gb = groupOf(b) == 1 ? 1 : 0;
+      if (ga != gb) return ga.compareTo(gb);
+      return effective(b).compareTo(effective(a));
+    });
     final List<Player> bench = unassigned.take(7).toList();
     final List<Player> starters = <Player>[
       ...chosen[1]!,
@@ -207,6 +213,12 @@ class Lineup {
       starters.add(remaining.removeAt(0));
     }
 
+    remaining.sort((Player a, Player b) {
+      final int ga = groupOf(a) == 1 ? 1 : 0;
+      final int gb = groupOf(b) == 1 ? 1 : 0;
+      if (ga != gb) return ga.compareTo(gb);
+      return effective(b).compareTo(effective(a));
+    });
     return Lineup._(starters, remaining.take(7).toList(), unavailable);
   }
 
@@ -230,6 +242,15 @@ class Lineup {
       2.4 * _lineMean(starters, 3) +
       2.0 * _lineMean(starters, 1);
 
+  static double _overallMean(List<Player> starters) {
+    if (starters.isEmpty) return 50;
+    double sum = 0;
+    for (final Player p in starters) {
+      sum += p.power;
+    }
+    return sum / starters.length;
+  }
+
   static double _lineMean(List<Player> starters, int group) {
     double sum = 0;
     int count = 0;
@@ -239,7 +260,9 @@ class Lineup {
         count++;
       }
     }
-    return count == 0 ? 50 : sum / count;
+    if (count > 0) return sum / count;
+    if (starters.isEmpty) return 50;
+    return _overallMean(starters) * 0.93;
   }
 }
 
@@ -339,7 +362,12 @@ class MatchInput {
     required this.capacityStand,
     required this.capacityTerrace,
     required this.capacityBoxes,
+    this.ticketPriceGeneral = Stadium.defaultGeneralTicketPrice,
+    this.ticketPriceStand = Stadium.defaultStandTicketPrice,
+    this.ticketPriceTerrace = Stadium.defaultTerraceTicketPrice,
+    this.ticketPriceBoxes = Stadium.defaultBoxesTicketPrice,
     required this.homePower,
+    this.awayPower = 0,
     this.homeFormation = Formation.f442,
     this.awayFormation = Formation.f442,
     this.homeTeamId = 0,
@@ -361,7 +389,12 @@ class MatchInput {
   final int capacityStand;
   final int capacityTerrace;
   final int capacityBoxes;
+  final int ticketPriceGeneral;
+  final int ticketPriceStand;
+  final int ticketPriceTerrace;
+  final int ticketPriceBoxes;
   final int homePower;
+  final int awayPower;
   final Formation homeFormation;
   final Formation awayFormation;
   final List<int> homeLineupIds;
@@ -441,8 +474,8 @@ class MatchEngine {
   // Chances are modelled as shots. A strong attack creates many more shots
   // against a weak defence, and the quality of those shots also rises, so a
   // dominant side can realistically win 4-0 instead of being capped at 1-0.
-  static const double _baseChancePerMinute = 0.090;
-  static const double _conversionBase = 0.130;
+  static const double _baseChancePerMinute = 0.112;
+  static const double _conversionBase = 0.132;
   static const double _onTargetShare = 0.35;
   static const double _penaltyPool = 0.060; // expected penalties / match
   static const double _penaltyConvert = 0.76;
@@ -451,16 +484,16 @@ class MatchEngine {
   static const double _redPool = 0.12;
   static const double _injuryPool = 0.40;
   static const double _attackerInjuryBias = 0.30;
-  static const List<int> _tierPrices = <int>[14, 38, 21, 120];
 
   /// Ultra-fast Poisson score simulator for background AI-vs-AI matches.
-  (int, int) quickSimulate({
-    required int homePower,
-    required int awayPower,
-  }) {
-    final double ratio = (homePower / max(1, awayPower)).clamp(0.5, 2.0);
-    final double homeExp = 1.35 * ratio;
-    final double awayExp = 1.10 / ratio;
+  (int, int) quickSimulate({required int homePower, required int awayPower}) {
+    final double diff = (homePower + 1.8) - awayPower;
+    final double homeExp = diff >= 0
+        ? (1.35 * exp(diff * 0.038)).clamp(0.12, 4.60)
+        : (1.35 * exp(diff * 0.055)).clamp(0.08, 4.60);
+    final double awayExp = diff <= 0
+        ? (1.18 * exp(-diff * 0.038)).clamp(0.10, 4.40)
+        : (1.18 * exp(-diff * 0.055)).clamp(0.06, 4.40);
 
     int sample(double lambda) {
       final double l = exp(-lambda);
@@ -502,24 +535,75 @@ class MatchEngine {
     Lineup away, {
     required bool recordEvents,
   }) {
-    final double homeBonus = 1.08 + input.homePower / 2000.0;
-    final double homeAttack = Lineup.attackOn(home.starters) * homeBonus;
-    final double awayAttack = Lineup.attackOn(away.starters);
-    final double homeDefense = Lineup.defenseOn(home.starters);
-    final double awayDefense = Lineup.defenseOn(away.starters);
+    final double rawHomeAtt = Lineup.attackOn(home.starters) / 9.4;
+    final double rawAwayAtt = Lineup.attackOn(away.starters) / 9.4;
+    final double rawHomeMid = Lineup.midfieldOn(home.starters) / 8.0;
+    final double rawAwayMid = Lineup.midfieldOn(away.starters) / 8.0;
+    final double rawHomeDef = Lineup.defenseOn(home.starters) / 10.4;
+    final double rawAwayDef = Lineup.defenseOn(away.starters) / 10.4;
+
+    final double homeSquadOvr = (rawHomeAtt + rawHomeMid + rawHomeDef) / 3.0;
+    final double awaySquadOvr = (rawAwayAtt + rawAwayMid + rawAwayDef) / 3.0;
+    final double homeOvr = input.homePower > 0
+        ? homeSquadOvr * 0.65 + input.homePower * 0.35
+        : homeSquadOvr;
+    final double awayOvr = input.awayPower > 0
+        ? awaySquadOvr * 0.65 + input.awayPower * 0.35
+        : awaySquadOvr;
+
+    final double homeAtt = input.homePower > 0
+        ? rawHomeAtt * 0.75 + input.homePower * 0.25
+        : rawHomeAtt;
+    final double awayAtt = input.awayPower > 0
+        ? rawAwayAtt * 0.75 + input.awayPower * 0.25
+        : rawAwayAtt;
+    final double homeMid = input.homePower > 0
+        ? rawHomeMid * 0.75 + input.homePower * 0.25
+        : rawHomeMid;
+    final double awayMid = input.awayPower > 0
+        ? rawAwayMid * 0.75 + input.awayPower * 0.25
+        : rawAwayMid;
+    final double homeDef = input.homePower > 0
+        ? rawHomeDef * 0.75 + input.homePower * 0.25
+        : rawHomeDef;
+    final double awayDef = input.awayPower > 0
+        ? rawAwayDef * 0.75 + input.awayPower * 0.25
+        : rawAwayDef;
+
+    final double ovrGap = homeOvr - awayOvr;
+    final double homeEdge =
+        (homeAtt - awayDef) * 0.45 +
+        (homeMid - awayMid) * 0.25 +
+        ovrGap * 0.40 +
+        2.0;
+    final double awayEdge =
+        (awayAtt - homeDef) * 0.45 +
+        (awayMid - homeMid) * 0.25 -
+        ovrGap * 0.40 -
+        1.2;
+
     final double tempMid = tempsFactor(input.refereeTemper);
 
-    // Chance production: attack against opposing defense.
-    final double homeRate =
-        _baseChancePerMinute * homeAttack / (awayDefense + 40);
-    final double awayRate =
-        _baseChancePerMinute * awayAttack / (homeDefense + 40);
-    final double homeConversion =
-        _conversion(homeAttack, awayDefense) * (1.0 + input.homeTacticalBonus);
-    final double awayConversion =
-        _conversion(awayAttack, homeDefense) * (1.0 + input.awayTacticalBonus);
-    final double penaltyRate = _penaltyPool / 90 / 2;
-    final double ownGoalRate = _ownGoalPool / 90 / 2;
+    // Chance production: attack + midfield + overall dominance against defense.
+    final double baseHomeRate = _shotRateForEdge(homeEdge);
+    final double baseAwayRate = _shotRateForEdge(awayEdge);
+    final double baseHomeConversion = _conversionForEdge(
+      homeEdge,
+      input.homeTacticalBonus,
+    );
+    final double baseAwayConversion = _conversionForEdge(
+      awayEdge,
+      input.awayTacticalBonus,
+    );
+    final double homeAttackShare =
+        (baseHomeRate / max(0.001, baseHomeRate + baseAwayRate)).clamp(
+          0.12,
+          0.88,
+        );
+    final double homePenaltyRate = (_penaltyPool / 90.0) * homeAttackShare;
+    final double awayPenaltyRate =
+        (_penaltyPool / 90.0) * (1.0 - homeAttackShare);
+    final double ownGoalRate = _ownGoalPool / 90.0;
     final double yellowRate = _yellowPool / 90 / 2 * tempMid;
     final double redRate = _redPool / 90 / 2 * tempMid;
     final double injuryRate = _injuryPool / 90 / 2;
@@ -617,7 +701,8 @@ class MatchEngine {
       final List<_OnPitch> on = isHome ? homeOn : awayOn;
       return weighted(on.map((_OnPitch o) => o.player).toList(), (Player p) {
         final int g = Lineup.groupOf(p);
-        double w = g == 4 ? 3.0 : (g == 3 ? 1.4 : (g == 2 ? 0.55 : 0.04));
+        double w = g == 4 ? 3.2 : (g == 3 ? 1.4 : (g == 2 ? 0.50 : 0.03));
+        w *= (p.power.clamp(35, 99) / 70.0);
         if (setPiece) w += p.power / 250.0;
         return w;
       });
@@ -629,7 +714,11 @@ class MatchEngine {
           .map((_OnPitch o) => o.player)
           .where((Player p) => p != scorer && Lineup.groupOf(p) != 1)
           .toList();
-      return weighted(pool, (Player p) => 1.0);
+      return weighted(pool, (Player p) {
+        final int g = Lineup.groupOf(p);
+        final double roleW = g == 3 ? 1.6 : (g == 4 ? 1.2 : 0.8);
+        return roleW * (p.power.clamp(35, 99) / 70.0);
+      });
     }
 
     Player? pickFouler(bool isHome) {
@@ -667,14 +756,31 @@ class MatchEngine {
       final List<_OnPitch> on = isHome ? homeOn : awayOn;
       final List<Player> bench = isHome ? home.substitutes : away.substitutes;
       if (bench.isEmpty || on.length <= 7) return;
-      // Replace the weakest outfield player on the pitch.
-      _OnPitch? worst;
+      final int benchIdx = bench.indexWhere(
+        (Player p) => Lineup.groupOf(p) != 1,
+      );
+      if (benchIdx < 0) return;
+      final Player incoming = bench.removeAt(benchIdx);
+      final int incomingGroup = Lineup.groupOf(incoming);
+
+      // Prefer replacing the weakest starter in the same position group, or
+      // fallback to the weakest outfield player on the pitch.
+      _OnPitch? worstSameGroup;
+      _OnPitch? worstAny;
       for (final _OnPitch o in on) {
-        if (Lineup.groupOf(o.player) == 1) continue;
-        if (worst == null || o.player.power < worst.player.power) worst = o;
+        final int g = Lineup.groupOf(o.player);
+        if (g == 1) continue;
+        if (worstAny == null || o.player.power < worstAny.player.power) {
+          worstAny = o;
+        }
+        if (g == incomingGroup &&
+            (worstSameGroup == null ||
+                o.player.power < worstSameGroup.player.power)) {
+          worstSameGroup = o;
+        }
       }
+      final _OnPitch? worst = worstSameGroup ?? worstAny;
       if (worst == null) return;
-      final Player incoming = bench.removeAt(0);
       register(incoming, false, isHome ? input.homeTeamId : input.awayTeamId);
       // Seal the outgoing player's minutes at his exit.
       final MatchPlayerRow? outRow = rows[worst.player.playerId];
@@ -752,6 +858,34 @@ class MatchEngine {
     }
 
     for (int minute = 1; minute <= 90; minute++) {
+      // Dynamic man-advantage and dominance urgency adjustments.
+      final int homeMissing = max(0, 11 - homeOn.length);
+      final int awayMissing = max(0, 11 - awayOn.length);
+      double homeRate =
+          baseHomeRate *
+          pow(0.82, homeMissing).toDouble() *
+          pow(1.16, awayMissing).toDouble();
+      double awayRate =
+          baseAwayRate *
+          pow(0.82, awayMissing).toDouble() *
+          pow(1.16, homeMissing).toDouble();
+      double homeConversion =
+          baseHomeConversion * pow(1.08, awayMissing).toDouble();
+      double awayConversion =
+          baseAwayConversion * pow(1.08, homeMissing).toDouble();
+
+      if (ovrGap >= 10 && minute >= 35 && (homeGoals - awayGoals) <= 1) {
+        final double surge = (1.0 + (ovrGap - 8.0) * 0.015).clamp(1.08, 1.38);
+        homeRate *= surge;
+        homeConversion = (homeConversion * 1.12).clamp(0.04, 0.36);
+      } else if (ovrGap <= -10 &&
+          minute >= 35 &&
+          (awayGoals - homeGoals) <= 1) {
+        final double surge = (1.0 + (-ovrGap - 8.0) * 0.015).clamp(1.08, 1.38);
+        awayRate *= surge;
+        awayConversion = (awayConversion * 1.12).clamp(0.04, 0.36);
+      }
+
       // ----- home attack chance
       if (_rng.nextDouble() < homeRate) {
         homeShots++;
@@ -790,7 +924,7 @@ class MatchEngine {
       }
 
       // ----- penalties
-      if (_rng.nextDouble() < penaltyRate) {
+      if (_rng.nextDouble() < homePenaltyRate) {
         homeShots++;
         final bool scored = _rng.nextDouble() < _penaltyConvert;
         if (scored) {
@@ -811,7 +945,7 @@ class MatchEngine {
           );
         }
       }
-      if (_rng.nextDouble() < penaltyRate) {
+      if (_rng.nextDouble() < awayPenaltyRate) {
         awayShots++;
         final bool scored = _rng.nextDouble() < _penaltyConvert;
         if (scored) {
@@ -835,7 +969,7 @@ class MatchEngine {
 
       // ----- own goals (benefiting side is opposite of the fouler)
       if (_rng.nextDouble() < ownGoalRate) {
-        final bool benefitsHome = _rng.nextBool();
+        final bool benefitsHome = _rng.nextDouble() < homeAttackShare;
         final Player? culprit = weighted(
           (benefitsHome ? awayOn : homeOn)
               .map((_OnPitch o) => o.player)
@@ -860,9 +994,13 @@ class MatchEngine {
         }
       }
 
-      // ----- cards
-      if (_rng.nextDouble() < yellowRate) {
-        final bool isHome = _rng.nextBool();
+      // ----- cards (defending side under heavier pressure fouls slightly more)
+      final double homeFoulShare = (1.0 - homeAttackShare * 0.4 + 0.2).clamp(
+        0.30,
+        0.70,
+      );
+      if (_rng.nextDouble() < yellowRate * 2.0) {
+        final bool isHome = _rng.nextDouble() < homeFoulShare;
         final Player? fouler = pickFouler(isHome);
         if (fouler != null) {
           final MatchPlayerRow? row = rows[fouler.playerId];
@@ -892,8 +1030,8 @@ class MatchEngine {
           }
         }
       }
-      if (_rng.nextDouble() < redRate) {
-        final bool isHome = _rng.nextBool();
+      if (_rng.nextDouble() < redRate * 2.0) {
+        final bool isHome = _rng.nextDouble() < homeFoulShare;
         final Player? fouler = pickFouler(isHome);
         if (fouler != null) {
           final MatchPlayerRow? row = rows[fouler.playerId];
@@ -919,9 +1057,11 @@ class MatchEngine {
 
       // ----- injuries
       final bool isHomeInj = _rng.nextBool();
-      final double injReduction =
-          isHomeInj ? input.homeInjuryReduction : input.awayInjuryReduction;
-      if (_rng.nextDouble() < injuryRate * (1.0 - injReduction).clamp(0.1, 1.0)) {
+      final double injReduction = isHomeInj
+          ? input.homeInjuryReduction
+          : input.awayInjuryReduction;
+      if (_rng.nextDouble() <
+          injuryRate * (1.0 - injReduction).clamp(0.1, 1.0)) {
         final Player? hurt = pickInjured(isHomeInj);
         if (hurt != null) {
           injuredIds.add(hurt.playerId);
@@ -1024,22 +1164,19 @@ class MatchEngine {
     final int attTerrace = (input.capacityTerrace * appeal).round();
     final int attBoxes = (input.capacityBoxes * 0.95).round();
     final int revenue =
-        attGeneral * _tierPrices[0] +
-        attStand * _tierPrices[1] +
-        attTerrace * _tierPrices[2] +
-        attBoxes * _tierPrices[3];
+        attGeneral * input.ticketPriceGeneral +
+        attStand * input.ticketPriceStand +
+        attTerrace * input.ticketPriceTerrace +
+        attBoxes * input.ticketPriceBoxes;
 
     events.sort((MatchEvent a, MatchEvent b) {
       final int c = a.minute.compareTo(b.minute);
       return c != 0 ? c : a.type.compareTo(b.type);
     });
 
-    // Possession estimate from the two midfields, with a small home edge.
-    final double homeMid = Lineup.midfieldOn(home.starters);
-    final double awayMid = Lineup.midfieldOn(away.starters);
-    final int homePossession = ((homeMid + 3) / (homeMid + awayMid + 6) * 100)
-        .round()
-        .clamp(25, 75);
+    // Possession estimate from midfield & overall control, with a small home edge.
+    final double midDiff = (homeMid - awayMid) * 0.65 + ovrGap * 0.35 + 1.5;
+    final int homePossession = (50.0 + midDiff * 0.85).round().clamp(25, 75);
 
     return MatchResult(
       homeGoals: homeGoals,
@@ -1148,13 +1285,22 @@ class MatchEngine {
 
   static double tempsFactor(int temper) => 0.6 + 0.2 * temper;
 
+  static double _shotRateForEdge(double edge) {
+    final double mult = edge >= 0
+        ? exp(edge * 0.026).clamp(1.0, 2.35)
+        : exp(edge * 0.052).clamp(0.16, 1.0);
+    return _baseChancePerMinute * mult;
+  }
+
   /// Probability that a shot turns into a goal, based on the attack/defence
   /// mismatch. Quality grows with the mismatch but is capped so even a huge
   /// favourite does not score on every attack.
-  static double _conversion(double attack, double defense) {
-    final double quality = (attack + 40) / (defense + 40);
-    return (_conversionBase * pow(quality, 0.55).toDouble())
-        .clamp(0.04, 0.32)
+  static double _conversionForEdge(double edge, double tacticalBonus) {
+    final double mult = edge >= 0
+        ? exp(edge * 0.015).clamp(1.0, 1.62)
+        : exp(edge * 0.035).clamp(0.32, 1.0);
+    return (_conversionBase * mult * (1.0 + tacticalBonus))
+        .clamp(0.035, 0.34)
         .toDouble();
   }
 }

@@ -135,6 +135,7 @@ class CareerProvider extends ChangeNotifier {
 
   // Live match session (filled while watching a match).
   LiveMatchSession? liveSession;
+  int? _clinchedLeagueSeasonId;
 
   /// Most recent gala awards waiting to be seen by the manager.
   SeasonGalaSummary? pendingGala;
@@ -897,7 +898,8 @@ class CareerProvider extends ChangeNotifier {
       );
 
       // A title decider only exists if the title has NOT already been won before this match.
-      bool leagueAlreadyDecided = false;
+      bool leagueAlreadyDecided =
+          _clinchedLeagueSeasonId == season!.seasonId;
       if (standings.isNotEmpty) {
         final StandingRow prevFirst = standings.first;
         final StandingRow? prevSecond = standings.length > 1
@@ -910,6 +912,7 @@ class CareerProvider extends ChangeNotifier {
         if (prevFirst.points > maxSecondBefore ||
             (maxRound > 0 && prevFirst.played >= maxRound)) {
           leagueAlreadyDecided = true;
+          _clinchedLeagueSeasonId = season!.seasonId;
         }
       }
 
@@ -948,6 +951,7 @@ class CareerProvider extends ChangeNotifier {
             isLeagueDecider = true;
             leagueTitleWon = true;
             trophyName = league!.name;
+            _clinchedLeagueSeasonId = season!.seasonId;
           }
         }
       }
@@ -1170,6 +1174,7 @@ class CareerProvider extends ChangeNotifier {
       busy = true;
       busyStatus = 'Season finished!';
       notifyListeners();
+      await Future<void>.delayed(const Duration(milliseconds: 16));
       offseason = await _service.beginOffseason(
         userTeamId: userTeamId,
         onProgress: (String s) {
@@ -1188,6 +1193,7 @@ class CareerProvider extends ChangeNotifier {
     busy = true;
     busyStatus = status;
     notifyListeners();
+    await Future<void>.delayed(const Duration(milliseconds: 16));
     try {
       return await work();
     } finally {
@@ -1568,6 +1574,11 @@ class CareerProvider extends ChangeNotifier {
     if (error == null) await refreshWorld();
     return error;
   }
+
+  Future<String?> setTicketPrice({
+    required String seatType,
+    required int price,
+  }) => _squads.setTicketPrice(userTeamId, seatType: seatType, price: price);
 
   Future<List<TransferRecord>> transferHistory() =>
       _squads.transferHistory(userTeamId);

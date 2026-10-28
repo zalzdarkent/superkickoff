@@ -209,6 +209,32 @@ void main() {
       expect(first.revenue, greaterThanOrEqualTo(0));
     });
 
+    test('calculates match revenue using configured seat ticket prices', () {
+      final MatchResult result = MatchEngine(random: Random(42)).simulate(
+        MatchInput(
+          homeSquad: buildSquad(3),
+          awaySquad: buildSquad(4),
+          capacityGeneral: 20000,
+          capacityStand: 8000,
+          capacityTerrace: 4000,
+          capacityBoxes: 500,
+          ticketPriceGeneral: 25,
+          ticketPriceStand: 45,
+          ticketPriceTerrace: 30,
+          ticketPriceBoxes: 150,
+          homePower: 70,
+        ),
+      );
+
+      expect(
+        result.revenue,
+        result.attendanceGeneral * 25 +
+            result.attendanceStand * 45 +
+            result.attendanceTerrace * 30 +
+            result.attendanceBoxes * 150,
+      );
+    });
+
     test('records goal events consistent with the score', () {
       final MatchResult result = MatchEngine(random: Random(7)).simulate(
         MatchInput(
@@ -387,7 +413,9 @@ void main() {
                   .length -
               homeDisallowed +
               result.events
-                  .where((MatchEvent e) => e.type == MatchEvent.ownGoal && !e.isHome)
+                  .where(
+                    (MatchEvent e) => e.type == MatchEvent.ownGoal && !e.isHome,
+                  )
                   .length;
           final int awayNet =
               result.events
@@ -400,7 +428,9 @@ void main() {
                   .length -
               awayDisallowed +
               result.events
-                  .where((MatchEvent e) => e.type == MatchEvent.ownGoal && e.isHome)
+                  .where(
+                    (MatchEvent e) => e.type == MatchEvent.ownGoal && e.isHome,
+                  )
                   .length;
           expect(result.homeGoals, homeNet);
           expect(result.awayGoals, awayNet);
@@ -413,11 +443,130 @@ void main() {
           final int ownGoals = result.events
               .where((MatchEvent e) => e.type == MatchEvent.ownGoal)
               .length;
-          expect(totalPlayerGoals + ownGoals, result.homeGoals + result.awayGoals);
+          expect(
+            totalPlayerGoals + ownGoals,
+            result.homeGoals + result.awayGoals,
+          );
           break;
         }
       }
       expect(foundDisallowed, isTrue);
     });
+
+    test(
+      'club with power 88 and >80 squad dominates clubs with power 59 and <65',
+      () {
+        List<Player> uniformSquad(int seed, int basePower) {
+          final List<int> positions = <int>[
+            1,
+            1, // include a backup GK to verify bench handling
+            2,
+            2,
+            2,
+            2,
+            3,
+            7,
+            7,
+            7,
+            7,
+            8,
+            8,
+            10,
+            10,
+            10,
+            11,
+          ];
+          return List<Player>.generate(positions.length, (int i) {
+            return Player(
+              playerId: seed * 100 + i,
+              name: 'P$seed-$i',
+              age: 25,
+              positionId: positions[i],
+              power: basePower + (i % 3),
+              potential: basePower + 5,
+              fitness: 98,
+              value: 5000000,
+              salary: 25000,
+              countryId: 141,
+              squadStatus: 1,
+              marketStatus: 1,
+              statusId: 1,
+              isCaptain: i == 0,
+              shirtNumber: i + 1,
+              stars: 4,
+              skillA: basePower,
+              skillB: basePower,
+              height: 181,
+              championships: null,
+            );
+          });
+        }
+
+        final List<Player> elite88 = uniformSquad(10, 84);
+        final List<Player> weak59 = uniformSquad(20, 58);
+        final List<Player> under65 = uniformSquad(30, 63);
+        final MatchEngine engine = MatchEngine(random: Random(2026));
+
+        int winsVs59 = 0;
+        int lossesVs59 = 0;
+        int bigWinsVs59 = 0; // >= 3 goal margin
+        for (int i = 0; i < 100; i++) {
+          final bool eliteIsHome = i.isEven;
+          final MatchResult res = engine.simulate(
+            MatchInput(
+              homeSquad: eliteIsHome ? elite88 : weak59,
+              awaySquad: eliteIsHome ? weak59 : elite88,
+              capacityGeneral: 20000,
+              capacityStand: 8000,
+              capacityTerrace: 4000,
+              capacityBoxes: 500,
+              homePower: eliteIsHome ? 88 : 59,
+              awayPower: eliteIsHome ? 59 : 88,
+            ),
+          );
+          final int eliteGoals = eliteIsHome ? res.homeGoals : res.awayGoals;
+          final int weakGoals = eliteIsHome ? res.awayGoals : res.homeGoals;
+          if (eliteGoals > weakGoals) winsVs59++;
+          if (eliteGoals < weakGoals) lossesVs59++;
+          if (eliteGoals - weakGoals >= 3) bigWinsVs59++;
+
+          // Backup GK (index 0, power 84 < index 1 power 85) must never be subbed into an outfield slot.
+          final int backupGkId = elite88[0].playerId;
+          final Iterable<MatchPlayerRow> backupRows = res.playerRows.where(
+            (MatchPlayerRow r) => r.playerId == backupGkId,
+          );
+          expect(backupRows, isEmpty);
+        }
+
+        expect(winsVs59, greaterThanOrEqualTo(92));
+        expect(lossesVs59, lessThanOrEqualTo(1));
+        expect(bigWinsVs59, greaterThanOrEqualTo(55));
+
+        int winsVs64 = 0;
+        int multiGoalWinsVs64 = 0;
+        for (int i = 0; i < 100; i++) {
+          final bool eliteIsHome = i.isEven;
+          final MatchResult res = engine.simulate(
+            MatchInput(
+              homeSquad: eliteIsHome ? elite88 : under65,
+              awaySquad: eliteIsHome ? under65 : elite88,
+              capacityGeneral: 20000,
+              capacityStand: 8000,
+              capacityTerrace: 4000,
+              capacityBoxes: 500,
+              homePower: eliteIsHome ? 88 : 64,
+              awayPower: eliteIsHome ? 64 : 88,
+            ),
+          );
+          final int eliteGoals = eliteIsHome ? res.homeGoals : res.awayGoals;
+          final int weakGoals = eliteIsHome ? res.awayGoals : res.homeGoals;
+          if (eliteGoals > weakGoals) winsVs64++;
+          if (eliteGoals - weakGoals >= 2) multiGoalWinsVs64++;
+        }
+
+        expect(winsVs64, greaterThanOrEqualTo(88));
+        expect(multiGoalWinsVs64, greaterThanOrEqualTo(68));
+      },
+    );
   });
 }

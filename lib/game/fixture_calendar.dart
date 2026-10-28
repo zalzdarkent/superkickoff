@@ -131,8 +131,12 @@ class FixtureSchedulingService {
     final List<({int matchId, String? oldDate, String newDate, String reason})> pendingLogs =
         <({int matchId, String? oldDate, String newDate, String reason})>[];
 
+    int processed = 0;
     for (final Map<String, Object?> row in ordered) {
       if ((row['status'] as int?) == t.matchFinished) continue;
+      if (++processed % 250 == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
       final int matchId = row['match_id'] as int;
       final int home = row['home_team_id'] as int;
       final int away = row['away_team_id'] as int;
@@ -459,10 +463,12 @@ class FixtureSchedulingService {
     bool forwardOnly = false,
     List<int>? allowedWeekdays,
   }) {
-    final Set<String> unavailable = unavailableDates.map(iso).toSet();
+    final Set<int> unavailable = <int>{
+      for (final DateTime d in unavailableDates) _dayKey(d),
+    };
     bool fits(DateTime date, int rest) {
       if (date.isBefore(seasonStart) || date.isAfter(seasonEnd)) return false;
-      if (unavailable.contains(iso(date))) return false;
+      if (unavailable.contains(_dayKey(date))) return false;
       if (allowedWeekdays != null && !allowedWeekdays.contains(date.weekday)) {
         return false;
       }
@@ -895,11 +901,15 @@ class FixtureSchedulingService {
   }
 
   bool _isUnavailable(DateTime date, List<DateTime> unavailableDates) {
-    final String key = iso(date);
-    return unavailableDates.any(
-      (DateTime unavailable) => iso(unavailable) == key,
-    );
+    final int key = _dayKey(date);
+    for (final DateTime unavailable in unavailableDates) {
+      if (_dayKey(unavailable) == key) return true;
+    }
+    return false;
   }
+
+  static int _dayKey(DateTime date) =>
+      date.year * 10000 + date.month * 100 + date.day;
 
   Future<void> _recordReschedule({
     required int matchId,

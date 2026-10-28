@@ -98,8 +98,33 @@ void main() {
     final List<Team> clubs = await refs.teamsForDivision(countryId, 1);
     expect(clubs.length, 18);
     final Team userClub = clubs.first;
-    final String initialFormation =
-        await squads.formationForTeam(userClub.teamId);
+    expect(
+      await squads.setTicketPrice(
+        userClub.teamId,
+        seatType: 'general',
+        price: 27,
+      ),
+      isNull,
+    );
+    expect(
+      (await squads.clubOverview(userClub.teamId))?.ticketPriceGeneral,
+      27,
+    );
+    final List<Map<String, Object?>> homeFixtures = await db.query(
+      t.matches,
+      where: 'season_id = ? AND home_team_id = ? AND status = ?',
+      whereArgs: <Object?>[seasonId, userClub.teamId, t.matchScheduled],
+      limit: 1,
+    );
+    expect(homeFixtures, isNotEmpty);
+    final MatchInput homeInput = await service.prepareMatchInput(
+      FixtureMatch.fromMap(homeFixtures.first),
+    );
+    expect(homeInput.ticketPriceGeneral, 27);
+
+    final String initialFormation = await squads.formationForTeam(
+      userClub.teamId,
+    );
     expect(
       Formation.all.map((Formation f) => f.name),
       contains(initialFormation),

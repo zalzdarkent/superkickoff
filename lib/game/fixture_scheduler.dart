@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 /// One fixture produced by a scheduler. Kept in the game layer so fixture
 /// generation can be tested without a database.
@@ -125,7 +126,97 @@ class RoundRobinScheduler {
     required bool doubleRound,
     Random? random,
   }) {
-    int score = _score(pairings, firstHome, ids, doubleRound: doubleRound);
+    final int teamCount = ids.length;
+    final int rounds = pairings.length;
+    if (teamCount < 2 || rounds == 0) return;
+
+    final Map<int, int> indexOf = <int, int>{
+      for (int i = 0; i < teamCount; i++) ids[i]: i,
+    };
+
+    // Precompute dense team indices and each team's sequence slot for every pair.
+    final Int32List teamFirstCounts = Int32List(teamCount);
+    final List<Int32List> pairFirstIdx = List<Int32List>.generate(
+      rounds,
+      (int r) => Int32List(pairings[r].length),
+    );
+    final List<Int32List> pairSecondIdx = List<Int32List>.generate(
+      rounds,
+      (int r) => Int32List(pairings[r].length),
+    );
+    final List<Int32List> pairFirstPos = List<Int32List>.generate(
+      rounds,
+      (int r) => Int32List(pairings[r].length),
+    );
+    final List<Int32List> pairSecondPos = List<Int32List>.generate(
+      rounds,
+      (int r) => Int32List(pairings[r].length),
+    );
+
+    int variables = 0;
+    for (int r = 0; r < rounds; r++) {
+      final List<_Pair> row = pairings[r];
+      variables += row.length;
+      for (int i = 0; i < row.length; i++) {
+        final int a = indexOf[row[i].first]!;
+        final int b = indexOf[row[i].second]!;
+        pairFirstIdx[r][i] = a;
+        pairSecondIdx[r][i] = b;
+        pairFirstPos[r][i] = teamFirstCounts[a]++;
+        pairSecondPos[r][i] = teamFirstCounts[b]++;
+      }
+    }
+    if (variables == 0) return;
+
+    void fillSequences(
+      List<List<bool>> orient,
+      List<Int8List> seqs,
+      Int32List teamScores,
+    ) {
+      for (int r = 0; r < rounds; r++) {
+        final List<bool> oRow = orient[r];
+        final Int32List aRow = pairFirstIdx[r];
+        final Int32List bRow = pairSecondIdx[r];
+        final Int32List paRow = pairFirstPos[r];
+        final Int32List pbRow = pairSecondPos[r];
+        for (int i = 0; i < oRow.length; i++) {
+          final int a = aRow[i];
+          final int b = bRow[i];
+          final int pa = paRow[i];
+          final int pb = pbRow[i];
+          final int va = oRow[i] ? 1 : -1;
+          final int vb = -va;
+          final Int8List seqA = seqs[a];
+          final Int8List seqB = seqs[b];
+          seqA[pa] = va;
+          seqB[pb] = vb;
+          if (doubleRound) {
+            seqA[pa + teamFirstCounts[a]] = -va;
+            seqB[pb + teamFirstCounts[b]] = -vb;
+          }
+        }
+      }
+      for (int t = 0; t < teamCount; t++) {
+        teamScores[t] = _teamScore(
+          seqs[t],
+          teamFirstCounts[t],
+          doubleRound: doubleRound,
+        );
+      }
+    }
+
+    final List<Int8List> workSeqs = List<Int8List>.generate(
+      teamCount,
+      (int t) => Int8List(
+        doubleRound ? teamFirstCounts[t] * 2 : teamFirstCounts[t],
+      ),
+    );
+    final Int32List workScores = Int32List(teamCount);
+    fillSequences(firstHome, workSeqs, workScores);
+    int score = 0;
+    for (int t = 0; t < teamCount; t++) {
+      score += workScores[t];
+    }
     if (score == 0) return;
 
     int seed = 0x5EED;
@@ -134,122 +225,148 @@ class RoundRobinScheduler {
     }
     if (random != null) seed ^= random.nextInt(0x7fffffff);
 
-    // A few deterministic restarts are enough for realistic league sizes while
-    // keeping an odd-sized league generation comfortably under a second.
-    final int rounds = pairings.length;
-    final int variables = pairings.fold<int>(
-      0,
-      (int sum, List<_Pair> pairs) => sum + pairs.length,
-    );
-    final int iterations = (26000 + variables * 400).clamp(26000, 90000);
+    final int iterations = (14000 + variables * 180).clamp(14000, 42000);
 
-    for (int restart = 0; restart < 4 && score > 0; restart++) {
+    for (int restart = 0; restart < 3 && score > 0; restart++) {
       final Random rng = Random(seed + restart * 7919);
       final List<List<bool>> current = List<List<bool>>.generate(
         rounds,
         (int r) => List<bool>.of(firstHome[r]),
       );
-      int currentScore = score;
+      fillSequences(current, workSeqs, workScores);
+      int currentScore = 0;
+      for (int t = 0; t < teamCount; t++) {
+        currentScore += workScores[t];
+      }
       int bestScore = currentScore;
-      List<List<bool>> best = List<List<bool>>.generate(
+      final List<List<bool>> best = List<List<bool>>.generate(
         rounds,
         (int r) => List<bool>.of(current[r]),
       );
       double temperature = 3.0;
+
       for (int it = 0; it < iterations; it++) {
         final int r = rng.nextInt(rounds);
-        if (pairings[r].isEmpty) continue;
-        final int i = rng.nextInt(pairings[r].length);
-        current[r][i] = !current[r][i];
-        final int candidate = _score(
-          pairings,
-          current,
-          ids,
-          doubleRound: doubleRound,
-        );
-        final int delta = candidate - currentScore;
+        final int rowLen = pairings[r].length;
+        if (rowLen == 0) continue;
+        final int i = rng.nextInt(rowLen);
+
+        final int a = pairFirstIdx[r][i];
+        final int b = pairSecondIdx[r][i];
+        final int pa = pairFirstPos[r][i];
+        final int pb = pairSecondPos[r][i];
+        final int lenA = teamFirstCounts[a];
+        final int lenB = teamFirstCounts[b];
+        final Int8List seqA = workSeqs[a];
+        final Int8List seqB = workSeqs[b];
+
+        // Flip orientation in-place for teams a and b.
+        final bool flipped = !current[r][i];
+        current[r][i] = flipped;
+        final int va = flipped ? 1 : -1;
+        final int vb = -va;
+        seqA[pa] = va;
+        seqB[pb] = vb;
+        if (doubleRound) {
+          seqA[pa + lenA] = -va;
+          seqB[pb + lenB] = -vb;
+        }
+
+        final int newScoreA = _teamScore(seqA, lenA, doubleRound: doubleRound);
+        final int newScoreB = _teamScore(seqB, lenB, doubleRound: doubleRound);
+        final int delta =
+            (newScoreA - workScores[a]) + (newScoreB - workScores[b]);
+
         if (delta <= 0 ||
             rng.nextDouble() < exp(-delta / max(0.05, temperature))) {
-          currentScore = candidate;
-          if (candidate < bestScore) {
-            bestScore = candidate;
+          workScores[a] = newScoreA;
+          workScores[b] = newScoreB;
+          currentScore += delta;
+          if (currentScore < bestScore) {
+            bestScore = currentScore;
             for (int rr = 0; rr < rounds; rr++) {
-              best[rr] = List<bool>.of(current[rr]);
+              final List<bool> src = current[rr];
+              final List<bool> dst = best[rr];
+              for (int k = 0; k < src.length; k++) {
+                dst[k] = src[k];
+              }
             }
             if (bestScore == 0) break;
           }
         } else {
-          current[r][i] = !current[r][i];
+          // Revert flip.
+          current[r][i] = !flipped;
+          seqA[pa] = -va;
+          seqB[pb] = -vb;
+          if (doubleRound) {
+            seqA[pa + lenA] = va;
+            seqB[pb + lenB] = vb;
+          }
         }
-        temperature = max(0.02, temperature * 0.99995);
+        temperature = max(0.02, temperature * 0.99992);
       }
+
       if (bestScore < score) {
         for (int rr = 0; rr < rounds; rr++) {
           firstHome[rr] = List<bool>.of(best[rr]);
         }
         score = bestScore;
       }
-      seed = seed * 1103515245 + 12345;
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
     }
   }
 
   /// Lower is better. Hard requirements (run length, totals) dominate the
   /// soft five-match balance preferences.
-  static int _score(
-    List<List<_Pair>> pairings,
-    List<List<bool>> firstHome,
-    List<int> ids, {
+  static int _teamScore(
+    Int8List full,
+    int firstHalfLen, {
     required bool doubleRound,
   }) {
-    final Map<int, List<int>> sequences = <int, List<int>>{
-      for (final int id in ids) id: <int>[],
-    };
-    for (int r = 0; r < pairings.length; r++) {
-      for (int i = 0; i < pairings[r].length; i++) {
-        final _Pair pair = pairings[r][i];
-        if (firstHome[r][i]) {
-          sequences[pair.first]!.add(1);
-          sequences[pair.second]!.add(-1);
-        } else {
-          sequences[pair.first]!.add(-1);
-          sequences[pair.second]!.add(1);
+    final int fullLen = full.length;
+    if (fullLen == 0) return 0;
+    int score = 0;
+
+    int run = 1;
+    int prev = full[0];
+    for (int i = 1; i < fullLen; i++) {
+      final int cur = full[i];
+      if (cur == prev) {
+        run++;
+      } else {
+        if (run > 2) {
+          final int d = run - 2;
+          score += d * d * 100;
         }
+        run = 1;
+        prev = cur;
+      }
+    }
+    if (run > 2) {
+      final int d = run - 2;
+      score += d * d * 100;
+    }
+
+    if (fullLen >= 5) {
+      int window = full[0] + full[1] + full[2] + full[3] + full[4];
+      int excess = window.abs() - 1;
+      if (excess > 0) score += excess * excess * 4;
+      for (int i = 5; i < fullLen; i++) {
+        window += full[i] - full[i - 5];
+        excess = window.abs() - 1;
+        if (excess > 0) score += excess * excess * 4;
       }
     }
 
-    int score = 0;
-    for (final int id in ids) {
-      final List<int> first = sequences[id]!;
-      final List<int> full = doubleRound
-          ? <int>[...first, ...first.map((int v) => -v)]
-          : first;
-
-      int run = 1;
-      for (int i = 1; i < full.length; i++) {
-        if (full[i] == full[i - 1]) {
-          run++;
-        } else {
-          if (run > 2) score += (run - 2) * (run - 2) * 100;
-          run = 1;
-        }
+    if (!doubleRound) {
+      int sum = 0;
+      for (int i = 0; i < firstHalfLen; i++) {
+        sum += full[i];
       }
-      if (run > 2) score += (run - 2) * (run - 2) * 100;
-
-      for (int i = 0; i + 4 < full.length; i++) {
-        final int window = full[i] +
-            full[i + 1] +
-            full[i + 2] +
-            full[i + 3] +
-            full[i + 4];
-        final int excess = window.abs() - 1;
-        if (excess > 0) score += excess * excess * 4;
-      }
-
-      if (!doubleRound) {
-        final int homes = first.where((int v) => v > 0).length;
-        final int aways = first.where((int v) => v < 0).length;
-        final int imbalance = (homes - aways).abs();
-        if (imbalance > 1) score += (imbalance - 1) * (imbalance - 1) * 50;
+      final int imbalance = sum.abs();
+      if (imbalance > 1) {
+        final int d = imbalance - 1;
+        score += d * d * 50;
       }
     }
     return score;
@@ -426,11 +543,16 @@ class LeaguePhaseScheduler {
 
     // Defensive fallback for unusual graphs: greedily balance home counts.
     final Map<int, int> homes = <int, int>{for (final int id in ids) id: 0};
-    for (final MapEntry<String, bool> entry in orientation.entries) {
-      final List<String> parts = entry.key.split('-');
-      final int a = int.parse(parts[0]);
-      final int b = int.parse(parts[1]);
-      homes[entry.value ? a : b] = (homes[entry.value ? a : b] ?? 0) + 1;
+    final List<(String, int, int)> keyPairs = <(String, int, int)>[];
+    for (final _Edge edge in edges) {
+      final int low = edge.a < edge.b ? edge.a : edge.b;
+      final int high = edge.a < edge.b ? edge.b : edge.a;
+      final String key = '$low-$high';
+      final bool lowHome = orientation[key] ?? true;
+      orientation[key] = lowHome;
+      keyPairs.add((key, low, high));
+      final int host = lowHome ? low : high;
+      homes[host] = (homes[host] ?? 0) + 1;
     }
     bool balanced = orientation.length == edges.length;
     for (final int id in ids) {
@@ -439,34 +561,29 @@ class LeaguePhaseScheduler {
         break;
       }
     }
-    if (balanced) return orientation;
+    if (balanced || keyPairs.isEmpty) return orientation;
 
-    // Hill-climb flips until the home totals match.
-    final List<String> keys = orientation.keys.toList();
+    // Hill-climb flips until the home totals match using O(1) delta scoring.
     int score = _orientationScore(homes, ids, targetHome, targetAway);
-    for (int it = 0; it < 40000 && score > 0; it++) {
-      final String key = keys[it % keys.length];
-      final List<String> parts = key.split('-');
-      final int a = int.parse(parts[0]);
-      final int b = int.parse(parts[1]);
+    for (int it = 0; it < 20000 && score > 0; it++) {
+      final (String key, int a, int b) = keyPairs[it % keyPairs.length];
       final bool old = orientation[key]!;
       final int oldHome = old ? a : b;
       final int newHome = old ? b : a;
-      homes[oldHome] = (homes[oldHome] ?? 0) - 1;
-      homes[newHome] = (homes[newHome] ?? 0) + 1;
-      orientation[key] = !old;
-      final int candidate = _orientationScore(
-        homes,
-        ids,
-        targetHome,
-        targetAway,
-      );
-      if (candidate <= score) {
-        score = candidate;
-      } else {
-        homes[newHome] = (homes[newHome] ?? 0) - 1;
-        homes[oldHome] = (homes[oldHome] ?? 0) + 1;
-        orientation[key] = old;
+      final int hOld = homes[oldHome] ?? 0;
+      final int hNew = homes[newHome] ?? 0;
+      final int dOldBefore = hOld - targetHome;
+      final int dNewBefore = hNew - targetHome;
+      final int dOldAfter = (hOld - 1) - targetHome;
+      final int dNewAfter = (hNew + 1) - targetHome;
+      final int delta =
+          (dOldAfter * dOldAfter + dNewAfter * dNewAfter) -
+          (dOldBefore * dOldBefore + dNewBefore * dNewBefore);
+      if (delta <= 0) {
+        homes[oldHome] = hOld - 1;
+        homes[newHome] = hNew + 1;
+        orientation[key] = !old;
+        score += delta;
       }
     }
     return orientation;

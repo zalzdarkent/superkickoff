@@ -496,6 +496,7 @@ class InternationalTournamentService {
 
     final List<String> dates = matchesPerTeam >= 2 ? <String>[date1, date2] : <String>[date1];
 
+    final List<Map<String, Object?>> pendingRows = <Map<String, Object?>>[];
     for (int d = 0; d < dates.length; d++) {
       final String matchDate = dates[d];
       final List<Country> pool = List<Country>.of(countries);
@@ -508,7 +509,7 @@ class InternationalTournamentService {
         final Country home = pool[i];
         final Country away = pool[i + 1];
 
-        final Map<String, Object?> row = <String, Object?>{
+        pendingRows.add(<String, Object?>{
           'tournament_id': t.tournamentFriendlies,
           'season_id': seasonId,
           'home_country_id': home.countryId,
@@ -519,16 +520,31 @@ class InternationalTournamentService {
           'status': t.matchScheduled,
           'date': matchDate,
           'window_id': window.windowId,
-        };
-
-        final int id = await db.insert(
-          t.countryMatches,
-          row,
-          conflictAlgorithm: ConflictAlgorithm.ignore,
-        );
-
-        friendlies.add(CountryMatch.fromMap(<String, Object?>{...row, 'match_id': id}));
+        });
       }
+    }
+
+    if (pendingRows.isNotEmpty) {
+      await db.transaction((Transaction txn) async {
+        final Batch batch = txn.batch();
+        for (final Map<String, Object?> row in pendingRows) {
+          batch.insert(
+            t.countryMatches,
+            row,
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
+        }
+        final List<Object?> results = await batch.commit();
+        for (int i = 0; i < pendingRows.length; i++) {
+          final int id = (results[i] as int?) ?? 0;
+          friendlies.add(
+            CountryMatch.fromMap(<String, Object?>{
+              ...pendingRows[i],
+              'match_id': id,
+            }),
+          );
+        }
+      });
     }
 
     return friendlies;
