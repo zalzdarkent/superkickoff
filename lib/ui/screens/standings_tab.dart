@@ -233,9 +233,9 @@ class _LeagueTable extends StatefulWidget {
 class _LeagueTableState extends State<_LeagueTable> {
   CareerProvider get game => widget.game;
 
-  static const double _rankWidth = 28;
+  static const double _rankWidth = 44;
   static const double _statWidth = 22;
-  static const double _gdWidth = 28;
+  static const double _gdWidth = 26;
   static const double _ptsWidth = 30;
 
   static const TextStyle _headStyle = TextStyle(
@@ -568,10 +568,21 @@ class _LeagueTableState extends State<_LeagueTable> {
                     borderRadius: BorderRadius.circular(1.5),
                   ),
                 ),
-                const SizedBox(width: 4),
-                Text(
-                  '${index + 1}',
-                  style: const TextStyle(fontSize: 11, color: AppTheme.textDim),
+                const SizedBox(width: 3),
+                SizedBox(
+                  width: 15,
+                  child: Text(
+                    '${index + 1}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textDim,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 1),
+                Expanded(
+                  child: _movementIndicator(row.positionChange(index + 1)),
                 ),
               ],
             ),
@@ -619,6 +630,39 @@ class _LeagueTableState extends State<_LeagueTable> {
     ),
   );
 }
+
+  Widget _movementIndicator(int? delta) {
+    if (delta == null || delta == 0) {
+      return const SizedBox.shrink();
+    }
+    final bool isUp = delta > 0;
+    final Color color = isUp ? AppTheme.accent : AppTheme.danger;
+    final int change = delta.abs();
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: <Widget>[
+          Icon(
+            isUp ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+            size: 14,
+            color: color,
+          ),
+          Text(
+            '$change',
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              color: color,
+              height: 1.0,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Shared leaderboard list for the four statistical tabs.

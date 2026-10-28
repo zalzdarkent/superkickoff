@@ -1422,16 +1422,31 @@ class MiniStandingsCard extends StatelessWidget {
                 child: Row(
                   children: <Widget>[
                     SizedBox(
-                      width: 22,
-                      child: Text(
-                        '${game.standings.indexOf(row) + 1}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: row.teamId == game.userTeamId
-                              ? AppTheme.accent
-                              : AppTheme.textDim,
-                        ),
+                      width: 36,
+                      child: Row(
+                        children: <Widget>[
+                          SizedBox(
+                            width: 15,
+                            child: Text(
+                              '${game.standings.indexOf(row) + 1}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: row.teamId == game.userTeamId
+                                    ? AppTheme.accent
+                                    : AppTheme.textDim,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 1),
+                          Expanded(
+                            child: _rankMovement(
+                              row.positionChange(
+                                game.standings.indexOf(row) + 1,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     Expanded(
@@ -1475,6 +1490,37 @@ class MiniStandingsCard extends StatelessWidget {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _rankMovement(int? delta) {
+    if (delta == null || delta == 0) {
+      return const SizedBox.shrink();
+    }
+    final bool isUp = delta > 0;
+    final Color color = isUp ? AppTheme.accent : AppTheme.danger;
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(
+            isUp ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+            size: 13,
+            color: color,
+          ),
+          Text(
+            '${delta.abs()}',
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              color: color,
+              height: 1.0,
+            ),
+          ),
         ],
       ),
     );

@@ -566,6 +566,8 @@ class StandingRow {
     required this.goalsFor,
     required this.goalsAgainst,
     required this.points,
+    this.currentPosition,
+    this.previousPosition,
   });
 
   final int teamId;
@@ -573,8 +575,20 @@ class StandingRow {
   final String abbreviation;
   final String? logoBase64;
   int played, wins, draws, losses, goalsFor, goalsAgainst, points;
+  int? currentPosition;
+  int? previousPosition;
 
   int get goalDifference => goalsFor - goalsAgainst;
+
+  /// Rank movement compared to the previous matchday.
+  /// Positive means moved UP (e.g. from 4th to 2nd => +2).
+  /// Negative means moved DOWN (e.g. from 1st to 3rd => -2).
+  /// Zero or null means unchanged or no previous rank available.
+  int? positionChange([int? currentPos]) {
+    final int? curr = currentPos ?? currentPosition;
+    if (previousPosition == null || curr == null) return null;
+    return previousPosition! - curr;
+  }
 }
 
 /// Standings of one group in a tournament with a group stage.

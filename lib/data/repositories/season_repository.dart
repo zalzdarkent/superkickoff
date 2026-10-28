@@ -219,7 +219,8 @@ class SeasonRepository {
         ''',
         <Object?>[tournamentId],
       );
-      for (final Map<String, Object?> r in fallbackRows) {
+      for (int i = 0; i < fallbackRows.length; i++) {
+        final Map<String, Object?> r = fallbackRows[i];
         final StandingRow row = StandingRow(
           teamId: r['team_id'] as int,
           name: r['name'] as String,
@@ -232,6 +233,8 @@ class SeasonRepository {
           goalsFor: 0,
           goalsAgainst: 0,
           points: 0,
+          currentPosition: i + 1,
+          previousPosition: i + 1,
         );
         rows.add(row);
       }
@@ -256,7 +259,7 @@ class SeasonRepository {
     }
     final matches = await db.rawQuery(
       '''
-      SELECT home_team_id, away_team_id, home_goals, away_goals
+      SELECT round, home_team_id, away_team_id, home_goals, away_goals
       FROM matches
       WHERE season_id = ? AND tournament_id = ? AND status = ?
         AND home_goals IS NOT NULL AND away_goals IS NOT NULL$groupFilter
@@ -292,7 +295,89 @@ class SeasonRepository {
         awayRow.points++;
       }
     }
-    rows.sort((StandingRow a, StandingRow b) {
+    _sortStandingRows(rows);
+    for (int i = 0; i < rows.length; i++) {
+      rows[i].currentPosition = i + 1;
+    }
+
+    if (matches.isEmpty) {
+      for (int i = 0; i < rows.length; i++) {
+        rows[i].previousPosition = i + 1;
+      }
+      return rows;
+    }
+
+    int maxRound = 0;
+    for (final Map<String, Object?> m in matches) {
+      final int r = (m['round'] as int?) ?? 1;
+      if (r > maxRound) maxRound = r;
+    }
+
+    final List<StandingRow> prevRows = <StandingRow>[];
+    final Map<int, StandingRow> prevByTeam = <int, StandingRow>{};
+    for (final Map<String, Object?> r in teamRows) {
+      final StandingRow prevRow = StandingRow(
+        teamId: r['team_id'] as int,
+        name: r['name'] as String,
+        abbreviation: r['abbreviation'] as String? ?? '',
+        logoBase64: r['logo_base64'] as String?,
+        played: 0,
+        wins: 0,
+        draws: 0,
+        losses: 0,
+        goalsFor: 0,
+        goalsAgainst: 0,
+        points: 0,
+      );
+      prevByTeam[prevRow.teamId] = prevRow;
+      prevRows.add(prevRow);
+    }
+
+    if (maxRound > 1) {
+      for (final Map<String, Object?> m in matches) {
+        final int r = (m['round'] as int?) ?? 1;
+        if (r >= maxRound) continue;
+        final int home = m['home_team_id'] as int;
+        final int away = m['away_team_id'] as int;
+        final int hg = (m['home_goals'] as int?) ?? 0;
+        final int ag = (m['away_goals'] as int?) ?? 0;
+        final homeRow = prevByTeam[home];
+        final awayRow = prevByTeam[away];
+        if (homeRow == null || awayRow == null) continue;
+        homeRow.played++;
+        homeRow.goalsFor += hg;
+        homeRow.goalsAgainst += ag;
+        awayRow.played++;
+        awayRow.goalsFor += ag;
+        awayRow.goalsAgainst += hg;
+        if (hg > ag) {
+          homeRow.wins++;
+          homeRow.points += 3;
+          awayRow.losses++;
+        } else if (hg < ag) {
+          awayRow.wins++;
+          awayRow.points += 3;
+          homeRow.losses++;
+        } else {
+          homeRow.draws++;
+          awayRow.draws++;
+          homeRow.points++;
+          awayRow.points++;
+        }
+      }
+    }
+
+    _sortStandingRows(prevRows);
+    for (int i = 0; i < prevRows.length; i++) {
+      final int teamId = prevRows[i].teamId;
+      byTeam[teamId]?.previousPosition = i + 1;
+    }
+
+    return rows;
+  }
+
+  static void _sortStandingRows(List<StandingRow> list) {
+    list.sort((StandingRow a, StandingRow b) {
       if (b.points != a.points) return b.points.compareTo(a.points);
       if (b.goalDifference != a.goalDifference) {
         return b.goalDifference.compareTo(a.goalDifference);
@@ -301,7 +386,6 @@ class SeasonRepository {
       // Level on everything (e.g. before kick-off): alphabetical.
       return a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
-    return rows;
   }
 
   /// Every group table of a tournament, ordered by group id.
