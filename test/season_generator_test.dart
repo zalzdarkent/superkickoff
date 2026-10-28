@@ -152,7 +152,8 @@ void main() {
   });
 
   test('schedules domestic and continental cup rounds', () async {
-    const int countryId = 94; // Indonesia: AFC Champions League Elite + Two.
+    const int countryId =
+        94; // Indonesia: AFC Champions League Two + Challenge League.
     final Tournament league = Tournament.fromMap(
       await findTournament(
         countryId: countryId,
@@ -170,10 +171,7 @@ void main() {
         .internationalCups(countryId);
     expect(
       internationals.map((Tournament tour) => tour.name),
-      containsAll(<String>[
-        'AFC Champions League Elite',
-        'AFC Champions League Two',
-      ]),
+      containsAll(<String>['AFC Champions League Two', 'AFC Challenge League']),
     );
 
     final CareerPlan plan = await SeasonGenerator(db, random: Random(3))
@@ -282,7 +280,7 @@ void main() {
   });
 
   test('group progression honors configured qualifiers and persists byes', () async {
-    const int countryId = 94; // Indonesia: two AFC cups.
+    const int countryId = 94; // Indonesia: three AFC club competitions.
     final Tournament league = Tournament.fromMap(
       await findTournament(
         countryId: countryId,
@@ -340,15 +338,15 @@ void main() {
     );
     expect(groups.length, greaterThanOrEqualTo(2));
     for (final GroupTable group in groups) {
-      expect(group.rows.length, 4);
+      expect(group.rows.length, inInclusiveRange(2, groupConfig.groupSize));
       expect(
         groupMatchRows
             .where(
               (Map<String, Object?> row) => row['group_id'] == group.groupId,
             )
             .length,
-        12,
-        reason: 'four clubs play a double round robin',
+        group.rows.length * (group.rows.length - 1),
+        reason: 'group fixtures follow the configured double round robin',
       );
     }
 

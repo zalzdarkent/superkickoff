@@ -126,6 +126,11 @@ class FixtureSchedulingService {
     }
 
     int moved = 0;
+    final List<({int matchId, String newDate, String originalDate, String reason})> pendingUpdates =
+        <({int matchId, String newDate, String originalDate, String reason})>[];
+    final List<({int matchId, String? oldDate, String newDate, String reason})> pendingLogs =
+        <({int matchId, String? oldDate, String newDate, String reason})>[];
+
     for (final Map<String, Object?> row in ordered) {
       if ((row['status'] as int?) == t.matchFinished) continue;
       final int matchId = row['match_id'] as int;
@@ -183,12 +188,12 @@ class FixtureSchedulingService {
       );
       if (candidate == null) {
         // Record the unresolved conflict rather than silently discarding it.
-        await _recordReschedule(
+        pendingLogs.add((
           matchId: matchId,
           oldDate: oldDate,
           newDate: oldDate,
           reason: 'Unresolved calendar conflict: no valid alternative date.',
-        );
+        ));
         _addClubDate(clubDates, home, oldDate);
         _addClubDate(clubDates, away, oldDate);
         _addStadiumDate(stadiumDates, stadiumId, oldDate);
@@ -196,38 +201,54 @@ class FixtureSchedulingService {
       }
 
       final String newDate = iso(candidate);
+      final String originalDate = (row['original_date'] as String?) ?? oldDate;
+      const String reason = 'Calendar conflict / rest-period rule';
       if (recordChanges) {
-        await db.transaction((Transaction txn) async {
-          await txn.update(
-            t.matches,
-            <String, Object?>{
-              'date': newDate,
-              'original_date': row['original_date'] ?? oldDate,
-              'reschedule_reason': 'Calendar conflict / rest-period rule',
-            },
-            where: 'match_id = ?',
-            whereArgs: <Object?>[matchId],
-          );
-          await _insertReschedule(
-            txn,
-            matchId: matchId,
-            oldDate: oldDate,
-            newDate: newDate,
-            reason: 'Calendar conflict / rest-period rule',
-          );
-        });
-      } else {
-        await _recordReschedule(
+        pendingUpdates.add((
           matchId: matchId,
-          oldDate: oldDate,
           newDate: newDate,
-          reason: 'Calendar conflict / rest-period rule',
-        );
+          originalDate: originalDate,
+          reason: reason,
+        ));
       }
+      pendingLogs.add((
+        matchId: matchId,
+        oldDate: oldDate,
+        newDate: newDate,
+        reason: reason,
+      ));
       _addClubDate(clubDates, home, newDate);
       _addClubDate(clubDates, away, newDate);
       _addStadiumDate(stadiumDates, stadiumId, newDate);
       moved++;
+    }
+
+    if (pendingUpdates.isNotEmpty || pendingLogs.isNotEmpty) {
+      await db.transaction((Transaction txn) async {
+        final Batch batch = txn.batch();
+        for (final update in pendingUpdates) {
+          batch.update(
+            t.matches,
+            <String, Object?>{
+              'date': update.newDate,
+              'original_date': update.originalDate,
+              'reschedule_reason': update.reason,
+            },
+            where: 'match_id = ?',
+            whereArgs: <Object?>[update.matchId],
+          );
+        }
+        for (final log in pendingLogs) {
+          batch.insert('fixture_reschedules', <String, Object?>{
+            'match_id': log.matchId,
+            'old_date': log.oldDate,
+            'new_date': log.newDate,
+            'reason': log.reason,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+        }
+        await batch.commit(noResult: true);
+      });
     }
     return moved;
   }

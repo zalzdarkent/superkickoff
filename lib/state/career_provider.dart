@@ -271,13 +271,55 @@ class CareerProvider extends ChangeNotifier {
       <Object?>[current.seasonId, uTeamId, uTeamId],
     );
 
+    // Also preserve tournaments where the user has a bye in knockout rounds
+    final List<Map<String, Object?>> userByeRows = await _db.rawQuery(
+      '''
+      SELECT DISTINCT tournament_id FROM knockout_byes
+      WHERE season_id = ? AND team_id = ?
+    ''',
+      <Object?>[current.seasonId, uTeamId],
+    );
+
+    // Also preserve tournaments where the user's team is registered for the season
+    final List<Map<String, Object?>> userSeasonTeams = await _db.rawQuery(
+      '''
+      SELECT DISTINCT st.tournament_id FROM season_tournaments st
+      JOIN season_teams stm ON stm.season_id = st.season_id AND stm.team_id = ?
+      WHERE st.season_id = ?
+    ''',
+      <Object?>[uTeamId, current.seasonId],
+    );
+
     final Set<int> activeTours = <int>{
       lg.tournamentId,
       9999,
+      if (cup != null) cup!.tournamentId,
+      for (final Tournament c in cups) c.tournamentId,
       for (final Tournament d in domesticLeagues) d.tournamentId,
       for (final Map<String, Object?> r in userCupRows)
         r['tournament_id'] as int,
+      for (final Map<String, Object?> r in userByeRows)
+        r['tournament_id'] as int,
+      for (final Map<String, Object?> r in userSeasonTeams)
+        r['tournament_id'] as int,
     };
+
+    // Always preserve all domestic tournaments (leagues & national cups) for the user's country
+    if (userTeam != null) {
+      final List<Map<String, Object?>> domesticTourRows = await _db.rawQuery(
+        '''
+        SELECT tu.tournament_id FROM tournaments tu
+        JOIN tournament_countries tc ON tc.tournament_id = tu.tournament_id
+        WHERE tc.country_id = ? AND tu.organization IN (?, ?)
+      ''',
+        <Object?>[userTeam!.countryId, t.orgLeague, t.orgNationalCup],
+      );
+      for (final Map<String, Object?> r in domesticTourRows) {
+        activeTours.add(r['tournament_id'] as int);
+      }
+    }
+
+    if (activeTours.isEmpty) return;
 
     await _db.delete(
       t.matches,
@@ -500,6 +542,7 @@ class CareerProvider extends ChangeNotifier {
                     l.tournamentId != leagueTournament.tournamentId,
               )
               .toList(),
+          userTeamId: teamId,
         );
     onProgress('Saving career...');
     // Persist the manager pick for continuation across restarts.
@@ -586,7 +629,6 @@ class CareerProvider extends ChangeNotifier {
       return;
     }
     await _service.repairSelfMatches(season!.seasonId);
-    await _service.resolveFixtureClashes(season!.seasonId);
 
     // Check pre-season orientation status
     final List<Map<String, Object?>> stateRows = await _db.query(
@@ -1187,6 +1229,7 @@ class CareerProvider extends ChangeNotifier {
     busy = true;
     busyStatus = 'Preparing the new season...';
     notifyListeners();
+    await Future<void>.delayed(const Duration(milliseconds: 60));
     final Season next = await _service.startNextSeason(
       userTeamId: userTeamId,
       onProgress: _progress,

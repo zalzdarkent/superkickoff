@@ -77,22 +77,44 @@ class ReferenceRepository {
   Future<String> leagueRegion(int tournamentId) async {
     final rows = await db.rawQuery(
       '''
-      SELECT isl.tournament_id FROM tournament_countries tc
-      JOIN international_slots isl ON isl.country_id = tc.country_id
-      WHERE tc.tournament_id = ? AND isl.tournament_id IN (49, 50, 52, 99, 100)
+      SELECT isl.tournament_id, c.confederation FROM tournament_countries tc
+      JOIN countries c ON c.country_id = tc.country_id
+      LEFT JOIN international_slots isl ON isl.country_id = tc.country_id
+      WHERE tc.tournament_id = ?
     ''',
       <Object?>[tournamentId],
     );
     final Set<Object?> ids = rows.map((r) => r['tournament_id']).toSet();
     const Map<int, String> zones = <int, String>{
       49: 'europe',
+      51: 'europe',
+      135: 'europe',
       50: 'northAmerica',
       52: 'southAmerica',
       99: 'asia',
+      164: 'asia',
+      1650: 'asia',
       100: 'africa',
     };
     for (final MapEntry<int, String> z in zones.entries) {
       if (ids.contains(z.key)) return z.value;
+    }
+    if (rows.isNotEmpty) {
+      final int? conf = rows.first['confederation'] as int?;
+      switch (conf) {
+        case 1:
+          return 'northAmerica';
+        case 2:
+          return 'southAmerica';
+        case 3:
+          return 'europe';
+        case 4:
+          return 'africa';
+        case 5:
+          return 'asia';
+        case 6:
+          return 'oceania';
+      }
     }
     return '';
   }

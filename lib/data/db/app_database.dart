@@ -62,8 +62,7 @@ class AppDatabase {
       'PRAGMA table_info(${t.players})',
     );
     if (!playerColumns.any(
-      (Map<String, Object?> column) =>
-          column['name'] == 'injury_return_date',
+      (Map<String, Object?> column) => column['name'] == 'injury_return_date',
     )) {
       await db.execute(
         'ALTER TABLE ${t.players} ADD COLUMN injury_return_date TEXT',
@@ -473,11 +472,41 @@ class AppDatabase {
       "WHEN 54 THEN 'UEFA Super Cup' "
       "ELSE name END WHERE tournament_id IN (54, 85, 86, 189)",
     );
-    // Ensure international slots for AFC Challenge League (Indonesia, Thailand, Malaysia, Vietnam, India, etc.)
+    // Remove super cups and world cups from international_slots (they are champion-based, not country quotas)
+    await db.execute('''
+      DELETE FROM ${t.internationalSlots} WHERE tournament_id IN (54, 56, 163, 1651);
+    ''');
+    // Keep Indonesia's direct ACL Elite slot; India and Vietnam have no direct slot.
+    await db.execute('''
+      DELETE FROM ${t.internationalSlots} WHERE tournament_id = 99 AND country_id IN (93, 243);
+    ''');
+    // Deduplicate international_slots if duplicates exist
+    await db.execute('''
+      DELETE FROM ${t.internationalSlots} WHERE rowid NOT IN (
+        SELECT MIN(rowid) FROM ${t.internationalSlots} GROUP BY tournament_id, country_id
+      );
+    ''');
+    // Ensure unique index
+    await db.execute('''
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_international_slots_tour_country
+      ON ${t.internationalSlots} (tournament_id, country_id);
+    ''');
+    // Indonesia's league champion qualifies directly for ACL Elite; lower
+    // league places feed ACL Two and the AFC Challenge League.
+    await db.execute('''
+      INSERT OR REPLACE INTO ${t.internationalSlots}
+        (tournament_id, country_id, slots) VALUES
+        (99, 94, 1),
+        (164, 94, 1),
+        (1650, 94, 1);
+      UPDATE ${t.internationalSlots} SET slots = 2
+        WHERE tournament_id = 164 AND country_id IN (60, 124, 49, 184);
+    ''');
+    // Ensure international slots for AFC Challenge League (1650).
     await db.execute('''
       INSERT OR IGNORE INTO ${t.internationalSlots} (tournament_id, country_id, slots) VALUES
       -- AFC Challenge League (1650)
-      (1650, 94, 2),  -- Indonesia
+      (1650, 94, 1),  -- Indonesia (1 slot for runner-up / cup winner)
       (1650, 223, 2), -- Thailand
       (1650, 146, 2), -- Malaysia
       (1650, 243, 2), -- Vietnam
@@ -490,44 +519,7 @@ class AppDatabase {
       (1650, 124, 2), -- Japan
       (1650, 49, 2),  -- South Korea
       (1650, 41, 2),  -- China
-      (1650, 14, 2),  -- Australia
-
-      -- UEFA Super Cup (54)
-      (54, 64, 1),   -- Spain
-      (54, 185, 1),  -- England
-      (54, 3, 1),    -- Germany
-      (54, 122, 1),  -- Italy
-
-      -- AFC Super Cup (1651)
-      (1651, 10, 1),  -- Saudi Arabia
-      (1651, 124, 1), -- Japan
-      (1651, 49, 1),  -- South Korea
-      (1651, 94, 1),  -- Indonesia
-
-      -- Intercontinental Cup (56) - 8 clubs worldwide
-      (56, 64, 1),   -- Europe (Spain)
-      (56, 185, 1),  -- Europe (England)
-      (56, 30, 1),   -- South America (Brazil)
-      (56, 11, 1),   -- South America (Argentina)
-      (56, 141, 1),  -- North America (Mexico)
-      (56, 10, 1),   -- Asia (Saudi Arabia)
-      (56, 94, 1),   -- Asia (Indonesia)
-      (56, 58, 1),   -- Africa (Egypt)
-
-      -- FIFA Club World Cup (163) - 16 clubs worldwide
-      (163, 64, 2),  -- Spain
-      (163, 185, 2), -- England
-      (163, 3, 1),   -- Germany
-      (163, 122, 1), -- Italy
-      (163, 71, 1),  -- France
-      (163, 30, 2),  -- Brazil
-      (163, 11, 2),  -- Argentina
-      (163, 141, 1), -- Mexico
-      (163, 65, 1),  -- USA
-      (163, 10, 1),  -- Saudi Arabia
-      (163, 124, 1), -- Japan
-      (163, 94, 1),  -- Indonesia
-      (163, 58, 1)   -- Egypt
+      (1650, 14, 2);  -- Australia
     ''');
 
     // ---------------- International football tables & migrations ----------------
@@ -662,13 +654,19 @@ class AppDatabase {
     bool hasCountryMatchColumn(String name) =>
         countryMatchColumns.any((Map<String, Object?> c) => c['name'] == name);
     if (!hasCountryMatchColumn('group_id')) {
-      await db.execute('ALTER TABLE ${t.countryMatches} ADD COLUMN group_id INTEGER');
+      await db.execute(
+        'ALTER TABLE ${t.countryMatches} ADD COLUMN group_id INTEGER',
+      );
     }
     if (!hasCountryMatchColumn('window_id')) {
-      await db.execute('ALTER TABLE ${t.countryMatches} ADD COLUMN window_id TEXT');
+      await db.execute(
+        'ALTER TABLE ${t.countryMatches} ADD COLUMN window_id TEXT',
+      );
     }
     if (!hasCountryMatchColumn('original_date')) {
-      await db.execute('ALTER TABLE ${t.countryMatches} ADD COLUMN original_date TEXT');
+      await db.execute(
+        'ALTER TABLE ${t.countryMatches} ADD COLUMN original_date TEXT',
+      );
     }
     if (!hasCountryMatchColumn('reschedule_reason')) {
       await db.execute(
@@ -949,7 +947,10 @@ class AppDatabase {
     try {
       final List<Map<String, Object?>> rows = await db.query(t.sponsors);
       final Set<String> existing = rows
-          .map((Map<String, Object?> r) => ((r['name'] as String?) ?? '').toLowerCase().trim())
+          .map(
+            (Map<String, Object?> r) =>
+                ((r['name'] as String?) ?? '').toLowerCase().trim(),
+          )
           .toSet();
 
       const List<String> globalBrands = <String>[
@@ -1021,14 +1022,10 @@ class AppDatabase {
 
       for (final String brand in globalBrands) {
         if (!existing.contains(brand.toLowerCase().trim())) {
-          await db.insert(
-            t.sponsors,
-            <String, Object?>{
-              'name': brand,
-              'level': 1,
-            },
-            conflictAlgorithm: ConflictAlgorithm.ignore,
-          );
+          await db.insert(t.sponsors, <String, Object?>{
+            'name': brand,
+            'level': 1,
+          }, conflictAlgorithm: ConflictAlgorithm.ignore);
         }
       }
     } catch (_) {}

@@ -28,6 +28,7 @@ class SeasonGenerator {
   final FixtureSchedulingService _calendar;
 
   DateTime _startDate = DateTime(2025, 8, 9);
+  int? _userTeamId;
 
   Future<CareerPlan> generateCareer({
     required int countryId,
@@ -36,8 +37,10 @@ class SeasonGenerator {
     List<Tournament> internationals = const <Tournament>[],
     List<Tournament> otherLeagues = const <Tournament>[],
     int startYear = 2025,
+    int? userTeamId,
   }) async {
     _startDate = DateTime(startYear, 8, 9); // first Saturday of August-ish
+    _userTeamId = userTeamId;
 
     final List<Tournament> allDomesticLeagues = <Tournament>[
       league,
@@ -49,8 +52,8 @@ class SeasonGenerator {
     final Season season = await _insertSeason(startYear);
     final InternationalCalendarService intlCalendar =
         InternationalCalendarService(db);
-    final List<InternationalWindow> windows =
-        await intlCalendar.generateWindowsForSeason(season.seasonId, startYear);
+    final List<InternationalWindow> windows = await intlCalendar
+        .generateWindowsForSeason(season.seasonId, startYear);
     final InternationalTournamentService intlTournaments =
         InternationalTournamentService(db);
     for (final InternationalWindow win in windows) {
@@ -128,11 +131,12 @@ class SeasonGenerator {
         tour.tournamentId,
         seasonStartYear: startYear,
       );
-      // A league phase uses every qualified club; trimming to a power of two
-      // would silently drop clubs from the table. Knockout-only competitions
+      // A league phase or group stage uses every qualified club; trimming to a power of two
+      // would silently drop clubs from the table or groups. Knockout-only competitions
       // still pick a bracket-sized field.
       final List<int> entrants =
-          tourConfig.format == CompetitionFormat.leaguePhase
+          (tourConfig.format == CompetitionFormat.leaguePhase ||
+              tourConfig.format == CompetitionFormat.groupStage)
           ? _seedIdsByPower(invited)
           : seedByIdes(invited);
       internationalEntrants[tour.tournamentId] = entrants;
@@ -146,13 +150,17 @@ class SeasonGenerator {
 
     // ------------------------------------------------ registration
     // Coach per team comes from the team itself.
-    for (final Team tm in allTeams.values) {
-      await db.insert(t.seasonTeams, <String, Object?>{
-        'team_id': tm.teamId,
-        'season_id': season.seasonId,
-        'coach_id': tm.coachId,
-      });
-    }
+    await db.transaction((Transaction txn) async {
+      final Batch batch = txn.batch();
+      for (final Team tm in allTeams.values) {
+        batch.insert(t.seasonTeams, <String, Object?>{
+          'team_id': tm.teamId,
+          'season_id': season.seasonId,
+          'coach_id': tm.coachId,
+        });
+      }
+      await batch.commit(noResult: true);
+    });
 
     // ------------------------------------------------ league fixtures
     final List<Map<String, Object?>> matchRows = <Map<String, Object?>>[];
@@ -313,7 +321,8 @@ class SeasonGenerator {
         seasonStartYear: season.startYear,
       );
       final List<int> entrants =
-          tourConfig.format == CompetitionFormat.leaguePhase
+          (tourConfig.format == CompetitionFormat.leaguePhase ||
+              tourConfig.format == CompetitionFormat.groupStage)
           ? _seedIdsByPower(invited)
           : seedByIdes(invited);
       if (!isSuperOrGlobal) {
@@ -570,10 +579,10 @@ class SeasonGenerator {
     await _insertMatches(rows);
   }
 
-  /// Builds a group stage: clubs are spread snake-style over groups of four,
-  /// then play a single or double round robin according to the competition
-  /// configuration. The top two of every group advance to the knockout rounds,
-  /// which [generateCareer] leaves for later.
+  /// Builds a group stage: clubs are spread snake-style over balanced groups
+  /// capped at the configured size, then play a single or double round robin.
+  /// The top two of every group advance to the knockout rounds, which
+  /// [generateCareer] leaves for later.
   Future<int> scheduleGroupStage(
     int seasonId,
     int tournamentId,
@@ -589,7 +598,7 @@ class SeasonGenerator {
       for (final int id in entrants)
         if (allTeams[id] != null) allTeams[id]!,
     ]);
-    final int naturalGroups = sorted.length ~/ groupSize;
+    final int naturalGroups = (sorted.length + groupSize - 1) ~/ groupSize;
     final int groupCount = cfg.groupCount > 0
         ? min(cfg.groupCount, naturalGroups)
         : naturalGroups;
@@ -1047,6 +1056,10 @@ class SeasonGenerator {
         );
         for (final Map<String, Object?> row in rows) {
           final Team candidate = Team.fromMap(row);
+          if (_userTeamId != null && candidate.teamId == _userTeamId) {
+            // User team must only enter if they actually won the feeder tournament.
+            continue;
+          }
           if (selectedIds.add(candidate.teamId)) {
             selected = candidate;
             break;
@@ -1093,7 +1106,9 @@ class SeasonGenerator {
     }
     if (teams.length >= feed.size) return teams;
 
-    final List<Map<String, Object?>> slotRows = tour.tournamentId == 56
+    final List<Map<String, Object?>> slotRows =
+        (tour.tournamentId == 56 ||
+            _championsFeeds.containsKey(tour.tournamentId))
         ? await db.rawQuery('''
         SELECT DISTINCT country_id, 1 AS slots
         FROM ${t.internationalSlots}
@@ -1118,10 +1133,18 @@ class SeasonGenerator {
     pool.sort((Team a, Team b) => b.power.compareTo(a.power));
     for (final Team club in pool) {
       if (teams.length >= feed.size) break;
+      if (_userTeamId != null && club.teamId == _userTeamId) {
+        // User team must only enter if they earned qualification via feeder cups.
+        continue;
+      }
       if (teams.every((Team tm) => tm.teamId != club.teamId)) teams.add(club);
     }
     return teams;
   }
+
+  /// Exposes the final result of a tournament before [beforeSeasonId].
+  Future<(int, int)?> lastFinal(int tournamentId, int beforeSeasonId) =>
+      _lastFinal(tournamentId, beforeSeasonId);
 
   /// (champion, runner-up) of the latest fully played edition of a cup before
   /// [beforeSeasonId], or null when none has finished.
@@ -1297,18 +1320,17 @@ class SeasonGenerator {
   }
 
   Future<void> _insertMatches(List<Map<String, Object?>> rows) async {
+    if (rows.isEmpty) return;
     await db.transaction((Transaction txn) async {
+      final Batch batch = txn.batch();
       for (final Map<String, Object?> row in rows) {
-        await txn.insert(t.matches, row);
+        batch.insert(t.matches, row);
       }
+      await batch.commit(noResult: true);
     });
   }
 
-  DateTime _roundDate(
-    DateTime start,
-    int round,
-    CompetitionConfig config,
-  ) {
+  DateTime _roundDate(DateTime start, int round, CompetitionConfig config) {
     final DateTime preferred = start.add(
       Duration(days: config.matchdayIntervalDays * (round - 1)),
     );

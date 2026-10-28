@@ -48,7 +48,10 @@ void main() {
       countryId: indonesia,
       league: league,
       cup: null,
-      internationals: await refs.internationalCups(indonesia),
+      internationals: <Tournament>[
+        ...await refs.internationalCups(indonesia),
+        if (await refs.tournamentById(163) != null) (await refs.tournamentById(163))!,
+      ],
     );
     final int seasonId = plan.season.seasonId;
     final CareerService service = CareerService(

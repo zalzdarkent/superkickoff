@@ -2705,15 +2705,63 @@ class CareerService {
     final List<Tournament> allDomestic = await _refs.domesticLeagues(
       userTeam.countryId,
     );
+    final List<Tournament> baseInternationals = await _refs.internationalCups(
+      userTeam.countryId,
+    );
+    final Map<int, Tournament> intlMap = <int, Tournament>{
+      for (final Tournament t in baseInternationals) t.tournamentId: t,
+    };
+
+    // Check if user won feeder cups in the completed season to earn qualification.
+    final (int, int)? aclTwoFinal = await _gen.lastFinal(164, current.seasonId + 1);
+    if (aclTwoFinal != null && aclTwoFinal.$1 == userTeamId) {
+      // Won ACL Two -> Qualifies for AFC Super Cup (1651) & ACL Elite (99)
+      for (final int tid in const <int>[1651, 99]) {
+        if (!intlMap.containsKey(tid)) {
+          final Tournament? tObj = await _refs.tournamentById(tid);
+          if (tObj != null) intlMap[tid] = tObj;
+        }
+      }
+    }
+    final (int, int)? aclEliteFinal = await _gen.lastFinal(99, current.seasonId + 1);
+    if (aclEliteFinal != null && aclEliteFinal.$1 == userTeamId) {
+      // Won ACL Elite -> Qualifies for AFC Super Cup (1651), Intercontinental Cup (56), Club World Cup (163)
+      for (final int tid in const <int>[1651, 56, 163]) {
+        if (!intlMap.containsKey(tid)) {
+          final Tournament? tObj = await _refs.tournamentById(tid);
+          if (tObj != null) intlMap[tid] = tObj;
+        }
+      }
+    }
+    final (int, int)? uclFinal = await _gen.lastFinal(49, current.seasonId + 1);
+    if (uclFinal != null && uclFinal.$1 == userTeamId) {
+      for (final int tid in const <int>[54, 56, 163]) {
+        if (!intlMap.containsKey(tid)) {
+          final Tournament? tObj = await _refs.tournamentById(tid);
+          if (tObj != null) intlMap[tid] = tObj;
+        }
+      }
+    }
+    final (int, int)? uelFinal = await _gen.lastFinal(51, current.seasonId + 1);
+    if (uelFinal != null && uelFinal.$1 == userTeamId) {
+      for (final int tid in const <int>[54, 49]) {
+        if (!intlMap.containsKey(tid)) {
+          final Tournament? tObj = await _refs.tournamentById(tid);
+          if (tObj != null) intlMap[tid] = tObj;
+        }
+      }
+    }
+
     final CareerPlan plan = await _gen.generateCareer(
       countryId: userTeam.countryId,
       league: nextLeague,
       cup: nextCup,
-      internationals: await _refs.internationalCups(userTeam.countryId),
+      internationals: intlMap.values.toList(),
       otherLeagues: allDomestic
           .where((Tournament l) => l.tournamentId != nextLeague.tournamentId)
           .toList(),
       startYear: current.startYear + 1,
+      userTeamId: userTeamId,
     );
     final List<Team> seasonClubs = await _registeredClubs();
     final Map<int, Team> clubsMap = <int, Team>{
