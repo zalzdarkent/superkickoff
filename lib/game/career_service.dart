@@ -420,6 +420,16 @@ class CareerService {
       whereArgs: <Object?>[match.matchId],
     );
 
+    // Persist per-player stats for AI matches so leaderboards (scorers, assists,
+    // clean sheets, ratings) are populated.
+    await _recordFastMatchPlayers(
+      matchId: match.matchId,
+      homeTeamId: match.homeTeamId,
+      awayTeamId: match.awayTeamId,
+      homeGoals: homeGoals,
+      awayGoals: awayGoals,
+    );
+
     return MatchResult(
       homeGoals: homeGoals,
       awayGoals: awayGoals,
@@ -455,6 +465,130 @@ class CareerService {
         refereeTemper: 2,
       ),
     );
+  }
+
+  /// Lightweight attribution of goals, assists, clean sheets, and ratings
+  /// for matches simulated via [simulateMatchFast]. Ensures tournament leaderboards
+  /// remain populated across cups and non-user divisions without overhead.
+  Future<void> _recordFastMatchPlayers({
+    required int matchId,
+    required int homeTeamId,
+    required int awayTeamId,
+    required int homeGoals,
+    required int awayGoals,
+  }) async {
+    final List<Map<String, Object?>> homeStarters = await db.rawQuery(
+      '''
+      SELECT p.player_id, p.position_id, p.power
+      FROM ${t.players} p
+      JOIN ${t.teamPlayers} tp ON tp.player_id = p.player_id
+      WHERE tp.team_id = ?
+      ORDER BY p.power DESC
+      LIMIT 11
+      ''',
+      <Object?>[homeTeamId],
+    );
+    final List<Map<String, Object?>> awayStarters = await db.rawQuery(
+      '''
+      SELECT p.player_id, p.position_id, p.power
+      FROM ${t.players} p
+      JOIN ${t.teamPlayers} tp ON tp.player_id = p.player_id
+      WHERE tp.team_id = ?
+      ORDER BY p.power DESC
+      LIMIT 11
+      ''',
+      <Object?>[awayTeamId],
+    );
+
+    await _insertFastTeamPlayers(
+      matchId: matchId,
+      teamId: homeTeamId,
+      starters: homeStarters,
+      goalsScored: homeGoals,
+      goalsConceded: awayGoals,
+    );
+    await _insertFastTeamPlayers(
+      matchId: matchId,
+      teamId: awayTeamId,
+      starters: awayStarters,
+      goalsScored: awayGoals,
+      goalsConceded: homeGoals,
+    );
+  }
+
+  Future<void> _insertFastTeamPlayers({
+    required int matchId,
+    required int teamId,
+    required List<Map<String, Object?>> starters,
+    required int goalsScored,
+    required int goalsConceded,
+  }) async {
+    if (starters.isEmpty) return;
+
+    // Distribute goals primarily to attackers and midfielders.
+    final List<int> goalAttackerIds = <int>[];
+    final List<int> assistCandidateIds = <int>[];
+    for (final Map<String, Object?> p in starters) {
+      final int pid = p['player_id'] as int;
+      final int pos = (p['position_id'] as int?) ?? 1;
+      if (pos != 1) assistCandidateIds.add(pid);
+      if (pos >= 4) {
+        // Attacker / forward
+        goalAttackerIds.add(pid);
+        goalAttackerIds.add(pid); // weighted double
+      } else if (pos >= 2) {
+        // Midfielder / wingback
+        goalAttackerIds.add(pid);
+      }
+    }
+    if (goalAttackerIds.isEmpty) {
+      goalAttackerIds.addAll(starters.map((p) => p['player_id'] as int));
+    }
+
+    final Map<int, int> playerGoals = <int, int>{};
+    final Map<int, int> playerAssists = <int, int>{};
+
+    for (int g = 0; g < goalsScored; g++) {
+      final int scorerId = goalAttackerIds[_rng.nextInt(goalAttackerIds.length)];
+      playerGoals[scorerId] = (playerGoals[scorerId] ?? 0) + 1;
+
+      if (_rng.nextDouble() < 0.70 && assistCandidateIds.isNotEmpty) {
+        final List<int> candidates = assistCandidateIds
+            .where((int id) => id != scorerId)
+            .toList();
+        if (candidates.isNotEmpty) {
+          final int assisterId = candidates[_rng.nextInt(candidates.length)];
+          playerAssists[assisterId] = (playerAssists[assisterId] ?? 0) + 1;
+        }
+      }
+    }
+
+    for (final Map<String, Object?> p in starters) {
+      final int pid = p['player_id'] as int;
+      final int goals = playerGoals[pid] ?? 0;
+      final int assists = playerAssists[pid] ?? 0;
+      final int diff = goalsScored - goalsConceded;
+      final int baseRating = 60 + (diff * 3) + (goals * 10) + (assists * 6) + _rng.nextInt(6);
+      final int clampedRating = baseRating.clamp(50, 95);
+
+      await db.insert(
+        t.matchPlayers,
+        <String, Object?>{
+          'match_id': matchId,
+          'player_id': pid,
+          'team_id': teamId,
+          'starter': 1,
+          'minutes': 90,
+          'points': goals * 4 + assists * 2,
+          'rating': clampedRating,
+          'mvp': 0,
+          'goals': goals,
+          'assists': assists,
+          'yellow_cards': _rng.nextDouble() < 0.12 ? 1 : 0,
+          'red_cards': 0,
+        },
+      );
+    }
   }
 
   /// Simulates [match] and persists the full result. Returns the result for

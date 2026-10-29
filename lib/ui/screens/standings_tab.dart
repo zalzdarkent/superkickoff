@@ -5,6 +5,7 @@ import '../../data/models/models.dart';
 import '../../state/career_provider.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'knockout_bracket_sheet.dart';
 import 'player_detail_sheet.dart';
 import 'season_history_sheet.dart';
 import 'team_detail_sheet.dart';
@@ -155,7 +156,7 @@ class _StandingsTabState extends State<StandingsTab> {
                       ],
                     ),
                   ),
-                  const TabBar(
+                  TabBar(
                     isScrollable: true,
                     tabAlignment: TabAlignment.start,
                     dividerColor: Colors.transparent,
@@ -163,11 +164,11 @@ class _StandingsTabState extends State<StandingsTab> {
                     unselectedLabelColor: AppTheme.textDim,
                     indicatorColor: AppTheme.accent,
                     tabs: <Widget>[
-                      Tab(text: 'Table'),
-                      Tab(text: 'Scorers'),
-                      Tab(text: 'Assists'),
-                      Tab(text: 'Clean sheets'),
-                      Tab(text: 'Rating'),
+                      Tab(text: selected.isNationalCup ? 'Bracket' : 'Table'),
+                      const Tab(text: 'Scorers'),
+                      const Tab(text: 'Assists'),
+                      const Tab(text: 'Clean sheets'),
+                      const Tab(text: 'Rating'),
                     ],
                   ),
                   Expanded(
@@ -246,6 +247,43 @@ class _LeagueTableState extends State<_LeagueTable> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.tournament.isNationalCup) {
+      return FutureBuilder<List<FixtureMatch>>(
+        future: game.seasonFixtures(),
+        builder: (
+          BuildContext context,
+          AsyncSnapshot<List<FixtureMatch>> snap,
+        ) {
+          if (!snap.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final List<FixtureMatch> matches =
+              snap.data!
+                  .where(
+                    (FixtureMatch m) =>
+                        m.tournamentId == widget.tournament.tournamentId &&
+                        m.groupId == null,
+                  )
+                  .toList();
+          return FutureBuilder<Map<int, int>>(
+            future: game.cupTotalRounds(),
+            builder: (
+              BuildContext context,
+              AsyncSnapshot<Map<int, int>> roundsSnap,
+            ) {
+              final int? totalRounds =
+                  roundsSnap.data?[widget.tournament.tournamentId];
+              return KnockoutBracketView(
+                tournament: widget.tournament,
+                matches: matches,
+                teams: game.teamCache,
+                totalRounds: totalRounds,
+              );
+            },
+          );
+        },
+      );
+    }
     return widget.stats.groups.isNotEmpty
         ? _groupBody(widget.stats.groups)
         : _leagueBody(widget.stats.standings);

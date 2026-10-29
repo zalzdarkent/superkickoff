@@ -21,18 +21,65 @@ Future<void> showKnockoutBracket(
     backgroundColor: Colors.transparent,
     builder: (BuildContext context) => FractionallySizedBox(
       heightFactor: 0.82,
-      child: _KnockoutBracketSheet(
-        tournament: tournament,
-        matches: matches,
-        teams: teams,
-        totalRounds: totalRounds,
+      child: Container(
+        decoration: const BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const SizedBox(height: 8),
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+              child: Row(
+                children: <Widget>[
+                  TournamentAvatar(
+                    tournament: tournament,
+                    radius: 12,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${tournament.name} · Knockout bracket',
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: KnockoutBracketView(
+                tournament: tournament,
+                matches: matches,
+                teams: teams,
+                totalRounds: totalRounds,
+              ),
+            ),
+          ],
+        ),
       ),
     ),
   );
 }
 
-class _KnockoutBracketSheet extends StatelessWidget {
-  const _KnockoutBracketSheet({
+class KnockoutBracketView extends StatelessWidget {
+  const KnockoutBracketView({
+    super.key,
     required this.tournament,
     required this.matches,
     required this.teams,
@@ -66,62 +113,19 @@ class _KnockoutBracketSheet extends StatelessWidget {
         (finalTie != null && finalTie.complete) ? finalTie.winnerId : null;
     final Team? champion = championId == null ? null : teams[championId];
 
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      child: Column(
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.all(12),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const SizedBox(height: 8),
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey,
-                borderRadius: BorderRadius.circular(2),
-              ),
+          for (int phase = 1; phase <= finalTotalRounds; phase++)
+            _RoundColumn(
+              title: knockoutRoundName(phase, finalTotalRounds),
+              ties: groupTies(rounds[phase] ?? const <FixtureMatch>[]),
+              teams: teams,
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: Row(
-              children: <Widget>[
-                TournamentAvatar(
-                  tournament: tournament,
-                  radius: 12,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '${tournament.name} · Knockout bracket',
-                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  for (int phase = 1; phase <= finalTotalRounds; phase++)
-                    _RoundColumn(
-                      title: knockoutRoundName(phase, finalTotalRounds),
-                      ties: groupTies(rounds[phase] ?? const <FixtureMatch>[]),
-                      teams: teams,
-                    ),
-                  _ChampionColumn(champion: champion),
-                ],
-              ),
-            ),
-          ),
+          _ChampionColumn(champion: champion),
         ],
       ),
     );
