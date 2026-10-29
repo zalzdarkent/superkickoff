@@ -1273,6 +1273,217 @@ class CareerService {
       }
       break; // at most one AI transfer per housekeeping week
     }
+
+    // Attempt an unsolicited offer for an unlisted user squad player
+    await _maybeGenerateUnsolicitedUserOffer(
+      userTeamId: userTeamId,
+      seasonId: effectiveSeasonId,
+      currentDate: date,
+      isDeadlineDay: isDeadline,
+      activeWindow: activeWindow,
+      clubs: clubs,
+    );
+  }
+
+  /// AI clubs dynamically scout and make unsolicited transfer offers for user
+  /// squad players (even when unlisted / under contract), factoring in
+  /// remaining contract length, form, playing time, and player reputation.
+  Future<void> _maybeGenerateUnsolicitedUserOffer({
+    required int userTeamId,
+    required int seasonId,
+    required String currentDate,
+    required bool isDeadlineDay,
+    required TransferWindow? activeWindow,
+    required List<Team> clubs,
+  }) async {
+    final TransferRepository? transfers = _transfers;
+    if (transfers == null) return;
+
+    // Only occur during open transfer windows (frenzy on deadline day)
+    final bool windowOpen = activeWindow != null;
+    if (!windowOpen) return;
+
+    // Chance to attempt an unsolicited inquiry: ~22% on regular window days, ~55% on deadline day
+    final double chance = isDeadlineDay ? 0.55 : 0.22;
+    if (_rng.nextDouble() > chance) return;
+
+    // Don't overwhelm the user: check if user already has 2+ pending incoming offers
+    final List<TransferOffer> existingPending =
+        await transfers.pendingOffersForTeam(userTeamId);
+    final int pendingIncoming = existingPending
+        .where((TransferOffer o) => o.fromTeamId == userTeamId)
+        .length;
+    if (pendingIncoming >= 2) return;
+
+    // Fetch user squad players with contract details and season match stats
+    final List<Map<String, Object?>> squadRows = await db.rawQuery(
+      '''
+      SELECT p.player_id, p.name, p.age, p.power, p.value, p.position_id,
+             p.market_status, p.squad_status,
+             c.end_date,
+             COUNT(DISTINCT mp.match_id) AS apps,
+             AVG(mp.rating) AS avg_rating,
+             SUM(mp.goals) AS goals,
+             SUM(mp.assists) AS assists
+      FROM players p
+      JOIN team_players tp ON tp.player_id = p.player_id
+      LEFT JOIN contracts c ON c.player_id = p.player_id AND c.status = 1
+      LEFT JOIN match_players mp ON mp.player_id = p.player_id
+      LEFT JOIN matches m ON m.match_id = mp.match_id AND m.season_id = ?
+      WHERE tp.team_id = ? AND p.market_status != ?
+      GROUP BY p.player_id
+    ''',
+      <Object?>[seasonId, userTeamId, t.marketOnLoan],
+    );
+
+    if (squadRows.isEmpty) return;
+
+    // Filter out players already involved in a pending or scheduled transfer
+    final Set<int> busyPlayerIds = existingPending
+        .map((TransferOffer o) => o.playerId)
+        .toSet();
+
+    final List<Map<String, Object?>> eligible = squadRows.where((Map<String, Object?> r) {
+      final int pid = r['player_id'] as int;
+      final int val = (r['value'] as int?) ?? 0;
+      return !busyPlayerIds.contains(pid) && val > 0;
+    }).toList();
+
+    if (eligible.isEmpty) return;
+
+    // Weight candidate selection by player quality, form, and profile:
+    // - Star players (high power)
+    // - On-fire players (goals, assists, high match rating)
+    // - Promising young players (age <= 22 with good power)
+    // - Solid veteran players (age >= 30 with good power & minutes)
+    final List<double> weights = <double>[];
+    for (final Map<String, Object?> row in eligible) {
+      final int power = (row['power'] as int?) ?? 50;
+      final int age = (row['age'] as int?) ?? 25;
+      final int apps = (row['apps'] as int?) ?? 0;
+      final double rating = (row['avg_rating'] as num?)?.toDouble() ?? 60.0;
+      final int goals = (row['goals'] as int?) ?? 0;
+
+      double w = (power - 40).clamp(5, 50).toDouble();
+      if (apps >= 5) {
+        if (rating >= 68.0) w += 15.0;
+        if (goals >= 3) w += 10.0;
+      }
+      if (age <= 22) w += 12.0; // Young talent premium interest
+      if (age >= 30 && power >= 60) w += 8.0; // Experienced veteran interest
+
+      weights.add(max(1.0, w));
+    }
+
+    final double totalWeight = weights.fold(0.0, (double sum, double w) => sum + w);
+    double pick = _rng.nextDouble() * totalWeight;
+    int selectedIndex = 0;
+    for (int i = 0; i < weights.length; i++) {
+      pick -= weights[i];
+      if (pick <= 0) {
+        selectedIndex = i;
+        break;
+      }
+    }
+
+    final Map<String, Object?> chosenRow = eligible[selectedIndex];
+    final int playerId = chosenRow['player_id'] as int;
+    final String playerName = chosenRow['name'] as String;
+    final int marketValue = (chosenRow['value'] as int?) ?? 10000;
+    final int apps = (chosenRow['apps'] as int?) ?? 0;
+    final double rating = (chosenRow['avg_rating'] as num?)?.toDouble() ?? 60.0;
+    final int goals = (chosenRow['goals'] as int?) ?? 0;
+    final String? contractEndDate = chosenRow['end_date'] as String?;
+
+    // Calculate remaining contract months from currentDate
+    int contractMonths = 24; // Default ~2 seasons
+    if (contractEndDate != null && contractEndDate.length >= 10) {
+      try {
+        final DateTime curDt = DateTime.tryParse(currentDate) ?? DateTime.now();
+        final DateTime endDt = DateTime.parse(contractEndDate);
+        final int diffMonths =
+            ((endDt.year - curDt.year) * 12) + (endDt.month - curDt.month);
+        contractMonths = diffMonths.clamp(1, 60);
+      } catch (_) {
+        contractMonths = 24;
+      }
+    }
+
+    // Determine offer multiplier based on contract & player status:
+    // 1. Contract leverage:
+    //    - <= 6 months: 0.65 - 0.75x (urgent free agent risk)
+    //    - 7 - 12 months: 0.80 - 0.95x (final year discount)
+    //    - 13 - 24 months: 0.95 - 1.15x (fair market)
+    //    - 25 - 36 months: 1.15 - 1.35x (solid control)
+    //    - > 36 months: 1.30 - 1.60x (long-term seller premium)
+    double baseFactor;
+    if (contractMonths <= 6) {
+      baseFactor = 0.65 + _rng.nextDouble() * 0.10;
+    } else if (contractMonths <= 12) {
+      baseFactor = 0.80 + _rng.nextDouble() * 0.15;
+    } else if (contractMonths <= 24) {
+      baseFactor = 0.95 + _rng.nextDouble() * 0.20;
+    } else if (contractMonths <= 36) {
+      baseFactor = 1.15 + _rng.nextDouble() * 0.20;
+    } else {
+      baseFactor = 1.30 + _rng.nextDouble() * 0.30;
+    }
+
+    // 2. Performance & playing time adjustment:
+    //    - Inactive / Low minutes (< 3 apps): discount -10% to -15%
+    //    - Regular starter with high rating / goals: premium +10% to +20%
+    if (apps < 3) {
+      baseFactor *= 0.88;
+    } else if (rating >= 67.0 || goals >= 5) {
+      baseFactor *= 1.15;
+    }
+
+    final int targetOffer =
+        PlayerValuationService.roundValuationCleanly((marketValue * baseFactor).round());
+
+    // Filter potential AI buyers who can afford this offer
+    final List<Team> buyers = clubs
+        .where((Team t) => t.teamId != userTeamId && t.budget >= targetOffer)
+        .toList();
+
+    if (buyers.isEmpty) return;
+
+    final Team buyer = buyers[_rng.nextInt(buyers.length)];
+    final int finalOfferAmount = targetOffer.clamp(10000, buyer.budget);
+
+    final int offerId = await transfers.createOffer(
+      playerId: playerId,
+      fromTeamId: userTeamId,
+      toTeamId: buyer.teamId,
+      offerAmount: finalOfferAmount,
+      playerValue: marketValue,
+      agreementDate: currentDate,
+    );
+
+    // Contextual message description explaining the offer rationale
+    String contractDesc;
+    if (contractMonths <= 6) {
+      contractDesc = 'kontraknya tersisa kurang dari 6 bulan';
+    } else if (contractMonths <= 12) {
+      contractDesc = 'memasuki tahun terakhir kontraknya (~$contractMonths bulan tersisa)';
+    } else if (contractMonths >= 36) {
+      contractDesc = 'masih terikat kontrak jangka panjang (~${(contractMonths / 12).toStringAsFixed(1)} tahun)';
+    } else {
+      contractDesc = 'memiliki sisa kontrak sekitar ${(contractMonths / 12).toStringAsFixed(1)} tahun';
+    }
+
+    await _messages.insert(
+      title: 'Tawaran Masuk: $playerName',
+      body:
+          '${buyer.name} telah mengajukan tawaran resmi sebesar ${_money(finalOfferAmount)} '
+          'untuk memboyong $playerName. '
+          'Mengingat pemain $contractDesc, tawaran ini diajukan untuk membuka negosiasi transfer. '
+          'Buka pesan ini untuk menerima, menolak, atau mengajukan tawaran balik (counter offer).',
+      teamId: userTeamId,
+      sender: buyer.name,
+      date: currentDate,
+      transferOfferId: offerId,
+    );
   }
 
   /// Automated weekly training for AI clubs participating in [seasonId].
