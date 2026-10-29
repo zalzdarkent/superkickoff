@@ -738,6 +738,10 @@ class CareerProvider extends ChangeNotifier {
   Future<void> refreshInternationalData() async {
     if (season == null) return;
     try {
+      await _service.internationalCalendar.syncStreamlinedWindowsForSeason(
+        season!.seasonId,
+        season!.startYear,
+      );
       internationalWindows = await _service.internationalCalendar.windowsForSeason(season!.seasonId);
       internationalMatches = await _service.countryMatchesForSeason(season!.seasonId);
       if (userTeamId > 0) {

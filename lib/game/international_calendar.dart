@@ -77,6 +77,26 @@ class InternationalCalendarService {
     return windows;
   }
 
+  /// Automatically synchronizes existing saved seasons to the streamlined 3-window calendar
+  /// (removes redundant legacy windows like sep/nov/jun from ongoing saves).
+  Future<void> syncStreamlinedWindowsForSeason(int seasonId, int startYear) async {
+    final List<InternationalWindow> current = await windowsForSeason(seasonId);
+    if (current.length > 3) {
+      await db.delete(
+        t.internationalWindows,
+        where: 'season_id = ? AND window_id NOT IN (?, ?, ?)',
+        whereArgs: <Object?>[
+          seasonId,
+          'win_${seasonId}_oct',
+          'win_${seasonId}_mar',
+          'win_${seasonId}_summer',
+        ],
+      );
+      // Re-generate to ensure all 3 core windows are present
+      await generateWindowsForSeason(seasonId, startYear);
+    }
+  }
+
   /// Returns all international windows for [seasonId].
   Future<List<InternationalWindow>> windowsForSeason(int seasonId) async {
     final List<Map<String, Object?>> rows = await db.query(
