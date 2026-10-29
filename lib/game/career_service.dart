@@ -2451,6 +2451,7 @@ class CareerService {
       );
     }
     await _squads.refreshAllTeamPowers();
+    await nationalTeams.refreshAllCountryPowers();
 
     final List<Player> after = await _squads.squadForTeam(userTeamId);
     final List<(Player, int)> changes = <(Player, int)>[

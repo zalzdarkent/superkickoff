@@ -405,5 +405,64 @@ class NationalTeamService {
     }
     return squad;
   }
+
+  /// Recalculates power for all countries dynamically from their top 11 active players.
+  ///
+  /// This ensures that as players grow through training, match performance,
+  /// or youth development, their national team power updates dynamically in the world ranking
+  /// and matchmaking ladders.
+  Future<void> refreshAllCountryPowers([Transaction? txn]) async {
+    final DatabaseExecutor executor = txn ?? db;
+    await executor.rawUpdate(
+      '''
+      UPDATE ${t.countries}
+      SET power = (
+        SELECT CAST(ROUND(AVG(top_p.power)) AS INTEGER)
+        FROM (
+          SELECT p.power
+          FROM ${t.players} p
+          WHERE p.country_id = countries.country_id AND p.status_id = ?
+          ORDER BY p.power DESC
+          LIMIT 11
+        ) AS top_p
+      )
+      WHERE EXISTS (
+        SELECT 1
+        FROM ${t.players} p
+        WHERE p.country_id = countries.country_id AND p.status_id = ?
+      )
+      ''',
+      <Object?>[t.statusActive, t.statusActive],
+    );
+  }
+
+  /// Recalculates power for a specific country from its top 11 active players.
+  Future<int> refreshCountryPower(int countryId, [Transaction? txn]) async {
+    final DatabaseExecutor executor = txn ?? db;
+    final List<Map<String, Object?>> rows = await executor.rawQuery(
+      '''
+      SELECT p.power
+      FROM ${t.players} p
+      WHERE p.country_id = ? AND p.status_id = ?
+      ORDER BY p.power DESC
+      LIMIT 11
+      ''',
+      <Object?>[countryId, t.statusActive],
+    );
+    if (rows.isEmpty) return 0;
+    final int sum = rows.fold<int>(
+      0,
+      (int acc, Map<String, Object?> r) => acc + ((r['power'] as int?) ?? 0),
+    );
+    final int newPower = (sum / rows.length).round();
+    await executor.update(
+      t.countries,
+      <String, Object?>{'power': newPower},
+      where: 'country_id = ?',
+      whereArgs: <Object?>[countryId],
+    );
+    return newPower;
+  }
 }
+
 

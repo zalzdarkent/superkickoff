@@ -10,6 +10,7 @@ import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 import '../repositories/club_logo_service.dart';
 import '../repositories/league_logo_service.dart';
 import '../repositories/squad_repository.dart';
+import '../../game/national_team_service.dart';
 import '../models/models.dart';
 import 'schema.dart' as t;
 
@@ -51,6 +52,7 @@ class AppDatabase {
     );
     await ensureLocalTables(_db!);
     await SquadRepository(_db!).refreshAllTeamPowers();
+    await NationalTeamService(_db!).refreshAllCountryPowers();
     return _db!;
   }
 
@@ -1130,6 +1132,7 @@ class AppDatabase {
     );
     await ensureLocalTables(_db!);
     await SquadRepository(_db!).refreshAllTeamPowers();
+    await NationalTeamService(_db!).refreshAllCountryPowers();
     return _db!;
   }
 
