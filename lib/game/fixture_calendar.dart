@@ -80,9 +80,7 @@ class FixtureSchedulingService {
               tournamentId,
               seasonStart.year,
             );
-            if (mandatoryDates.isEmpty ||
-                !(c.type == CompetitionType.league ||
-                    c.type == CompetitionType.domesticCup)) {
+            if (mandatoryDates.isEmpty) {
               return c;
             }
             final Set<DateTime> combined = <DateTime>{
@@ -310,9 +308,7 @@ class FixtureSchedulingService {
     );
     final List<DateTime> mandatoryDates =
         await InternationalCalendarService(db).mandatoryUnavailableDates(seasonId);
-    final bool isDomesticClub = baseConfig.type == CompetitionType.league ||
-        baseConfig.type == CompetitionType.domesticCup;
-    final CompetitionConfig config = (mandatoryDates.isEmpty || !isDomesticClub)
+    final CompetitionConfig config = mandatoryDates.isEmpty
         ? baseConfig
         : baseConfig.copyWith(
             unavailableDates: <DateTime>{
