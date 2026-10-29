@@ -633,9 +633,13 @@ class SeasonRepository {
 
   /// Creates the season awards from the still-present per-match statistics.
   /// Must run before the season archive trigger deletes match_players.
+  /// Awards evaluate league matches only ([leagueTournamentId] or the primary
+  /// division-1 league for the season) so individual stats strictly reflect
+  /// the domestic league season.
   Future<void> recordSeasonAwards({
     required int seasonId,
     required int year,
+    int? leagueTournamentId,
   }) async {
     const int minimumAwardAppearances = 10;
     await db.delete(
@@ -644,7 +648,36 @@ class SeasonRepository {
       whereArgs: <Object?>[seasonId],
     );
 
-    // 1. Golden Boot / Top Scorer
+    int targetLeagueId = leagueTournamentId ?? 0;
+    if (targetLeagueId <= 0) {
+      final List<Map<String, Object?>> primary = await db.rawQuery(
+        '''
+        SELECT tu.tournament_id
+        FROM season_tournaments st
+        JOIN tournaments tu ON tu.tournament_id = st.tournament_id
+        WHERE st.season_id = ? AND tu.organization = ?
+        ORDER BY tu.division_id ASC, tu.tournament_id ASC
+        LIMIT 1
+      ''',
+        <Object?>[seasonId, t.orgLeague],
+      );
+      if (primary.isNotEmpty) {
+        targetLeagueId = (primary.first['tournament_id'] as int?) ?? 0;
+      }
+    }
+
+    String matchLeagueFilter;
+    List<Object?> filterArgs;
+    if (targetLeagueId > 0) {
+      matchLeagueFilter = 'm.season_id = ? AND m.tournament_id = ? AND m.status = ?';
+      filterArgs = <Object?>[seasonId, targetLeagueId, t.matchFinished];
+    } else {
+      matchLeagueFilter =
+          'm.season_id = ? AND m.status = ? AND tu.organization = ?';
+      filterArgs = <Object?>[seasonId, t.matchFinished, t.orgLeague];
+    }
+
+    // 1. Golden Boot / Top Scorer (League matches only)
     final List<Map<String, Object?>> topScorer = await db.rawQuery(
       '''
       SELECT mp.player_id, mp.team_id, p.position_id,
@@ -652,20 +685,22 @@ class SeasonRepository {
              AVG(mp.rating) AS avg_rating
       FROM match_players mp
       JOIN matches m ON m.match_id = mp.match_id
+      JOIN tournaments tu ON tu.tournament_id = m.tournament_id
       JOIN players p ON p.player_id = mp.player_id
-      WHERE m.season_id = ? AND m.status = ?
+      WHERE $matchLeagueFilter
       GROUP BY mp.player_id, mp.team_id
       HAVING SUM(mp.goals) > 0
          AND COUNT(DISTINCT mp.match_id) >= ?
       ORDER BY goals DESC, SUM(mp.assists) DESC, AVG(mp.rating) DESC
       LIMIT 1
     ''',
-      <Object?>[seasonId, t.matchFinished, minimumAwardAppearances],
+      <Object?>[...filterArgs, minimumAwardAppearances],
     );
     if (topScorer.isNotEmpty) {
       final Map<String, Object?> row = topScorer.first;
       final int goals = (row['goals'] as int?) ?? 0;
-      final double rating = (row['avg_rating'] as num?)?.toDouble() ?? 0.0;
+      final double rawRating = (row['avg_rating'] as num?)?.toDouble() ?? 0.0;
+      final double rating = rawRating > 10.0 ? rawRating / 10.0 : rawRating;
       await db.insert(t.playerAwards, <String, Object?>{
         'player_id': row['player_id'],
         'team_id': row['team_id'],
@@ -679,7 +714,7 @@ class SeasonRepository {
       });
     }
 
-    // 2. MVP
+    // 2. MVP (League matches only)
     final List<Map<String, Object?>> mvp = await db.rawQuery(
       '''
       SELECT mp.player_id, mp.team_id, p.position_id,
@@ -689,20 +724,22 @@ class SeasonRepository {
              SUM(mp.assists) AS assists
       FROM match_players mp
       JOIN matches m ON m.match_id = mp.match_id
+      JOIN tournaments tu ON tu.tournament_id = m.tournament_id
       JOIN players p ON p.player_id = mp.player_id
-      WHERE m.season_id = ? AND m.status = ? AND mp.minutes > 0
+      WHERE $matchLeagueFilter AND mp.minutes > 0
       GROUP BY mp.player_id, mp.team_id
       HAVING COUNT(DISTINCT mp.match_id) >= ?
       ORDER BY SUM(mp.mvp) DESC, AVG(mp.rating) DESC,
                SUM(mp.goals) + SUM(mp.assists) DESC
       LIMIT 1
     ''',
-      <Object?>[seasonId, t.matchFinished, minimumAwardAppearances],
+      <Object?>[...filterArgs, minimumAwardAppearances],
     );
     if (mvp.isNotEmpty) {
       final Map<String, Object?> row = mvp.first;
       final int mvps = (row['mvps'] as int?) ?? 0;
-      final double rating = (row['avg_rating'] as num?)?.toDouble() ?? 0.0;
+      final double rawRating = (row['avg_rating'] as num?)?.toDouble() ?? 0.0;
+      final double rating = rawRating > 10.0 ? rawRating / 10.0 : rawRating;
       await db.insert(t.playerAwards, <String, Object?>{
         'player_id': row['player_id'],
         'team_id': row['team_id'],
@@ -711,12 +748,12 @@ class SeasonRepository {
         'season_id': seasonId,
         'goals': (row['goals'] as int?) ?? 0,
         'rating': rating,
-        'stat_subtitle': '$mvps\u00d7 MVP \u00b7 Rating ${rating.toStringAsFixed(1)}',
+        'stat_subtitle': '$mvps× MVP · Rating ${rating.toStringAsFixed(1)}',
         'position_id': row['position_id'],
       });
     }
 
-    // 3. Best Young Player (age <= 21)
+    // 3. Best Young Player (age <= 21, League matches only)
     final List<Map<String, Object?>> young = await db.rawQuery(
       '''
       SELECT mp.player_id, mp.team_id, p.position_id, p.age,
@@ -725,18 +762,20 @@ class SeasonRepository {
              SUM(mp.assists) AS assists
       FROM match_players mp
       JOIN matches m ON m.match_id = mp.match_id
+      JOIN tournaments tu ON tu.tournament_id = m.tournament_id
       JOIN players p ON p.player_id = mp.player_id
-      WHERE m.season_id = ? AND m.status = ? AND p.age <= 21
+      WHERE $matchLeagueFilter AND p.age <= 21
       GROUP BY mp.player_id, mp.team_id
       HAVING COUNT(DISTINCT mp.match_id) >= ?
       ORDER BY AVG(mp.rating) DESC, SUM(mp.goals) + SUM(mp.assists) DESC
       LIMIT 1
     ''',
-      <Object?>[seasonId, t.matchFinished, minimumAwardAppearances],
+      <Object?>[...filterArgs, minimumAwardAppearances],
     );
     if (young.isNotEmpty) {
       final Map<String, Object?> row = young.first;
-      final double rating = (row['avg_rating'] as num?)?.toDouble() ?? 0.0;
+      final double rawRating = (row['avg_rating'] as num?)?.toDouble() ?? 0.0;
+      final double rating = rawRating > 10.0 ? rawRating / 10.0 : rawRating;
       await db.insert(t.playerAwards, <String, Object?>{
         'player_id': row['player_id'],
         'team_id': row['team_id'],
@@ -745,13 +784,13 @@ class SeasonRepository {
         'season_id': seasonId,
         'goals': (row['goals'] as int?) ?? 0,
         'rating': rating,
-        'stat_subtitle': 'Age ${row['age']} \u00b7 Rating ${rating.toStringAsFixed(1)}',
+        'stat_subtitle': 'Age ${row['age']} · Rating ${rating.toStringAsFixed(1)}',
         'position_id': row['position_id'],
       });
     }
 
-    // 4. Ballon d'Or (Highest overall score across goals, assists, rating, MVPs)
-    List<Map<String, Object?>> ballonDor = await db.rawQuery(
+    // 4. Player of the Year (League matches only)
+    final List<Map<String, Object?>> playerOfYear = await db.rawQuery(
       '''
       SELECT mp.player_id, mp.team_id, p.position_id,
              COUNT(DISTINCT mp.match_id) AS apps,
@@ -759,21 +798,23 @@ class SeasonRepository {
              SUM(mp.goals) AS goals,
              SUM(mp.assists) AS assists,
              SUM(mp.mvp) AS mvps,
-             ((AVG(mp.rating) * 12.0) + (SUM(mp.goals) * 3.0) + (SUM(mp.assists) * 2.0) + (SUM(mp.mvp) * 6.0)) AS score
+             ((AVG(mp.rating) * 1.2) + (SUM(mp.goals) * 3.0) + (SUM(mp.assists) * 2.0) + (SUM(mp.mvp) * 6.0)) AS score
       FROM match_players mp
       JOIN matches m ON m.match_id = mp.match_id
+      JOIN tournaments tu ON tu.tournament_id = m.tournament_id
       JOIN players p ON p.player_id = mp.player_id
-      WHERE m.season_id = ? AND m.status = ?
+      WHERE $matchLeagueFilter
       GROUP BY mp.player_id, mp.team_id
       HAVING COUNT(DISTINCT mp.match_id) >= ?
       ORDER BY score DESC
       LIMIT 1
     ''',
-      <Object?>[seasonId, t.matchFinished, minimumAwardAppearances],
+      <Object?>[...filterArgs, minimumAwardAppearances],
     );
-    if (ballonDor.isNotEmpty) {
-      final Map<String, Object?> row = ballonDor.first;
-      final double rating = (row['avg_rating'] as num?)?.toDouble() ?? 0.0;
+    if (playerOfYear.isNotEmpty) {
+      final Map<String, Object?> row = playerOfYear.first;
+      final double rawRating = (row['avg_rating'] as num?)?.toDouble() ?? 0.0;
+      final double rating = rawRating > 10.0 ? rawRating / 10.0 : rawRating;
       final int goals = (row['goals'] as int?) ?? 0;
       final int assists = (row['assists'] as int?) ?? 0;
       await db.insert(t.playerAwards, <String, Object?>{
@@ -784,12 +825,12 @@ class SeasonRepository {
         'season_id': seasonId,
         'goals': goals,
         'rating': rating,
-        'stat_subtitle': 'Rating ${rating.toStringAsFixed(1)} \u00b7 $goals G \u00b7 $assists A',
+        'stat_subtitle': 'Rating ${rating.toStringAsFixed(1)} · $goals G · $assists A',
         'position_id': row['position_id'],
       });
     }
 
-    // 5. Golden Glove (Best Goalkeeper: position_id = 1)
+    // 5. Golden Glove (Best Goalkeeper: position_id = 1, League matches only)
     final List<Map<String, Object?>> glove = await db.rawQuery(
       '''
       SELECT mp.player_id, mp.team_id, p.position_id,
@@ -797,22 +838,24 @@ class SeasonRepository {
              AVG(mp.rating) AS avg_rating,
              SUM(CASE WHEN (mp.team_id = m.home_team_id AND m.away_goals = 0)
                         OR (mp.team_id = m.away_team_id AND m.home_goals = 0)
-                      THEN 1 ELSE 0 END) AS clean_sheets
+                       THEN 1 ELSE 0 END) AS clean_sheets
       FROM match_players mp
       JOIN matches m ON m.match_id = mp.match_id
+      JOIN tournaments tu ON tu.tournament_id = m.tournament_id
       JOIN players p ON p.player_id = mp.player_id
-      WHERE m.season_id = ? AND m.status = ? AND p.position_id = 1
+      WHERE $matchLeagueFilter AND p.position_id = 1
       GROUP BY mp.player_id, mp.team_id
       HAVING COUNT(DISTINCT mp.match_id) >= ?
       ORDER BY clean_sheets DESC, avg_rating DESC
       LIMIT 1
     ''',
-      <Object?>[seasonId, t.matchFinished, minimumAwardAppearances],
+      <Object?>[...filterArgs, minimumAwardAppearances],
     );
     if (glove.isNotEmpty) {
       final Map<String, Object?> row = glove.first;
       final int sheets = (row['clean_sheets'] as int?) ?? 0;
-      final double rating = (row['avg_rating'] as num?)?.toDouble() ?? 0.0;
+      final double rawRating = (row['avg_rating'] as num?)?.toDouble() ?? 0.0;
+      final double rating = rawRating > 10.0 ? rawRating / 10.0 : rawRating;
       await db.insert(t.playerAwards, <String, Object?>{
         'player_id': row['player_id'],
         'team_id': row['team_id'],
@@ -821,12 +864,23 @@ class SeasonRepository {
         'season_id': seasonId,
         'goals': sheets,
         'rating': rating,
-        'stat_subtitle': '$sheets Clean Sheets \u00b7 Rating ${rating.toStringAsFixed(1)}',
+        'stat_subtitle': '$sheets Clean Sheets · Rating ${rating.toStringAsFixed(1)}',
         'position_id': 1,
       });
     }
 
     // 6. Manager of the Year (Team with most wins in league)
+    String managerLeagueFilter;
+    List<Object?> managerFilterArgs;
+    if (targetLeagueId > 0) {
+      managerLeagueFilter = 'm.season_id = ? AND m.tournament_id = ? AND m.status = ?';
+      managerFilterArgs = <Object?>[seasonId, targetLeagueId, t.matchFinished];
+    } else {
+      managerLeagueFilter =
+          'm.season_id = ? AND m.status = ? AND tu.organization = ?';
+      managerFilterArgs = <Object?>[seasonId, t.matchFinished, t.orgLeague];
+    }
+
     final List<Map<String, Object?>> bestManager = await db.rawQuery(
       '''
       SELECT tm.team_id, tm.name AS team_name, tm.coach_id,
@@ -836,12 +890,12 @@ class SeasonRepository {
       FROM teams tm
       JOIN matches m ON (m.home_team_id = tm.team_id OR m.away_team_id = tm.team_id)
       JOIN tournaments tu ON tu.tournament_id = m.tournament_id
-      WHERE m.season_id = ? AND m.status = ? AND tu.organization = ?
+      WHERE $managerLeagueFilter
       GROUP BY tm.team_id
       ORDER BY wins DESC, draws DESC
       LIMIT 1
     ''',
-      <Object?>[seasonId, t.matchFinished, t.orgLeague],
+      managerFilterArgs,
     );
     if (bestManager.isNotEmpty) {
       final Map<String, Object?> row = bestManager.first;
@@ -854,12 +908,12 @@ class SeasonRepository {
         'season_id': seasonId,
         'goals': wins,
         'rating': 0.0,
-        'stat_subtitle': '$wins Wins \u00b7 Champion Season',
+        'stat_subtitle': '$wins Wins · Champion Season',
         'position_id': 0,
       });
     }
 
-    // 7. Team of the Year (Once Ideal in 4-3-3: 1 GK, 4 DEF, 3 MID, 3 ATT)
+    // 7. Team of the Year (Once Ideal in 4-3-3: 1 GK, 4 DEF, 3 MID, 3 ATT - League matches only)
     Future<List<Map<String, Object?>>> pickPositions(
       String positionFilter,
       int count,
@@ -872,14 +926,15 @@ class SeasonRepository {
                SUM(mp.assists) AS assists
         FROM match_players mp
         JOIN matches m ON m.match_id = mp.match_id
+        JOIN tournaments tu ON tu.tournament_id = m.tournament_id
         JOIN players p ON p.player_id = mp.player_id
-        WHERE m.season_id = ? AND m.status = ? AND $positionFilter
+        WHERE $matchLeagueFilter AND $positionFilter
         GROUP BY mp.player_id, mp.team_id
         HAVING SUM(mp.minutes) >= 90
         ORDER BY avg_rating DESC, (goals + assists) DESC
         LIMIT ?
       ''',
-        <Object?>[seasonId, t.matchFinished, count],
+        <Object?>[...filterArgs, count],
       );
       if (rows.length < count) {
         rows = await db.rawQuery(
@@ -890,13 +945,14 @@ class SeasonRepository {
                  SUM(mp.assists) AS assists
           FROM match_players mp
           JOIN matches m ON m.match_id = mp.match_id
+          JOIN tournaments tu ON tu.tournament_id = m.tournament_id
           JOIN players p ON p.player_id = mp.player_id
-          WHERE m.season_id = ? AND m.status = ? AND $positionFilter
+          WHERE $matchLeagueFilter AND $positionFilter
           GROUP BY mp.player_id, mp.team_id
           ORDER BY avg_rating DESC, (goals + assists) DESC
           LIMIT ?
         ''',
-          <Object?>[seasonId, t.matchFinished, count],
+          <Object?>[...filterArgs, count],
         );
       }
       return rows;
@@ -926,7 +982,8 @@ class SeasonRepository {
       ...bestAtt,
     ];
     for (final Map<String, Object?> pRow in all11) {
-      final double rating = (pRow['avg_rating'] as num?)?.toDouble() ?? 0.0;
+      final double rawRating = (pRow['avg_rating'] as num?)?.toDouble() ?? 0.0;
+      final double rating = rawRating > 10.0 ? rawRating / 10.0 : rawRating;
       await db.insert(t.playerAwards, <String, Object?>{
         'player_id': pRow['player_id'],
         'team_id': pRow['team_id'],
@@ -957,12 +1014,21 @@ class SeasonRepository {
     final List<Map<String, Object?>> rows = await db.rawQuery(
       '''
       SELECT pa.*,
-             COALESCE(p.name, CASE WHEN pa.type = ? THEN (SELECT name FROM manager_profile WHERE id = 1) ELSE 'Manager' END) AS player_name,
+             CASE
+               WHEN pa.type = ? THEN
+                 COALESCE(
+                   (SELECT name FROM manager_profile WHERE id = 1),
+                   c.name,
+                   'Manager'
+                 )
+               ELSE p.name
+             END AS player_name,
              p.position_id AS player_pos_id,
              tm.name AS team_name
       FROM player_awards pa
       LEFT JOIN players p ON p.player_id = pa.player_id
       LEFT JOIN teams tm ON tm.team_id = pa.team_id
+      LEFT JOIN coaches c ON c.coach_id = tm.coach_id
       WHERE pa.season_id = ?
       ORDER BY pa.type ASC, pa.award_id ASC
     ''',

@@ -2135,6 +2135,7 @@ class CareerService {
 
     // Final league standing of the user club, before the tables move on.
     int userRank = 0;
+    int? userLeagueId;
     for (final Tournament tour in tournaments) {
       if (!tour.isLeague) continue;
       final List<StandingRow> table = await _seasons.standings(
@@ -2146,6 +2147,7 @@ class CareerService {
       );
       if (idx == -1) continue;
       userRank = idx + 1;
+      userLeagueId = tour.tournamentId;
       final StandingRow row = table[idx];
       lines.add(
         'Finished ${_ordinal(userRank)} in ${tour.name} with ${row.points} pts '
@@ -2171,6 +2173,7 @@ class CareerService {
     await _seasons.recordSeasonAwards(
       seasonId: current.seasonId,
       year: current.endYear,
+      leagueTournamentId: userLeagueId,
     );
     await _seasons.recordCareerSeason(
       seasonId: current.seasonId,

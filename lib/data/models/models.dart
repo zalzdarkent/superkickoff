@@ -1025,7 +1025,7 @@ class PlayerAward {
   final int? teamId;
 
   String get label => switch (type) {
-    t.awardBallonDor => "Ballon d'Or",
+    t.awardBallonDor => 'Player of the Year',
     t.awardTopScorer => 'Golden Boot',
     t.awardGoldenGlove => 'Golden Glove',
     t.awardYoungPlayer => 'Best Young Player',
@@ -1036,7 +1036,7 @@ class PlayerAward {
   };
 
   String get shortLabel => switch (type) {
-    t.awardBallonDor => "Ballon d'Or",
+    t.awardBallonDor => 'Player of Year',
     t.awardTopScorer => 'Golden Boot',
     t.awardGoldenGlove => 'Golden Glove',
     t.awardYoungPlayer => 'Best Young',

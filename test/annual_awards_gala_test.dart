@@ -129,7 +129,7 @@ void main() {
       expect(gala.seasonId, testSeasonId);
       expect(gala.year, testYear);
       expect(gala.ballonDor, isNotNull);
-      expect(gala.ballonDor!.label, "Ballon d'Or");
+      expect(gala.ballonDor!.label, 'Player of the Year');
       expect(gala.ballonDor!.type, t.awardBallonDor);
       expect(gala.ballonDor!.rating, isNotNull);
       expect(
@@ -287,9 +287,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Verify Title & Ballon d'Or
+    // Verify Title & Player of the Year
     expect(find.text('ANNUAL AWARDS GALA'), findsOneWidget);
-    expect(find.text("BALLON D'OR"), findsOneWidget);
+    expect(find.text('PLAYER OF THE YEAR'), findsOneWidget);
     expect(find.text('Lionel Tester'), findsWidgets);
     expect(find.text('35 G+A • Avg Rating 8.80'), findsOneWidget);
 

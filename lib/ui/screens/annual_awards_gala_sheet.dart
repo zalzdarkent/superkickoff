@@ -326,7 +326,7 @@ class _AnnualAwardsGalaSheetState extends State<AnnualAwardsGalaSheet>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
                             Text(
-                              "BALLON D'OR",
+                              'PLAYER OF THE YEAR',
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w900,
@@ -335,7 +335,7 @@ class _AnnualAwardsGalaSheetState extends State<AnnualAwardsGalaSheet>
                               ),
                             ),
                             Text(
-                              'Top Player of the Career Season · 10+ appearances',
+                              'Best Player of the League Season · 10+ appearances',
                               style: TextStyle(
                                 fontSize: 10,
                                 color: AppTheme.textDim,
