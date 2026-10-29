@@ -337,6 +337,16 @@ class ScoutingRepository {
         'player_id': playerId,
       });
 
+      final int startYear = DateTime.now().year;
+      await txn.insert(t.contracts, <String, Object?>{
+        'player_id': playerId,
+        'team_id': teamId,
+        'start_date': '$startYear-07-01',
+        'end_date': '${startYear + 3}-06-30',
+        'status': 1,
+        'salary': 2500,
+      });
+
       await txn.update(
         t.teams,
         <String, Object?>{'budget': budget - signingFee},

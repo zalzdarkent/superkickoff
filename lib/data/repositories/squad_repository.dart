@@ -1051,7 +1051,6 @@ class SquadRepository {
     if (rows.isEmpty) return 'This player is not in your squad.';
     final Map<String, Object?> r = rows.first;
     final int? contractId = r['contract_id'] as int?;
-    if (contractId == null) return 'This player has no active contract.';
     final int oldSalary = math.max(
       (r['player_salary'] as int?) ?? 0,
       (r['contract_salary'] as int?) ?? 0,
@@ -1069,15 +1068,26 @@ class SquadRepository {
     final int baseYear = math.max(oldEndYear, currentYear);
     final String suffix = oldEnd.length >= 10
         ? oldEnd.substring(4, 10)
-        : '-05-31';
+        : '-06-30';
     final String newEnd = '${baseYear + 2}$suffix';
     await db.transaction((Transaction txn) async {
-      await txn.update(
-        t.contracts,
-        <String, Object?>{'salary': newSalary, 'end_date': newEnd, 'status': 1},
-        where: 'contract_id = ?',
-        whereArgs: <Object?>[contractId],
-      );
+      if (contractId != null) {
+        await txn.update(
+          t.contracts,
+          <String, Object?>{'salary': newSalary, 'end_date': newEnd, 'status': 1},
+          where: 'contract_id = ?',
+          whereArgs: <Object?>[contractId],
+        );
+      } else {
+        await txn.insert(t.contracts, <String, Object?>{
+          'player_id': playerId,
+          'team_id': teamId,
+          'start_date': '$currentYear-07-01',
+          'end_date': newEnd,
+          'status': 1,
+          'salary': newSalary,
+        });
+      }
       await txn.update(
         t.players,
         <String, Object?>{'salary': newSalary},
@@ -1345,6 +1355,15 @@ class SquadRepository {
       await txn.insert(t.teamPlayers, <String, Object?>{
         'team_id': teamId,
         'player_id': playerId,
+      });
+      final int startYear = DateTime.now().year;
+      await txn.insert(t.contracts, <String, Object?>{
+        'player_id': playerId,
+        'team_id': teamId,
+        'start_date': '$startYear-07-01',
+        'end_date': '${startYear + 3}-06-30',
+        'status': 1,
+        'salary': salary,
       });
       await txn.update(
         t.academyProspects,
