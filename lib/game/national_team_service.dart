@@ -171,13 +171,13 @@ class NationalTeamService {
       '''
       SELECT
         COUNT(*) AS matches_played,
-        SUM(minutes) AS minutes,
-        SUM(starter) AS starts,
-        SUM(goals) AS goals,
-        SUM(assists) AS assists,
-        SUM(yellow_cards) AS yellow_cards,
-        SUM(red_cards) AS red_cards,
-        SUM(mvp) AS mvps,
+        COALESCE(SUM(minutes), 0) AS minutes,
+        COALESCE(SUM(starter), 0) AS starts,
+        COALESCE(SUM(goals), 0) AS goals,
+        COALESCE(SUM(assists), 0) AS assists,
+        COALESCE(SUM(yellow_cards), 0) AS yellow_cards,
+        COALESCE(SUM(red_cards), 0) AS red_cards,
+        COALESCE(SUM(mvp), 0) AS mvps,
         AVG(rating) AS avg_rating
       FROM ${t.matchPlayersCountries}
       WHERE player_id = ?
@@ -187,7 +187,33 @@ class NationalTeamService {
       <Object?>[playerId],
     );
 
-    if (rows.isEmpty || rows.first['matches_played'] == 0) {
+    final List<Map<String, Object?>> archivedRows = await db.rawQuery(
+      '''
+      SELECT
+        COALESCE(SUM(matches_played), 0) AS matches_played,
+        COALESCE(SUM(minutes), 0) AS minutes,
+        COALESCE(SUM(starts), 0) AS starts,
+        COALESCE(SUM(goals), 0) AS goals,
+        COALESCE(SUM(assists), 0) AS assists,
+        COALESCE(SUM(yellow_cards), 0) AS yellow_cards,
+        COALESCE(SUM(red_cards), 0) AS red_cards,
+        COALESCE(SUM(mvps), 0) AS mvps,
+        AVG(CASE WHEN matches_played > 0 THEN CAST(rating AS REAL) / matches_played END) AS avg_rating
+      FROM ${t.playerSeasonStatsCountries}
+      WHERE player_id = ?
+        ${countryId != null ? 'AND country_id = $countryId' : ''}
+        ${seasonId != null ? 'AND season_id = $seasonId' : ''}
+      ''',
+      <Object?>[playerId],
+    );
+
+    final Map<String, Object?> r = rows.isNotEmpty ? rows.first : const <String, Object?>{};
+    final Map<String, Object?> ar = archivedRows.isNotEmpty ? archivedRows.first : const <String, Object?>{};
+    final int livePlayed = (r['matches_played'] as int?) ?? 0;
+    final int archPlayed = (ar['matches_played'] as int?) ?? 0;
+    final int played = livePlayed + archPlayed;
+
+    if (played == 0) {
       return PlayerNationalStats(
         playerId: playerId,
         countryId: countryId ?? 0,
@@ -195,22 +221,24 @@ class NationalTeamService {
       );
     }
 
-    final Map<String, Object?> r = rows.first;
-    final int played = (r['matches_played'] as int?) ?? 0;
-    final double rawRating = (r['avg_rating'] as num?)?.toDouble() ?? 60.0;
+    final double liveRating = (r['avg_rating'] as num?)?.toDouble() ?? 60.0;
+    final double archRating = (ar['avg_rating'] as num?)?.toDouble() ?? 60.0;
+    final double rawRating = livePlayed > 0 && archPlayed > 0
+        ? ((liveRating * livePlayed) + (archRating * archPlayed)) / played
+        : (livePlayed > 0 ? liveRating : archRating);
 
     return PlayerNationalStats(
       playerId: playerId,
       countryId: countryId ?? 0,
       seasonId: seasonId,
       matchesPlayed: played,
-      minutes: (r['minutes'] as int?) ?? 0,
-      starts: (r['starts'] as int?) ?? 0,
-      goals: (r['goals'] as int?) ?? 0,
-      assists: (r['assists'] as int?) ?? 0,
-      yellowCards: (r['yellow_cards'] as int?) ?? 0,
-      redCards: (r['red_cards'] as int?) ?? 0,
-      mvps: (r['mvps'] as int?) ?? 0,
+      minutes: ((r['minutes'] as int?) ?? 0) + ((ar['minutes'] as int?) ?? 0),
+      starts: ((r['starts'] as int?) ?? 0) + ((ar['starts'] as int?) ?? 0),
+      goals: ((r['goals'] as int?) ?? 0) + ((ar['goals'] as int?) ?? 0),
+      assists: ((r['assists'] as int?) ?? 0) + ((ar['assists'] as int?) ?? 0),
+      yellowCards: ((r['yellow_cards'] as int?) ?? 0) + ((ar['yellow_cards'] as int?) ?? 0),
+      redCards: ((r['red_cards'] as int?) ?? 0) + ((ar['red_cards'] as int?) ?? 0),
+      mvps: ((r['mvps'] as int?) ?? 0) + ((ar['mvps'] as int?) ?? 0),
       rating: rawRating > 10 ? rawRating / 10.0 : rawRating,
     );
   }
@@ -236,39 +264,119 @@ class NationalTeamService {
   }
 
   /// Fetches the national-team squad players for [countryId] with their stats and player details.
+  /// Deduplicates across windows and seasons so the same player or player name never repeats.
   Future<List<PlayerNationalStats>> getCountrySquad(int countryId, {int? seasonId}) async {
-    final List<Map<String, Object?>> callupRows = await db.rawQuery(
-      '''
-      SELECT p.player_id, p.name, p.position_id, p.power, d.squad_number, tm.name AS club_name
-      FROM ${t.countryCallups} cc
-      JOIN ${t.players} p ON p.player_id = cc.player_id
-      LEFT JOIN ${t.internationalDuty} d ON d.player_id = cc.player_id AND d.country_id = cc.country_id
-      LEFT JOIN ${t.teamPlayers} tp ON tp.player_id = p.player_id
-      LEFT JOIN ${t.teams} tm ON tm.team_id = tp.team_id
-      WHERE cc.country_id = ? ${seasonId != null ? 'AND cc.season_id = $seasonId' : ''}
-      ORDER BY p.power DESC
-      ''',
-      <Object?>[countryId],
-    );
+    int? targetSeasonId = seasonId;
+    if (targetSeasonId == null) {
+      final List<Map<String, Object?>> maxRows = await db.rawQuery(
+        'SELECT MAX(season_id) AS max_s FROM ${t.countryCallups} WHERE country_id = ?',
+        <Object?>[countryId],
+      );
+      targetSeasonId = maxRows.isNotEmpty ? maxRows.first['max_s'] as int? : null;
+    }
 
-    List<Map<String, Object?>> source = callupRows;
-    if (source.isEmpty) {
-      source = await db.rawQuery(
+    List<Map<String, Object?>> callupRows = <Map<String, Object?>>[];
+    if (targetSeasonId != null) {
+      callupRows = await db.rawQuery(
         '''
-        SELECT p.player_id, p.name, p.position_id, p.power, 0 AS squad_number, tm.name AS club_name
-        FROM ${t.players} p
-        LEFT JOIN ${t.teamPlayers} tp ON tp.player_id = p.player_id
-        LEFT JOIN ${t.teams} tm ON tm.team_id = tp.team_id
-        WHERE p.country_id = ? AND p.status_id = ?
+        SELECT p.player_id,
+               p.name,
+               p.position_id,
+               p.power,
+               COALESCE(
+                 (SELECT d.squad_number
+                  FROM ${t.internationalDuty} d
+                  WHERE d.player_id = p.player_id AND d.country_id = cc.country_id
+                  ORDER BY d.duty_id DESC
+                  LIMIT 1),
+                 0
+               ) AS squad_number,
+               (SELECT tm.name
+                FROM ${t.teamPlayers} tp
+                JOIN ${t.teams} tm ON tm.team_id = tp.team_id
+                WHERE tp.player_id = p.player_id
+                LIMIT 1) AS club_name
+        FROM ${t.countryCallups} cc
+        JOIN ${t.players} p ON p.player_id = cc.player_id
+        WHERE cc.country_id = ? AND cc.season_id = ? AND p.status_id = ?
+        GROUP BY p.player_id
         ORDER BY p.power DESC
-        LIMIT 23
         ''',
-        <Object?>[countryId, t.statusActive],
+        <Object?>[countryId, targetSeasonId, t.statusActive],
       );
     }
 
+    final List<Map<String, Object?>> deduplicated = <Map<String, Object?>>[];
+    final Set<int> seenIds = <int>{};
+    final Set<String> seenNames = <String>{};
+
+    void addCandidate(Map<String, Object?> r) {
+      if (deduplicated.length >= 23) return;
+      final int pid = (r['player_id'] as int?) ?? 0;
+      if (pid == 0 || seenIds.contains(pid)) return;
+      final String normName = ((r['name'] as String?) ?? '').trim().toLowerCase();
+      if (normName.isNotEmpty && seenNames.contains(normName)) return;
+      seenIds.add(pid);
+      if (normName.isNotEmpty) seenNames.add(normName);
+      deduplicated.add(r);
+    }
+
+    for (final Map<String, Object?> r in callupRows) {
+      addCandidate(r);
+    }
+
+    if (deduplicated.length < 23) {
+      final List<Map<String, Object?>> poolRows = await db.rawQuery(
+        '''
+        SELECT p.player_id,
+               p.name,
+               p.position_id,
+               p.power,
+               0 AS squad_number,
+               (SELECT tm.name
+                FROM ${t.teamPlayers} tp
+                JOIN ${t.teams} tm ON tm.team_id = tp.team_id
+                WHERE tp.player_id = p.player_id
+                LIMIT 1) AS club_name
+        FROM ${t.players} p
+        WHERE (p.country_id = ? OR p.player_id IN (
+          SELECT player_id FROM ${t.playerNationalEligibility} WHERE country_id = ?
+        )) AND p.status_id = ?
+        ORDER BY p.power DESC
+        LIMIT 80
+        ''',
+        <Object?>[countryId, countryId, t.statusActive],
+      );
+
+      int posGroupOf(Map<String, Object?> r) {
+        final int raw = (r['position_id'] as int?) ?? 1;
+        return raw == 1 ? 1 : (raw <= 4 ? 2 : (raw <= 8 ? 3 : 4));
+      }
+
+      int countGroup(int group) =>
+          deduplicated.where((Map<String, Object?> r) => posGroupOf(r) == group).length;
+
+      const Map<int, int> minTargets = <int, int>{1: 3, 2: 7, 3: 6, 4: 4};
+      for (final MapEntry<int, int> entry in minTargets.entries) {
+        for (final Map<String, Object?> r in poolRows) {
+          if (deduplicated.length >= 23) break;
+          if (countGroup(entry.key) >= entry.value) break;
+          if (posGroupOf(r) == entry.key) {
+            addCandidate(r);
+          }
+        }
+      }
+      for (final Map<String, Object?> r in poolRows) {
+        if (deduplicated.length >= 23) break;
+        addCandidate(r);
+      }
+    }
+
+    final Set<int> usedNumbers = <int>{};
+    int nextNumber = 1;
     final List<PlayerNationalStats> squad = <PlayerNationalStats>[];
-    for (final Map<String, Object?> r in source) {
+
+    for (final Map<String, Object?> r in deduplicated) {
       final int pid = r['player_id'] as int;
       final PlayerNationalStats stats = await playerInternationalStats(
         pid,
@@ -277,12 +385,20 @@ class NationalTeamService {
       );
       final int rawPos = (r['position_id'] as int?) ?? 1;
       final int posGroup = rawPos == 1 ? 1 : (rawPos <= 4 ? 2 : (rawPos <= 8 ? 3 : 4));
+      int shirt = (r['squad_number'] as int?) ?? 0;
+      if (shirt <= 0 || usedNumbers.contains(shirt)) {
+        while (usedNumbers.contains(nextNumber)) {
+          nextNumber++;
+        }
+        shirt = nextNumber;
+      }
+      usedNumbers.add(shirt);
       squad.add(
         stats.copyWith(
           playerName: (r['name'] as String?) ?? 'Player $pid',
           positionId: posGroup,
           power: (r['power'] as int?) ?? 50,
-          shirtNumber: (r['squad_number'] as int?) ?? 0,
+          shirtNumber: shirt,
           clubName: r['club_name'] as String?,
         ),
       );

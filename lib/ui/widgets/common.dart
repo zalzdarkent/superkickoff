@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../../core/country_names.dart';
 import '../../data/models/models.dart';
 import '../theme.dart';
 
@@ -411,3 +412,81 @@ Column statChip(String label, String value, {IconData? icon, Color? color}) =>
         ),
       ],
     );
+
+/// Country flag image badge (via flagcdn) with emoji / ISO code fallback.
+class CountryFlagAvatar extends StatelessWidget {
+  const CountryFlagAvatar({
+    super.key,
+    this.iso2,
+    this.countryId,
+    this.name,
+    this.width = 28,
+    this.height = 20,
+    this.borderRadius = 4,
+  });
+
+  final Object? iso2;
+  final int? countryId;
+  final String? name;
+  final double width;
+  final double height;
+  final double borderRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    final String? url = countryFlagUrl(
+      iso2,
+      countryId: countryId,
+      name: name,
+    );
+    final Widget fallback = _buildFallback();
+    if (url == null) return fallback;
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(borderRadius),
+        border: Border.all(color: Colors.white24, width: 0.8),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Image.network(
+        url,
+        width: width,
+        height: height,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => fallback,
+      ),
+    );
+  }
+
+  Widget _buildFallback() {
+    final String emoji = countryFlag(iso2, countryId: countryId, name: name);
+    final String code = countryFlagCode(
+      iso2,
+      countryId: countryId,
+      name: name,
+    ).toUpperCase();
+    final String label = emoji.isNotEmpty
+        ? emoji
+        : (code.length >= 2 ? code.substring(0, 2) : '🏳️');
+    return Container(
+      width: width,
+      height: height,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(borderRadius),
+        border: Border.all(color: Colors.white24, width: 0.8),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: height * 0.58,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+}

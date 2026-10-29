@@ -48,3 +48,5 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+# Playwright CLI output (may contain credentials)
+.playwright-cli/

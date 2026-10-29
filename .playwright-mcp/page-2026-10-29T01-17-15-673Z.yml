@@ -1,0 +1,10 @@
+- generic [ref=e5]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic [ref=e6]:
+              - generic [active]: SUPERKICKOFF
+            - generic [ref=e7]: Football Career Manager
+            - button "New Career" [ref=e8]

@@ -1,0 +1,28 @@
+- generic [ref=e22]:
+  - generic "Dialog":
+    - textbox "Search nationality" [active] [ref=e24]
+    - generic:
+      - group:
+        - button "Afganistan" [ref=e25]
+        - button "Afrika Selatan" [ref=e26]
+        - button "Albania" [ref=e27]
+        - button "Aljazair" [ref=e28]
+        - button "Amerika Serikat" [ref=e29]
+        - button "Andorra" [ref=e30]
+        - button "Angola" [ref=e31]
+        - button "Anguilla" [ref=e32]
+        - button "Antartika" [ref=e33]
+        - button "Antigua dan Barbuda" [ref=e34]
+        - button "Arab Saudi" [ref=e35]
+        - button "Argentina" [ref=e36]
+        - button "Armenia" [ref=e37]
+        - button "Aruba" [ref=e38]
+        - button "Australia" [ref=e39]
+        - button "Austria" [ref=e40]
+        - button "Azerbaijan" [ref=e41]
+        - button "Bahama" [ref=e42]
+        - button "Bahrain" [ref=e43]
+        - button "Bangladesh" [ref=e44]
+        - button "Barbados" [ref=e45]
+        - button "Belanda" [ref=e46]
+        - button "Belarus" [ref=e47]

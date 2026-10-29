@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 
 import '../repositories/club_logo_service.dart';
 import '../repositories/league_logo_service.dart';
@@ -29,21 +30,18 @@ class AppDatabase {
   static String? _sessionPath;
 
   /// Opens (and lazily installs) the database. Desktop platforms use
-  /// [sqflite_common_ffi]; Android/iOS use the default sqflite bindings.
+  /// [sqflite_common_ffi], web uses the wasm/IndexedDB build; Android/iOS use
+  /// the default sqflite bindings.
   static Future<Database> open() async {
     if (_db != null) return _db!;
-    if (!kIsWeb && !Platform.isAndroid && !Platform.isIOS) {
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
-    }
-    final Directory docs = await getApplicationDocumentsDirectory();
-    final String target = p.join(docs.path, localDbName);
-    final File file = File(target);
-    if (!file.existsSync()) {
+    _useFactory();
+    final String target = await _targetPath();
+    if (!await databaseFactory.databaseExists(target)) {
       final ByteData asset = await rootBundle.load('assets/data/$dbName');
-      final List<int> bytes = asset.buffer.asUint8List();
-      await file.parent.create(recursive: true);
-      await file.writeAsBytes(bytes, flush: true);
+      await databaseFactory.writeDatabaseBytes(
+        target,
+        asset.buffer.asUint8List(),
+      );
     }
     _path = target;
     _sessionPath = '$target.session';
@@ -1125,10 +1123,7 @@ class AppDatabase {
 
   /// Test/dev helper: open an arbitrary file directly.
   static Future<Database> openFile(String path) async {
-    if (!kIsWeb && !Platform.isAndroid && !Platform.isIOS) {
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
-    }
+    _useFactory();
     _db = await databaseFactory.openDatabase(
       path,
       options: OpenDatabaseOptions(version: 1, readOnly: false),
@@ -1138,12 +1133,31 @@ class AppDatabase {
     return _db!;
   }
 
+  static void _useFactory() {
+    if (kIsWeb) {
+      databaseFactory = databaseFactoryFfiWeb;
+    } else if (!Platform.isAndroid && !Platform.isIOS) {
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+    }
+  }
+
+  /// Web has no file system: the name alone keys the IndexedDB entry.
+  static Future<String> _targetPath() async {
+    if (kIsWeb) return localDbName;
+    final Directory docs = await getApplicationDocumentsDirectory();
+    return p.join(docs.path, localDbName);
+  }
+
   /// Captures the pre-session save so "Don't save" can restore it.
   static Future<void> beginSession() async {
     final String? path = _path;
     if (path == null || _db == null) return;
-    final File snapshot = File(_sessionPath!);
-    if (!snapshot.existsSync()) await File(path).copy(snapshot.path);
+    if (await databaseFactory.databaseExists(_sessionPath!)) return;
+    await databaseFactory.writeDatabaseBytes(
+      _sessionPath!,
+      await databaseFactory.readDatabaseBytes(path),
+    );
   }
 
   /// Commits or restores the snapshot created by [beginSession].
@@ -1151,28 +1165,33 @@ class AppDatabase {
     final String? path = _path;
     final String? snapshotPath = _sessionPath;
     if (path == null || snapshotPath == null) return;
-    final File snapshot = File(snapshotPath);
-    if (save || !snapshot.existsSync()) {
-      if (snapshot.existsSync()) await snapshot.delete();
+    final bool hasSnapshot = await databaseFactory.databaseExists(snapshotPath);
+    if (save || !hasSnapshot) {
+      if (hasSnapshot) await databaseFactory.deleteDatabase(snapshotPath);
       return;
     }
     await _db?.close();
     _db = null;
-    await snapshot.copy(path);
-    await snapshot.delete();
+    await databaseFactory.writeDatabaseBytes(
+      path,
+      await databaseFactory.readDatabaseBytes(snapshotPath),
+    );
+    await databaseFactory.deleteDatabase(snapshotPath);
     await open();
   }
 
   /// Starts a genuinely fresh local career without mutating the bundled DB.
   static Future<void> reset() async {
-    final Directory docs = await getApplicationDocumentsDirectory();
-    final String target = p.join(docs.path, localDbName);
+    _useFactory();
+    final String target = await _targetPath();
     await _db?.close();
     _db = null;
-    final File snapshot = File('$target.session');
-    if (snapshot.existsSync()) await snapshot.delete();
+    await databaseFactory.deleteDatabase('$target.session');
     final ByteData asset = await rootBundle.load('assets/data/$dbName');
-    await File(target).writeAsBytes(asset.buffer.asUint8List(), flush: true);
+    await databaseFactory.writeDatabaseBytes(
+      target,
+      asset.buffer.asUint8List(),
+    );
     _path = target;
     _sessionPath = '$target.session';
     await open();

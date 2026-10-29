@@ -153,6 +153,19 @@ class NationalTeamSelectionService {
     }
 
     // 2. Filter out injured or already-called-up players for overlapping duty
+    final List<Map<String, Object?>> overlappingRows = await db.rawQuery(
+      '''
+      SELECT DISTINCT player_id
+      FROM ${t.internationalDuty}
+      WHERE status = 'active'
+        AND NOT (return_date < ? OR release_date > ?)
+      ''',
+      <Object?>[window.releaseStartDate, window.returnDate],
+    );
+    final Set<int> busyPlayerIds = overlappingRows
+        .map((Map<String, Object?> r) => r['player_id'] as int)
+        .toSet();
+
     final List<Player> available = <Player>[];
     for (final Player p in pool.values) {
       // Injury check: fitness floor 40 or future injury return date
@@ -162,17 +175,7 @@ class NationalTeamSelectionService {
       }
 
       // Check overlapping international duty
-      final List<Map<String, Object?>> overlapping = await db.rawQuery(
-        '''
-        SELECT duty_id
-        FROM ${t.internationalDuty}
-        WHERE player_id = ? AND status = 'active'
-          AND NOT (return_date < ? OR release_date > ?)
-        LIMIT 1
-        ''',
-        <Object?>[p.playerId, window.releaseStartDate, window.returnDate],
-      );
-      if (overlapping.isNotEmpty) continue;
+      if (busyPlayerIds.contains(p.playerId)) continue;
 
       available.add(p);
     }
@@ -192,13 +195,27 @@ class NationalTeamSelectionService {
 
     final List<Player> selected = <Player>[];
     final Set<int> selectedIds = <int>{};
+    final Set<String> selectedNames = <String>{};
+
+    bool canSelect(Player p) {
+      if (selectedIds.contains(p.playerId)) return false;
+      final String normName = p.name.trim().toLowerCase();
+      if (normName.isNotEmpty && selectedNames.contains(normName)) return false;
+      return true;
+    }
+
+    void markSelected(Player p) {
+      selected.add(p);
+      selectedIds.add(p.playerId);
+      final String normName = p.name.trim().toLowerCase();
+      if (normName.isNotEmpty) selectedNames.add(normName);
+    }
 
     void pick(List<Player> group, int count) {
       for (final Player p in group) {
-        if (selectedIds.contains(p.playerId)) continue;
+        if (!canSelect(p)) continue;
         if (selected.length >= squadSize) break;
-        selected.add(p);
-        selectedIds.add(p.playerId);
+        markSelected(p);
         if (selected.where((x) => group.contains(x)).length >= count) break;
       }
     }
@@ -212,15 +229,19 @@ class NationalTeamSelectionService {
     // Fill remaining slots with the best remaining outfield players
     for (final Player p in available) {
       if (selected.length >= squadSize) break;
-      if (!selectedIds.contains(p.playerId)) {
-        selected.add(p);
-        selectedIds.add(p.playerId);
+      if (canSelect(p)) {
+        markSelected(p);
       }
     }
 
     // If still empty (e.g. tiny nation), add all available players
     if (selected.isEmpty && pool.isNotEmpty) {
-      selected.addAll(pool.values.take(squadSize));
+      for (final Player p in pool.values) {
+        if (selected.length >= squadSize) break;
+        if (canSelect(p)) {
+          markSelected(p);
+        }
+      }
     }
 
     // 4. Determine Captain & Shirt numbers
@@ -252,6 +273,11 @@ class NationalTeamSelectionService {
 
     // 5. Persist Call-ups and International Duty
     await db.transaction((Transaction txn) async {
+      await txn.delete(
+        t.countryCallups,
+        where: 'country_id = ? AND season_id = ?',
+        whereArgs: <Object?>[countryId, seasonId],
+      );
       for (final Player p in selected) {
         final bool isCap = p.playerId == captainId;
         final int shirt = numbers[p.playerId] ?? 0;

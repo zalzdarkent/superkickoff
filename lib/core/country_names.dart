@@ -36,6 +36,66 @@ String countryFlag(Object? iso2, {int? countryId, String? name}) {
   ]);
 }
 
+/// Returns the lowercase flagcdn code (e.g. 'id', 'de', 'gb-eng', 'gb-sct').
+String countryFlagCode(Object? iso2, {int? countryId, String? name}) {
+  if (countryId == 185 ||
+      name == 'Inggris' ||
+      name == 'England' ||
+      name == 'Inglaterra') {
+    return 'gb-eng';
+  }
+  if (countryId == 249 ||
+      name == 'Skotlandia' ||
+      name == 'Scotland' ||
+      name == 'Escocia') {
+    return 'gb-sct';
+  }
+  if (countryId == 250 || name == 'Wales' || name == 'Gales') {
+    return 'gb-wls';
+  }
+  if (countryId == 251 ||
+      name == 'Irlandia Utara' ||
+      name == 'Northern Ireland' ||
+      name == 'Irlanda del Norte') {
+    return 'gb-nir';
+  }
+
+  String code = '${iso2 ?? ''}'.trim().toUpperCase();
+  if (code.length != 2 && name != null && name.isNotEmpty) {
+    code =
+        _nameToIso[name.trim()] ??
+        _nameToIso[displayCountryName(name.trim(), '')] ??
+        '';
+  }
+  if (code.length != 2) return '';
+  return code.toLowerCase();
+}
+
+/// Returns a PNG flag URL (e.g. `https://flagcdn.com/w80/id.png`) or null.
+String? countryFlagUrl(
+  Object? iso2, {
+  int? countryId,
+  String? name,
+  int width = 80,
+}) {
+  final String code = countryFlagCode(iso2, countryId: countryId, name: name);
+  if (code.isEmpty) return null;
+  return 'https://flagcdn.com/w$width/$code.png';
+}
+
+/// Human-readable confederation label for `countries.confederation`.
+String confederationLabel(int confederation) {
+  return switch (confederation) {
+    1 => 'CONCACAF',
+    2 => 'CONMEBOL',
+    3 => 'UEFA',
+    4 => 'CAF',
+    5 => 'AFC',
+    6 => 'OFC',
+    _ => 'FIFA',
+  };
+}
+
 String displayCountryName(String name, String iso2, {int? countryId}) {
   const Map<int, String> footballCountryNames = <int, String>{
     185: 'Inggris',

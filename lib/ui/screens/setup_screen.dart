@@ -353,15 +353,29 @@ class _SetupScreenState extends State<SetupScreen> {
                     border: OutlineInputBorder(),
                     suffixIcon: Icon(Icons.arrow_drop_down),
                   ),
-                  child: Text(
-                    nationality == null
-                        ? 'Select country'
-                        : '${_flag(nationality!['iso2'])}  ${nationality!['name']}',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: nationality == null ? AppTheme.textDim : null,
-                    ),
-                  ),
+                  child: nationality == null
+                      ? const Text(
+                          'Select country',
+                          style: TextStyle(fontSize: 16, color: AppTheme.textDim),
+                        )
+                      : Row(
+                          children: <Widget>[
+                            CountryFlagAvatar(
+                              iso2: nationality!['iso2'],
+                              countryId: nationality!['country_id'] as int?,
+                              name: nationality!['name']?.toString(),
+                              width: 28,
+                              height: 20,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                nationality!['name'].toString(),
+                                style: const TextStyle(fontSize: 16),
+                              ),
+                            ),
+                          ],
+                        ),
                 ),
               ),
             ),
@@ -425,7 +439,13 @@ class _SetupScreenState extends State<SetupScreen> {
                   itemBuilder: (BuildContext context, int i) {
                     final _Row c = shown[i];
                     return _tile(
-                      leading: _flag(c['iso2']),
+                      leadingWidget: CountryFlagAvatar(
+                        iso2: c['iso2'],
+                        countryId: c['country_id'] as int?,
+                        name: c['name']?.toString(),
+                        width: 34,
+                        height: 24,
+                      ),
                       title: c['name'].toString(),
                       subtitle:
                           '${c['team_count']} clubs • ${c['league_count']} divisions',
@@ -677,9 +697,12 @@ class _CountrySheetState extends State<_CountrySheet> {
               child: ListView.builder(
                 itemCount: shown.length,
                 itemBuilder: (BuildContext context, int i) => ListTile(
-                  leading: Text(
-                    widget.flag(shown[i]['iso2']),
-                    style: const TextStyle(fontSize: 22),
+                  leading: CountryFlagAvatar(
+                    iso2: shown[i]['iso2'],
+                    countryId: shown[i]['country_id'] as int?,
+                    name: shown[i]['name']?.toString(),
+                    width: 32,
+                    height: 22,
                   ),
                   title: Text(shown[i]['name'].toString()),
                   onTap: () => Navigator.pop(context, shown[i]),

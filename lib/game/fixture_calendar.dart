@@ -911,19 +911,6 @@ class FixtureSchedulingService {
   static int _dayKey(DateTime date) =>
       date.year * 10000 + date.month * 100 + date.day;
 
-  Future<void> _recordReschedule({
-    required int matchId,
-    required String? oldDate,
-    required String newDate,
-    required String reason,
-  }) => _insertReschedule(
-    db,
-    matchId: matchId,
-    oldDate: oldDate,
-    newDate: newDate,
-    reason: reason,
-  );
-
   Future<void> _insertReschedule(
     DatabaseExecutor executor, {
     required int matchId,

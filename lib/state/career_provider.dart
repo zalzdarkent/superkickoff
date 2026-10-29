@@ -777,7 +777,10 @@ class CareerProvider extends ChangeNotifier {
   }
 
   Future<List<PlayerNationalStats>> getCountrySquad(int countryId) {
-    return _service.nationalTeams.getCountrySquad(countryId);
+    return _service.nationalTeams.getCountrySquad(
+      countryId,
+      seasonId: season?.seasonId,
+    );
   }
 
   Future<PlayerNationalStats?> getPlayerNationalStats(int playerId) {

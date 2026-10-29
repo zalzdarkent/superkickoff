@@ -37,16 +37,26 @@ class SquadRepository {
       (int acc, Map<String, Object?> r) => acc + ((r['power'] as int?) ?? 0),
     );
     final int newPower = (sum / rows.length).round();
+    final List<Map<String, Object?>> valRows = await executor.rawQuery(
+      '''
+      SELECT COALESCE(SUM(p.value), 0) AS squad_value
+      FROM players p
+      JOIN team_players tp ON tp.player_id = p.player_id
+      WHERE tp.team_id = ? AND p.status_id = ?
+      ''',
+      <Object?>[teamId, t.statusActive],
+    );
+    final int squadValue = (valRows.first['squad_value'] as int?) ?? 0;
     await executor.update(
       t.teams,
-      <String, Object?>{'power': newPower},
+      <String, Object?>{'power': newPower, 'value': squadValue},
       where: 'team_id = ?',
       whereArgs: <Object?>[teamId],
     );
     return newPower;
   }
 
-  /// Recalculates every club's power from its top 11 active players.
+  /// Recalculates every club's power from its top 11 active players and squad worth.
   Future<void> refreshAllTeamPowers([Transaction? txn]) async {
     final DatabaseExecutor executor = txn ?? db;
     await executor.rawUpdate(
@@ -62,7 +72,13 @@ class SquadRepository {
           ORDER BY p.power DESC
           LIMIT 11
         ) AS top_players
-      )
+      ),
+      value = COALESCE((
+        SELECT SUM(p.value)
+        FROM players p
+        JOIN team_players tp ON tp.player_id = p.player_id
+        WHERE tp.team_id = teams.team_id AND p.status_id = ?
+      ), value, 0)
       WHERE EXISTS (
         SELECT 1
         FROM players p
@@ -70,7 +86,7 @@ class SquadRepository {
         WHERE tp.team_id = teams.team_id AND p.status_id = ?
       )
       ''',
-      <Object?>[t.statusActive, t.statusActive],
+      <Object?>[t.statusActive, t.statusActive, t.statusActive],
     );
   }
 

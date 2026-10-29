@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/country_names.dart';
 import '../../data/db/schema.dart' as t;
 import '../../data/models/models.dart';
 import '../../game/international_tournament_service.dart';
 import '../../state/career_provider.dart';
 import '../theme.dart';
+import '../widgets/common.dart';
 import 'player_detail_sheet.dart';
 
 /// Screen displaying international windows, tournament standings, results,
@@ -28,11 +30,16 @@ class _InternationalTabState extends State<InternationalTab> {
   List<Country> _allCountries = <Country>[];
   bool _loadingCountries = false;
 
-  String _countryName(int id) {
+  Country? _countryById(int id) {
     for (final Country c in _allCountries) {
-      if (c.countryId == id) return c.name;
+      if (c.countryId == id) return c;
     }
-    return 'Tim #$id';
+    return null;
+  }
+
+  String _countryName(int id) {
+    final Country? c = _countryById(id);
+    return c != null ? c.name : 'Tim #$id';
   }
 
   @override
@@ -572,6 +579,8 @@ class _InternationalTabState extends State<InternationalTab> {
   }
 
   Widget _tableRow(int rank, InternationalStanding s) {
+    final Country? c = _countryById(s.countryId);
+    final String name = s.countryName.isNotEmpty ? s.countryName : _countryName(s.countryId);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -587,9 +596,18 @@ class _InternationalTabState extends State<InternationalTab> {
               ),
             ),
           ),
+          CountryFlagAvatar(
+            iso2: c?.iso2,
+            countryId: s.countryId,
+            name: name,
+            width: 20,
+            height: 14,
+            borderRadius: 3,
+          ),
+          const SizedBox(width: 6),
           Expanded(
             child: Text(
-              s.countryName.isNotEmpty ? s.countryName : _countryName(s.countryId),
+              name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 12, color: Colors.white),
@@ -639,6 +657,10 @@ class _InternationalTabState extends State<InternationalTab> {
 
   Widget _matchRow(CountryMatch m) {
     final bool finished = m.status == t.matchFinished;
+    final Country? homeC = _countryById(m.homeCountryId);
+    final Country? awayC = _countryById(m.awayCountryId);
+    final String homeName = _countryName(m.homeCountryId);
+    final String awayName = _countryName(m.awayCountryId);
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -657,12 +679,28 @@ class _InternationalTabState extends State<InternationalTab> {
             ),
           ),
           Expanded(
-            child: Text(
-              _countryName(m.homeCountryId),
-              textAlign: TextAlign.end,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, color: Colors.white),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                Flexible(
+                  child: Text(
+                    homeName,
+                    textAlign: TextAlign.end,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12, color: Colors.white),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                CountryFlagAvatar(
+                  iso2: homeC?.iso2,
+                  countryId: m.homeCountryId,
+                  name: homeName,
+                  width: 20,
+                  height: 14,
+                  borderRadius: 3,
+                ),
+              ],
             ),
           ),
           Container(
@@ -682,16 +720,49 @@ class _InternationalTabState extends State<InternationalTab> {
             ),
           ),
           Expanded(
-            child: Text(
-              _countryName(m.awayCountryId),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, color: Colors.white),
+            child: Row(
+              children: <Widget>[
+                CountryFlagAvatar(
+                  iso2: awayC?.iso2,
+                  countryId: m.awayCountryId,
+                  name: awayName,
+                  width: 20,
+                  height: 14,
+                  borderRadius: 3,
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    awayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12, color: Colors.white),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _openCountryPickerSheet() async {
+    final Country? picked = await showModalBottomSheet<Country>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (BuildContext ctx) => _NationalTeamPickerSheet(
+        countries: _allCountries,
+        selectedCountryId: _selectedCountryId,
+      ),
+    );
+    if (picked != null && mounted) {
+      setState(() => _selectedCountryId = picked.countryId);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -702,44 +773,84 @@ class _InternationalTabState extends State<InternationalTab> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    final Country? selectedCountry = _countryById(_selectedCountryId);
+
     return Column(
       children: <Widget>[
-        // Country Selector
+        // Searchable Country Selector Card
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           color: AppTheme.surfaceCard,
-          child: Row(
-            children: <Widget>[
-              const Icon(Icons.flag_outlined, size: 18, color: AppTheme.accent),
-              const SizedBox(width: 8),
-              const Text(
-                'Pilih Timnas:',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white70),
+          child: InkWell(
+            onTap: _openCountryPickerSheet,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white12),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<int>(
-                    value: _selectedCountryId != 0 ? _selectedCountryId : null,
-                    isExpanded: true,
-                    dropdownColor: AppTheme.surfaceCard,
-                    icon: const Icon(Icons.arrow_drop_down, color: AppTheme.accent),
-                    items: _allCountries.map((Country c) {
-                      return DropdownMenuItem<int>(
-                        value: c.countryId,
-                        child: Text(
-                          c.name,
-                          style: const TextStyle(fontSize: 13, color: Colors.white),
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (int? id) {
-                      if (id != null) setState(() => _selectedCountryId = id);
-                    },
+              child: Row(
+                children: <Widget>[
+                  CountryFlagAvatar(
+                    iso2: selectedCountry?.iso2,
+                    countryId: selectedCountry?.countryId,
+                    name: selectedCountry?.name,
+                    width: 36,
+                    height: 25,
+                    borderRadius: 4,
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          selectedCountry?.name ?? 'Pilih Negara',
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        if (selectedCountry != null)
+                          Text(
+                            '${confederationLabel(selectedCountry.confederation)} • Power ${selectedCountry.power}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textDim,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppTheme.accent.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppTheme.accent.withValues(alpha: 0.4)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(Icons.search, size: 15, color: AppTheme.accent),
+                        SizedBox(width: 4),
+                        Text(
+                          'Pilih Timnas',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.accent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
 
@@ -904,6 +1015,289 @@ class _InternationalTabState extends State<InternationalTab> {
                   ),
                 ),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NationalTeamPickerSheet extends StatefulWidget {
+  const _NationalTeamPickerSheet({
+    required this.countries,
+    required this.selectedCountryId,
+  });
+
+  final List<Country> countries;
+  final int selectedCountryId;
+
+  @override
+  State<_NationalTeamPickerSheet> createState() =>
+      _NationalTeamPickerSheetState();
+}
+
+class _NationalTeamPickerSheetState extends State<_NationalTeamPickerSheet> {
+  String _searchQuery = '';
+  int _selectedConfederation = 0; // 0 = Semua
+  bool _sortByAlphabet = true;
+
+  static const List<(int, String)> _confederations = <(int, String)>[
+    (0, 'Semua'),
+    (5, 'AFC (Asia)'),
+    (3, 'UEFA (Eropa)'),
+    (2, 'CONMEBOL'),
+    (4, 'CAF (Afrika)'),
+    (1, 'CONCACAF'),
+    (6, 'OFC'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final String q = _searchQuery.trim().toLowerCase();
+    final List<Country> filtered = widget.countries.where((Country c) {
+      if (_selectedConfederation != 0 &&
+          c.confederation != _selectedConfederation) {
+        return false;
+      }
+      if (q.isEmpty) return true;
+      return c.name.toLowerCase().contains(q) ||
+          c.iso2.toLowerCase().contains(q) ||
+          confederationLabel(c.confederation).toLowerCase().contains(q);
+    }).toList();
+
+    filtered.sort((Country a, Country b) {
+      if (_sortByAlphabet) {
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      }
+      final int cmp = b.power.compareTo(a.power);
+      return cmp != 0
+          ? cmp
+          : a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.82,
+        child: Column(
+          children: <Widget>[
+            // Handle & Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Row(
+                children: <Widget>[
+                  const Icon(Icons.public, color: AppTheme.accent, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Pilih Tim Nasional (${filtered.length})',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () =>
+                        setState(() => _sortByAlphabet = !_sortByAlphabet),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceCard,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Icon(
+                            _sortByAlphabet
+                                ? Icons.sort_by_alpha
+                                : Icons.trending_up,
+                            size: 14,
+                            color: AppTheme.accent,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _sortByAlphabet ? 'Urut: A-Z' : 'Urut: Power',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+
+            // Search Box
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: TextField(
+                autofocus: true,
+                onChanged: (String v) => setState(() => _searchQuery = v),
+                decoration: InputDecoration(
+                  hintText: 'Cari negara (mis. Indonesia, Jerman, Jepang)...',
+                  prefixIcon: const Icon(Icons.search),
+                  isDense: true,
+                  filled: true,
+                  fillColor: AppTheme.surfaceCard,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
+
+            // Confederation Filter Chips
+            SizedBox(
+              height: 44,
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 6,
+                ),
+                scrollDirection: Axis.horizontal,
+                itemCount: _confederations.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 6),
+                itemBuilder: (BuildContext context, int i) {
+                  final (int confId, String label) = _confederations[i];
+                  final bool active = _selectedConfederation == confId;
+                  return ChoiceChip(
+                    label: Text(label),
+                    selected: active,
+                    selectedColor: AppTheme.accent,
+                    backgroundColor: AppTheme.surfaceCard,
+                    labelStyle: TextStyle(
+                      fontSize: 11,
+                      fontWeight: active ? FontWeight.bold : FontWeight.normal,
+                      color: active ? Colors.black : Colors.white70,
+                    ),
+                    side: BorderSide(
+                      color: active ? AppTheme.accent : Colors.white10,
+                    ),
+                    onSelected: (_) =>
+                        setState(() => _selectedConfederation = confId),
+                  );
+                },
+              ),
+            ),
+
+            const Divider(color: Colors.white10, height: 8),
+
+            // Country List
+            Expanded(
+              child: filtered.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'Negara tidak ditemukan.',
+                        style: TextStyle(color: AppTheme.textDim),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
+                      itemCount: filtered.length,
+                      itemBuilder: (BuildContext context, int i) {
+                        final Country c = filtered[i];
+                        final bool selected =
+                            c.countryId == widget.selectedCountryId;
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 6),
+                          color: selected
+                              ? AppTheme.accent.withValues(alpha: 0.12)
+                              : AppTheme.surfaceCard,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(
+                              color: selected
+                                  ? AppTheme.accent
+                                  : Colors.white10,
+                              width: selected ? 1.4 : 1.0,
+                            ),
+                          ),
+                          child: ListTile(
+                            dense: true,
+                            onTap: () => Navigator.pop(context, c),
+                            leading: CountryFlagAvatar(
+                              iso2: c.iso2,
+                              countryId: c.countryId,
+                              name: c.name,
+                              width: 36,
+                              height: 25,
+                              borderRadius: 4,
+                            ),
+                            title: Text(
+                              c.name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13.5,
+                                color: Colors.white,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '${confederationLabel(c.confederation)} • ${c.iso2.toUpperCase()}',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppTheme.textDim,
+                              ),
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.surface,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.white12),
+                                  ),
+                                  child: Text(
+                                    'OVR ${c.power}',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppTheme.accent,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Icon(
+                                  selected
+                                      ? Icons.check_circle
+                                      : Icons.chevron_right,
+                                  size: 18,
+                                  color: selected
+                                      ? AppTheme.accent
+                                      : AppTheme.textDim,
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
             ),
           ],
         ),

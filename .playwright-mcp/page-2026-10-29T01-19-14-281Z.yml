@@ -1,0 +1,34 @@
+- generic [active] [ref=e5]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - button "Back" [ref=e50]
+              - heading "New Career" [level=2] [ref=e51]
+            - generic [ref=e52]: Profile
+            - generic [ref=e53]: League
+            - generic [ref=e54]: Division
+            - generic [ref=e55]: Club
+            - generic [ref=e63]: Where do you want to manage?
+            - generic [ref=e64]: Pick the country whose league you will play in.
+            - textbox "Search country" [ref=e66]
+            - generic:
+              - group:
+                - button "Indonesia 55 clubs • 3 divisions" [ref=e67]:
+                  - checkbox "Your country" [ref=e68]
+                - button "Afrika Selatan 32 clubs • 2 divisions" [ref=e69]
+                - button "Aljazair 16 clubs • 1 divisions" [ref=e70]
+                - button "Amerika Serikat 54 clubs • 2 divisions" [ref=e71]
+                - button "Angola 16 clubs • 1 divisions" [ref=e72]
+                - button "Arab Saudi 36 clubs • 2 divisions" [ref=e73]
+                - button "Argentina 87 clubs • 3 divisions" [ref=e74]
+                - button "Australia 16 clubs • 2 divisions" [ref=e75]
+                - button "Austria 28 clubs • 2 divisions" [ref=e76]
+                - button "Azerbaijan 16 clubs • 1 divisions" [ref=e77]
+                - button "Belanda 37 clubs • 2 divisions" [ref=e78]
+                - button "Belarus 34 clubs • 2 divisions" [ref=e79]
+                - button "Belgia 33 clubs • 2 divisions" [ref=e80]
+                - button "Bolivia 16 clubs • 1 divisions" [ref=e81]
+                - button "Brasil 60 clubs • 3 divisions" [ref=e82]

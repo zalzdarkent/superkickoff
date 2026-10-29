@@ -1,0 +1,6 @@
+- generic [ref=e22]:
+  - generic "Dialog":
+    - textbox "Search nationality" [active] [ref=e24]: Indonesia
+    - generic:
+      - group:
+        - button "Indonesia" [ref=e49]

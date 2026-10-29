@@ -1,0 +1,21 @@
+- generic [ref=e5] [cursor=pointer]:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - button "Back" [ref=e50]
+              - heading "New Career" [level=2] [ref=e51]
+            - generic [ref=e52]: Profile
+            - generic [ref=e53]: League
+            - generic [ref=e54]: Division
+            - generic [ref=e55]: Club
+            - generic:
+              - group:
+                - generic [ref=e56]: Who are you? Create your manager profile.
+                - generic [ref=e57]:
+                  - textbox "Manager name" [ref=e58]
+                  - generic [ref=e59]: 36 characters remaining
+                - button "Nationality Indonesia" [active] [ref=e61]
+            - button "Continue" [ref=e62]

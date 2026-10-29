@@ -181,30 +181,63 @@ class ReferenceRepository {
 
   /// Teams of a country in a specific division (league participants).
   Future<List<Team>> teamsForDivision(int countryId, int divisionId) async {
-    final rows = await db.query(
-      t.teams,
-      where: 'country_id = ? AND division = ?',
-      whereArgs: <Object?>[countryId, divisionId],
-      orderBy: 'name COLLATE NOCASE ASC',
+    final rows = await db.rawQuery(
+      '''
+      SELECT tm.*,
+             COALESCE(
+               (SELECT SUM(p.value)
+                FROM ${t.players} p
+                JOIN ${t.teamPlayers} tp ON tp.player_id = p.player_id
+                WHERE tp.team_id = tm.team_id AND p.status_id = ?),
+               NULLIF(tm.value, 0),
+               0
+             ) AS value
+      FROM ${t.teams} tm
+      WHERE tm.country_id = ? AND tm.division = ?
+      ORDER BY tm.name COLLATE NOCASE ASC
+      ''',
+      <Object?>[t.statusActive, countryId, divisionId],
     );
     return rows.map(Team.fromMap).toList();
   }
 
   Future<List<Team>> teamsForCountry(int countryId) => db
-      .query(
-        t.teams,
-        where: 'country_id = ?',
-        whereArgs: <Object?>[countryId],
-        orderBy: 'name COLLATE NOCASE ASC',
+      .rawQuery(
+        '''
+        SELECT tm.*,
+               COALESCE(
+                 (SELECT SUM(p.value)
+                  FROM ${t.players} p
+                  JOIN ${t.teamPlayers} tp ON tp.player_id = p.player_id
+                  WHERE tp.team_id = tm.team_id AND p.status_id = ?),
+                 NULLIF(tm.value, 0),
+                 0
+               ) AS value
+        FROM ${t.teams} tm
+        WHERE tm.country_id = ?
+        ORDER BY tm.name COLLATE NOCASE ASC
+        ''',
+        <Object?>[t.statusActive, countryId],
       )
       .then((rows) => rows.map(Team.fromMap).toList());
 
   Future<Team?> teamById(int teamId) async {
-    final rows = await db.query(
-      t.teams,
-      where: 'team_id = ?',
-      whereArgs: <Object?>[teamId],
-      limit: 1,
+    final rows = await db.rawQuery(
+      '''
+      SELECT tm.*,
+             COALESCE(
+               (SELECT SUM(p.value)
+                FROM ${t.players} p
+                JOIN ${t.teamPlayers} tp ON tp.player_id = p.player_id
+                WHERE tp.team_id = tm.team_id AND p.status_id = ?),
+               NULLIF(tm.value, 0),
+               0
+             ) AS value
+      FROM ${t.teams} tm
+      WHERE tm.team_id = ?
+      LIMIT 1
+      ''',
+      <Object?>[t.statusActive, teamId],
     );
     return rows.isEmpty ? null : Team.fromMap(rows.first);
   }
