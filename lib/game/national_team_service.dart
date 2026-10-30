@@ -435,6 +435,59 @@ class NationalTeamService {
     return squad;
   }
 
+  /// Fetches the entire eligible player pool for [countryId] sorted by power.
+  /// Includes all players with primary nationality or secondary eligibility.
+  Future<List<PlayerNationalStats>> getEligiblePlayersPool(
+    int countryId, {
+    int? seasonId,
+    int limit = 100,
+  }) async {
+    final List<Map<String, Object?>> poolRows = await db.rawQuery(
+      '''
+      SELECT p.player_id,
+             p.name,
+             p.position_id,
+             p.power,
+             pos.abbreviation AS position_abbr,
+             (SELECT tm.name
+              FROM ${t.teamPlayers} tp
+              JOIN ${t.teams} tm ON tm.team_id = tp.team_id
+              WHERE tp.player_id = p.player_id
+              LIMIT 1) AS club_name
+      FROM ${t.players} p
+      LEFT JOIN positions pos ON pos.position_id = p.position_id
+      WHERE (p.country_id = ? OR p.player_id IN (
+        SELECT player_id FROM ${t.playerNationalEligibility} WHERE country_id = ?
+      )) AND p.status_id = ?
+      ORDER BY p.power DESC, p.name ASC
+      LIMIT ?
+      ''',
+      <Object?>[countryId, countryId, t.statusActive, limit],
+    );
+
+    final List<PlayerNationalStats> list = <PlayerNationalStats>[];
+    for (final Map<String, Object?> r in poolRows) {
+      final int pid = r['player_id'] as int;
+      final PlayerNationalStats stats = await playerInternationalStats(
+        pid,
+        countryId: countryId,
+        seasonId: seasonId,
+      );
+      final int rawPos = (r['position_id'] as int?) ?? 1;
+      final int posGroup = rawPos == 1 ? 1 : (rawPos <= 4 ? 2 : (rawPos <= 8 ? 3 : 4));
+      list.add(
+        stats.copyWith(
+          playerName: (r['name'] as String?) ?? 'Player $pid',
+          positionId: posGroup,
+          power: (r['power'] as int?) ?? 50,
+          shirtNumber: 0,
+          clubName: r['club_name'] as String?,
+        ),
+      );
+    }
+    return list;
+  }
+
   /// Recalculates power for all countries dynamically from their top 11 active players.
   ///
   /// This ensures that as players grow through training, match performance,

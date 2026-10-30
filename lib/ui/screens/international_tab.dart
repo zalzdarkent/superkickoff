@@ -20,6 +20,15 @@ class InternationalTab extends StatefulWidget {
 }
 
 class _InternationalTabState extends State<InternationalTab> {
+  static const List<(int, String)> _confederations = <(int, String)>[
+    (5, 'AFC (Asia)'),
+    (3, 'UEFA (Eropa)'),
+    (2, 'CONMEBOL'),
+    (4, 'CAF (Afrika)'),
+    (1, 'CONCACAF'),
+    (6, 'OFC'),
+  ];
+
   int _subTabIndex = 0;
 
   // Selected tournament for standings/fixtures
@@ -31,6 +40,8 @@ class _InternationalTabState extends State<InternationalTab> {
 
   // Selected country for squad viewer
   int _selectedCountryId = 0;
+  // 0: Skuad Terpilih (23 pemain), 1: Semua Pemain (Eligible Pool)
+  int _squadViewMode = 0;
   List<Country> _allCountries = <Country>[];
   bool _loadingCountries = false;
 
@@ -1119,12 +1130,59 @@ class _InternationalTabState extends State<InternationalTab> {
           ),
         ),
 
+        // View Mode Selector: Skuad Terpilih vs Semua Pemain (Eligible Pool)
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          color: AppTheme.surfaceCard,
+          child: Row(
+            children: <Widget>[
+              ChoiceChip(
+                label: const Text('Skuad Terpilih (23)'),
+                selected: _squadViewMode == 0,
+                selectedColor: AppTheme.accent,
+                labelStyle: TextStyle(
+                  fontSize: 11,
+                  fontWeight: _squadViewMode == 0 ? FontWeight.bold : FontWeight.normal,
+                  color: _squadViewMode == 0 ? Colors.black : Colors.white70,
+                ),
+                backgroundColor: AppTheme.surface,
+                side: BorderSide(
+                  color: _squadViewMode == 0 ? AppTheme.accent : Colors.white12,
+                ),
+                onSelected: (bool val) {
+                  if (val) setState(() => _squadViewMode = 0);
+                },
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                label: const Text('Semua Pemain Negara'),
+                selected: _squadViewMode == 1,
+                selectedColor: AppTheme.accent,
+                labelStyle: TextStyle(
+                  fontSize: 11,
+                  fontWeight: _squadViewMode == 1 ? FontWeight.bold : FontWeight.normal,
+                  color: _squadViewMode == 1 ? Colors.black : Colors.white70,
+                ),
+                backgroundColor: AppTheme.surface,
+                side: BorderSide(
+                  color: _squadViewMode == 1 ? AppTheme.accent : Colors.white12,
+                ),
+                onSelected: (bool val) {
+                  if (val) setState(() => _squadViewMode = 1);
+                },
+              ),
+            ],
+          ),
+        ),
+
         // Squad list
         Expanded(
           child: _selectedCountryId == 0
               ? const Center(child: Text('Pilih negara'))
               : FutureBuilder<List<PlayerNationalStats>>(
-                  future: game.getCountrySquad(_selectedCountryId),
+                  future: _squadViewMode == 0
+                      ? game.getCountrySquad(_selectedCountryId)
+                      : game.getEligiblePlayersPool(_selectedCountryId),
                   builder: (BuildContext context, AsyncSnapshot<List<PlayerNationalStats>> snap) {
                     if (snap.connectionState != ConnectionState.done) {
                       return const Center(child: CircularProgressIndicator());
@@ -1132,10 +1190,12 @@ class _InternationalTabState extends State<InternationalTab> {
 
                     final List<PlayerNationalStats> squad = snap.data ?? <PlayerNationalStats>[];
                     if (squad.isEmpty) {
-                      return const Center(
+                      return Center(
                         child: Text(
-                          'Skuad belum diumumkan untuk tim nasional ini.',
-                          style: TextStyle(color: AppTheme.textDim),
+                          _squadViewMode == 0
+                              ? 'Skuad belum diumumkan untuk tim nasional ini.'
+                              : 'Tidak ada pemain terdaftar untuk negara ini.',
+                          style: const TextStyle(color: AppTheme.textDim),
                         ),
                       );
                     }

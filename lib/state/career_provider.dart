@@ -811,6 +811,14 @@ class CareerProvider extends ChangeNotifier {
     );
   }
 
+  Future<List<PlayerNationalStats>> getEligiblePlayersPool(int countryId, {int limit = 100}) {
+    return _service.nationalTeams.getEligiblePlayersPool(
+      countryId,
+      seasonId: season?.seasonId,
+      limit: limit,
+    );
+  }
+
   Future<List<Country>> getFifaRankings({int? confederation}) {
     return _service.nationalTeams.getFifaRankings(confederation: confederation);
   }
