@@ -2516,6 +2516,8 @@ class CareerService {
   }
 
   /// User players whose contract ends this summer, best first.
+  /// Players with an agreed scheduled outgoing transfer (`offerAwaitingWindow`) are excluded,
+  /// as their move to the buying club is already finalized.
   Future<List<ExpiringContract>> expiringContracts(
     int userTeamId,
     int seasonEndYear,
@@ -2529,10 +2531,14 @@ class CareerService {
       JOIN ${t.contracts} c ON c.player_id = p.player_id AND c.status = 1
       WHERE tp.team_id = ? AND p.status_id = ?
         AND CAST(substr(c.end_date, 1, 4) AS INTEGER) <= ?
+        AND p.player_id NOT IN (
+          SELECT player_id FROM ${t.transferOffers}
+          WHERE from_team_id = ? AND status = ${t.offerAwaitingWindow}
+        )
       GROUP BY p.player_id
       ORDER BY p.power DESC
     ''',
-      <Object?>[userTeamId, t.statusActive, seasonEndYear],
+      <Object?>[userTeamId, t.statusActive, seasonEndYear, userTeamId],
     );
     return rows.map((Map<String, Object?> r) {
       final int old = max(
@@ -2808,6 +2814,41 @@ class CareerService {
             report: <String>[...left, dev].join('\n'),
           );
         case OffseasonStep.development:
+          // When opening the offseason transfer window, process any scheduled transfers
+          // whose effective date has arrived (or during summer window opening).
+          final String offseasonWindowDate = '${current.endYear}-07-01';
+          if (_transfers != null) {
+            final List<ScheduledTransferResult> results =
+                await _transfers.processDueScheduledTransfers(offseasonWindowDate);
+            for (final ScheduledTransferResult res in results) {
+              if (res.offer.fromTeamId == userTeamId ||
+                  res.offer.toTeamId == userTeamId) {
+                if (res.success) {
+                  await _messages.insert(
+                    title: 'Transfer Terjadwal Tuntas',
+                    body:
+                        '${res.offer.playerName} resmi bergabung dengan ${res.offer.toTeamName} '
+                        'sesuai kesepakatan transfer terjadwal.',
+                    teamId: userTeamId,
+                    sender: 'Transfer Desk',
+                    date: offseasonWindowDate,
+                    transferOfferId: res.offer.offerId,
+                  );
+                } else {
+                  await _messages.insert(
+                    title: 'Transfer Terjadwal Dibatalkan',
+                    body:
+                        'Kepindahan ${res.offer.playerName} ke ${res.offer.toTeamName} gagal: ${res.error}.',
+                    teamId: userTeamId,
+                    sender: 'Transfer Desk',
+                    date: offseasonWindowDate,
+                    transferOfferId: res.offer.offerId,
+                  );
+                }
+              }
+            }
+          }
+
           await _saveOffseason(
             s,
             step: OffseasonStep.transfers.index,
@@ -3161,6 +3202,31 @@ class CareerService {
       plan.season.seasonId,
       plan.season.startYear,
     );
+
+    // Process any remaining scheduled transfers when the new season begins
+    if (_transfers != null) {
+      final String seasonStartDate = '${plan.season.startYear}-07-01';
+      final List<ScheduledTransferResult> results =
+          await _transfers.processDueScheduledTransfers(seasonStartDate);
+      for (final ScheduledTransferResult res in results) {
+        if (res.offer.fromTeamId == userTeamId ||
+            res.offer.toTeamId == userTeamId) {
+          if (res.success) {
+            await _messages.insert(
+              title: 'Transfer Terjadwal Tuntas',
+              body:
+                  '${res.offer.playerName} resmi bergabung dengan ${res.offer.toTeamName} '
+                  'sesuai kesepakatan transfer terjadwal.',
+              teamId: userTeamId,
+              sender: 'Transfer Desk',
+              date: seasonStartDate,
+              transferOfferId: res.offer.offerId,
+            );
+          }
+        }
+      }
+    }
+
     await _messages.insert(
       title: plan.season.name,
       body: 'Fixtures are out for the new season — good luck!',
