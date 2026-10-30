@@ -827,6 +827,10 @@ class CareerProvider extends ChangeNotifier {
     return _service.nationalTeams.getPlayerStats(playerId);
   }
 
+  Future<List<Map<String, Object?>>> getCountryMatchPlayers(int matchId) {
+    return _service.internationalTournaments.matchPlayersForCountryMatch(matchId);
+  }
+
   bool isPlayerOnInternationalDuty(int playerId) {
     return userClubPlayerIdsOnDuty.contains(playerId);
   }

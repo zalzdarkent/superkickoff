@@ -751,6 +751,32 @@ class InternationalTournamentService {
     );
     return rows.map(CountryMatch.fromMap).toList();
   }
+
+  /// Fetches player statistics for a specific international match from `match_players_countries`.
+  Future<List<Map<String, Object?>>> matchPlayersForCountryMatch(int matchId) async {
+    return db.rawQuery(
+      '''
+      SELECT mpc.player_id,
+             p.name AS player_name,
+             pos.abbreviation AS position_abbr,
+             mpc.country_id,
+             mpc.starter,
+             mpc.minutes,
+             mpc.rating,
+             mpc.mvp,
+             mpc.goals,
+             mpc.assists,
+             mpc.yellow_cards,
+             mpc.red_cards
+      FROM ${t.matchPlayersCountries} mpc
+      JOIN ${t.players} p ON p.player_id = mpc.player_id
+      LEFT JOIN positions pos ON pos.position_id = p.position_id
+      WHERE mpc.match_id = ?
+      ORDER BY mpc.country_id ASC, mpc.starter DESC, mpc.minutes DESC, mpc.rating DESC
+      ''',
+      <Object?>[matchId],
+    );
+  }
 }
 
 class NationsLeagueMovement {
