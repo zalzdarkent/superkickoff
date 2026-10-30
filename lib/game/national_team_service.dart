@@ -556,6 +556,110 @@ class NationalTeamService {
     );
     return newPower;
   }
+
+  /// Fetches national team leaderboards (scorers, assists, caps/appearances, ratings)
+  /// for a specific country, aggregated across both active match records and archived season records.
+  Future<List<LeaderRow>> getCountryLeaders(
+    int countryId, {
+    required String metric,
+    int? seasonId,
+    int limit = 20,
+  }) async {
+    String metricSelect;
+    String havingClause;
+    String orderBy;
+
+    switch (metric.toLowerCase()) {
+      case 'goals':
+      case 'gol':
+        metricSelect = 'SUM(sub.goals)';
+        havingClause = 'value > 0';
+        orderBy = 'value DESC, p.power DESC, p.name ASC';
+        break;
+      case 'assists':
+      case 'assist':
+        metricSelect = 'SUM(sub.assists)';
+        havingClause = 'value > 0';
+        orderBy = 'value DESC, p.power DESC, p.name ASC';
+        break;
+      case 'caps':
+      case 'matches':
+      case 'penampilan':
+        metricSelect = 'SUM(sub.caps)';
+        havingClause = 'value > 0';
+        orderBy = 'value DESC, p.power DESC, p.name ASC';
+        break;
+      case 'rating':
+        metricSelect = 'AVG(sub.rating)';
+        havingClause = 'SUM(sub.caps) >= 1';
+        orderBy = 'value DESC, SUM(sub.caps) DESC, p.name ASC';
+        break;
+      default:
+        metricSelect = 'SUM(sub.goals)';
+        havingClause = 'value > 0';
+        orderBy = 'value DESC, p.power DESC, p.name ASC';
+    }
+
+    final String query = '''
+      SELECT
+        p.player_id,
+        p.name AS player_name,
+        p.position_id,
+        COALESCE(p.profile, 'D') AS profile,
+        (SELECT tm.name
+         FROM ${t.teamPlayers} tp
+         JOIN ${t.teams} tm ON tm.team_id = tp.team_id
+         WHERE tp.player_id = p.player_id
+         LIMIT 1) AS club_name,
+        $metricSelect AS value
+      FROM (
+        SELECT
+          mpc.player_id,
+          mpc.goals AS goals,
+          mpc.assists AS assists,
+          1 AS caps,
+          CAST(mpc.rating AS REAL) AS rating
+        FROM ${t.matchPlayersCountries} mpc
+        WHERE mpc.country_id = ?
+          ${seasonId != null ? 'AND mpc.match_id IN (SELECT match_id FROM ${t.countryMatches} WHERE season_id = $seasonId)' : ''}
+
+        UNION ALL
+
+        SELECT
+          pssc.player_id,
+          pssc.goals AS goals,
+          pssc.assists AS assists,
+          pssc.matches_played AS caps,
+          CASE WHEN pssc.matches_played > 0 THEN CAST(pssc.rating AS REAL) / pssc.matches_played ELSE 0.0 END AS rating
+        FROM ${t.playerSeasonStatsCountries} pssc
+        WHERE pssc.country_id = ?
+          ${seasonId != null ? 'AND pssc.season_id = $seasonId' : ''}
+      ) AS sub
+      JOIN ${t.players} p ON p.player_id = sub.player_id
+      GROUP BY p.player_id
+      HAVING $havingClause
+      ORDER BY $orderBy
+      LIMIT ?
+    ''';
+
+    final List<Map<String, Object?>> rows = await db.rawQuery(
+      query,
+      <Object?>[countryId, countryId, limit],
+    );
+
+    return <LeaderRow>[
+      for (final Map<String, Object?> r in rows)
+        LeaderRow(
+          playerId: r['player_id'] as int,
+          playerName: (r['player_name'] as String?) ?? 'Player ${r['player_id']}',
+          clubName: (r['club_name'] as String?) ?? '-',
+          positionId: (r['position_id'] as int?) ?? 1,
+          teamId: countryId,
+          profile: (r['profile'] as String?) ?? 'D',
+          value: (r['value'] as num?)?.toDouble() ?? 0.0,
+        ),
+    ];
+  }
 }
 
 

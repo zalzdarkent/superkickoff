@@ -109,6 +109,15 @@ void main() {
       print('  - ${m.date}: Negara ${m.homeCountryId} ${m.homeGoals} - ${m.awayGoals} Negara ${m.awayCountryId}');
     }
 
+    // Verify national team leaderboards (scorers, assists, caps)
+    if (finishedMatches.isNotEmpty) {
+      final sampleCountryId = finishedMatches.first.homeCountryId;
+      final topScorers = await careerService.nationalTeams.getCountryLeaders(sampleCountryId, metric: 'goals');
+      final topCaps = await careerService.nationalTeams.getCountryLeaders(sampleCountryId, metric: 'caps');
+      print('Country $sampleCountryId top scorers: ${topScorers.length}, top caps: ${topCaps.length}');
+      expect(topCaps, isNotEmpty, reason: 'Pemain yang bertanding harus tercatat dalam statistik timnas');
+    }
+
     await db.close();
     await tempDir.delete(recursive: true);
   });

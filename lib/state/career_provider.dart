@@ -823,6 +823,20 @@ class CareerProvider extends ChangeNotifier {
     return _service.nationalTeams.getFifaRankings(confederation: confederation);
   }
 
+  Future<List<LeaderRow>> getCountryLeaders(
+    int countryId, {
+    required String metric,
+    int? seasonId,
+    int limit = 20,
+  }) {
+    return _service.nationalTeams.getCountryLeaders(
+      countryId,
+      metric: metric,
+      seasonId: seasonId,
+      limit: limit,
+    );
+  }
+
   Future<PlayerNationalStats?> getPlayerNationalStats(int playerId) {
     return _service.nationalTeams.getPlayerStats(playerId);
   }

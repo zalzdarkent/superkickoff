@@ -40,8 +40,10 @@ class _InternationalTabState extends State<InternationalTab> {
 
   // Selected country for squad viewer
   int _selectedCountryId = 0;
-  // 0: Skuad Terpilih (23 pemain), 1: Semua Pemain (Eligible Pool)
+  // 0: Skuad Terpilih (23 pemain), 1: Semua Pemain (Eligible Pool), 2: Statistik Timnas
   int _squadViewMode = 0;
+  // Metric for national team statistics: 'goals', 'assists', 'caps', 'rating'
+  String _statsMetric = 'goals';
   List<Country> _allCountries = <Country>[];
   bool _loadingCountries = false;
 
@@ -1150,11 +1152,13 @@ class _InternationalTabState extends State<InternationalTab> {
           ),
         ),
 
-        // View Mode Selector: Skuad Terpilih vs Semua Pemain (Eligible Pool)
+        // View Mode Selector: Skuad Terpilih vs Semua Pemain vs Statistik Timnas
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          height: 48,
           color: AppTheme.surfaceCard,
-          child: Row(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            scrollDirection: Axis.horizontal,
             children: <Widget>[
               ChoiceChip(
                 label: const Text('Skuad Terpilih (23)'),
@@ -1191,15 +1195,35 @@ class _InternationalTabState extends State<InternationalTab> {
                   if (val) setState(() => _squadViewMode = 1);
                 },
               ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                label: const Text('Statistik & Rekor Timnas'),
+                selected: _squadViewMode == 2,
+                selectedColor: AppTheme.accent,
+                labelStyle: TextStyle(
+                  fontSize: 11,
+                  fontWeight: _squadViewMode == 2 ? FontWeight.bold : FontWeight.normal,
+                  color: _squadViewMode == 2 ? Colors.black : Colors.white70,
+                ),
+                backgroundColor: AppTheme.surface,
+                side: BorderSide(
+                  color: _squadViewMode == 2 ? AppTheme.accent : Colors.white12,
+                ),
+                onSelected: (bool val) {
+                  if (val) setState(() => _squadViewMode = 2);
+                },
+              ),
             ],
           ),
         ),
 
-        // Squad list
+        // Squad list or Stats Leaderboard
         Expanded(
           child: _selectedCountryId == 0
               ? const Center(child: Text('Pilih negara'))
-              : FutureBuilder<List<PlayerNationalStats>>(
+              : _squadViewMode == 2
+                  ? _buildCountryStatsView(game)
+                  : FutureBuilder<List<PlayerNationalStats>>(
                   future: _squadViewMode == 0
                       ? game.getCountrySquad(_selectedCountryId)
                       : game.getEligiblePlayersPool(_selectedCountryId),
@@ -1364,6 +1388,286 @@ class _InternationalTabState extends State<InternationalTab> {
           ],
         ),
       ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sub-view: National Team Statistics & Records
+  // ---------------------------------------------------------------------------
+  Widget _buildCountryStatsView(CareerProvider game) {
+    return Column(
+      children: <Widget>[
+        // Metric selection chips
+        Container(
+          height: 44,
+          color: AppTheme.surfaceCard.withValues(alpha: 0.5),
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            scrollDirection: Axis.horizontal,
+            children: <Widget>[
+              ChoiceChip(
+                label: const Text('Top Skor (Gol)'),
+                selected: _statsMetric == 'goals',
+                selectedColor: AppTheme.accent,
+                labelStyle: TextStyle(
+                  fontSize: 11,
+                  fontWeight: _statsMetric == 'goals' ? FontWeight.bold : FontWeight.normal,
+                  color: _statsMetric == 'goals' ? Colors.black : Colors.white70,
+                ),
+                backgroundColor: AppTheme.surface,
+                side: BorderSide(
+                  color: _statsMetric == 'goals' ? AppTheme.accent : Colors.white12,
+                ),
+                onSelected: (bool val) {
+                  if (val) setState(() => _statsMetric = 'goals');
+                },
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                label: const Text('Top Assist'),
+                selected: _statsMetric == 'assists',
+                selectedColor: AppTheme.accent,
+                labelStyle: TextStyle(
+                  fontSize: 11,
+                  fontWeight: _statsMetric == 'assists' ? FontWeight.bold : FontWeight.normal,
+                  color: _statsMetric == 'assists' ? Colors.black : Colors.white70,
+                ),
+                backgroundColor: AppTheme.surface,
+                side: BorderSide(
+                  color: _statsMetric == 'assists' ? AppTheme.accent : Colors.white12,
+                ),
+                onSelected: (bool val) {
+                  if (val) setState(() => _statsMetric = 'assists');
+                },
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                label: const Text('Caps (Penampilan)'),
+                selected: _statsMetric == 'caps',
+                selectedColor: AppTheme.accent,
+                labelStyle: TextStyle(
+                  fontSize: 11,
+                  fontWeight: _statsMetric == 'caps' ? FontWeight.bold : FontWeight.normal,
+                  color: _statsMetric == 'caps' ? Colors.black : Colors.white70,
+                ),
+                backgroundColor: AppTheme.surface,
+                side: BorderSide(
+                  color: _statsMetric == 'caps' ? AppTheme.accent : Colors.white12,
+                ),
+                onSelected: (bool val) {
+                  if (val) setState(() => _statsMetric = 'caps');
+                },
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                label: const Text('Rating Tertinggi'),
+                selected: _statsMetric == 'rating',
+                selectedColor: AppTheme.accent,
+                labelStyle: TextStyle(
+                  fontSize: 11,
+                  fontWeight: _statsMetric == 'rating' ? FontWeight.bold : FontWeight.normal,
+                  color: _statsMetric == 'rating' ? Colors.black : Colors.white70,
+                ),
+                backgroundColor: AppTheme.surface,
+                side: BorderSide(
+                  color: _statsMetric == 'rating' ? AppTheme.accent : Colors.white12,
+                ),
+                onSelected: (bool val) {
+                  if (val) setState(() => _statsMetric = 'rating');
+                },
+              ),
+            ],
+          ),
+        ),
+
+        // Leaderboard List
+        Expanded(
+          child: FutureBuilder<List<LeaderRow>>(
+            future: game.getCountryLeaders(
+              _selectedCountryId,
+              metric: _statsMetric,
+              limit: 50,
+            ),
+            builder: (BuildContext context, AsyncSnapshot<List<LeaderRow>> snap) {
+              if (snap.connectionState != ConnectionState.done) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final List<LeaderRow> rows = snap.data ?? <LeaderRow>[];
+              if (rows.isEmpty) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Belum ada data statistik untuk ${_countryName(_selectedCountryId)}.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+                    ),
+                  ),
+                );
+              }
+
+              final String headerLabel = switch (_statsMetric) {
+                'goals' => 'GOL',
+                'assists' => 'ASSIST',
+                'caps' => 'CAPS',
+                'rating' => 'RTG',
+                _ => 'TOTAL',
+              };
+
+              return Column(
+                children: <Widget>[
+                  // Table Header
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    color: AppTheme.surfaceCard,
+                    child: Row(
+                      children: <Widget>[
+                        const SizedBox(
+                          width: 30,
+                          child: Text(
+                            '#',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textDim,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(
+                          width: 38,
+                          child: Text(
+                            'POS',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textDim,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Pemain',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textDim,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 60,
+                          child: Text(
+                            headerLabel,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.textDim,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // List of Leaders
+                  Expanded(
+                    child: ListView.separated(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      itemCount: rows.length,
+                      separatorBuilder: (_, _) => const Divider(
+                        height: 1,
+                        color: Colors.white10,
+                      ),
+                      itemBuilder: (BuildContext context, int index) {
+                        final LeaderRow row = rows[index];
+                        final bool isTop3 = index < 3;
+
+                        return InkWell(
+                          onTap: () => showPlayerDetail(context, row.playerId),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
+                            child: Row(
+                              children: <Widget>[
+                                SizedBox(
+                                  width: 30,
+                                  child: Text(
+                                    '${index + 1}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: isTop3 ? FontWeight.bold : FontWeight.normal,
+                                      color: isTop3 ? AppTheme.accent : AppTheme.textDim,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 38,
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: PositionBadge(
+                                      positionId: row.positionId,
+                                      profile: row.profile,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: <Widget>[
+                                      Text(
+                                        row.playerName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      Text(
+                                        row.clubName.isNotEmpty ? row.clubName : 'Free Agent',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: AppTheme.textDim,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 60,
+                                  child: Text(
+                                    _statsMetric == 'rating'
+                                        ? row.value.toStringAsFixed(1)
+                                        : '${row.value.toInt()}',
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: isTop3 ? AppTheme.accent : Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }
