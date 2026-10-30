@@ -830,22 +830,72 @@ class InternationalTournamentService {
     return allFixtures;
   }
 
+  /// Fetches top qualified countries from a qualifier tournament in [qualifierSeasonId].
+  Future<List<int>> getQualifiedCountriesFromTournament({
+    required int qualifierTournamentId,
+    required int qualifierSeasonId,
+    required int advancePerGroup,
+    int? maxTotal,
+  }) async {
+    final List<Map<String, Object?>> groupRows = await db.rawQuery(
+      'SELECT DISTINCT group_id FROM ${t.countryMatches} '
+      'WHERE tournament_id = ? AND season_id = ? AND group_id IS NOT NULL '
+      'ORDER BY group_id ASC',
+      <Object?>[qualifierTournamentId, qualifierSeasonId],
+    );
+
+    final List<int> qualified = <int>[];
+    for (final Map<String, Object?> row in groupRows) {
+      final int gid = (row['group_id'] as int?) ?? 1;
+      final List<InternationalStandingRow> standings = await getStandings(
+        tournamentId: qualifierTournamentId,
+        seasonId: qualifierSeasonId,
+        groupId: gid,
+      );
+      for (int i = 0; i < advancePerGroup && i < standings.length; i++) {
+        qualified.add(standings[i].countryId);
+      }
+    }
+
+    if (maxTotal != null && qualified.length > maxTotal) {
+      return qualified.take(maxTotal).toList();
+    }
+    return qualified;
+  }
+
   /// Schedules FIFA World Cup Final Tournament (48 teams in 12 groups of 4, followed by Round of 32 -> Final).
   Future<List<CountryMatch>> scheduleWorldCupTournament({
     required int seasonId,
     required InternationalWindow summerWindow,
     int? userCountryId,
+    int? qualifierSeasonId,
   }) async {
+    List<int> participantIds = <int>[];
+    if (qualifierSeasonId != null) {
+      participantIds = await getQualifiedCountriesFromTournament(
+        qualifierTournamentId: t.tournamentWorldCupQualifiers,
+        qualifierSeasonId: qualifierSeasonId,
+        advancePerGroup: 2, // Top 2 from each of 18 qualifier groups = 36 teams
+        maxTotal: 48,
+      );
+    }
+
+    // Top up to 48 nations worldwide by FIFA ranking / power if not filled
     final List<Country> allNations = await _nationalService.getNationalTeams();
     allNations.sort((Country a, Country b) => b.power.compareTo(a.power));
 
-    // Top 48 nations worldwide
-    final List<Country> participants = allNations.take(48).toList();
-    if (userCountryId != null && !participants.any((Country c) => c.countryId == userCountryId)) {
+    for (final Country c in allNations) {
+      if (participantIds.length >= 48) break;
+      if (!participantIds.contains(c.countryId)) {
+        participantIds.add(c.countryId);
+      }
+    }
+
+    if (userCountryId != null && !participantIds.contains(userCountryId)) {
       final Country? userC = await _nationalService.getNationalTeam(userCountryId);
       if (userC != null) {
-        if (participants.isNotEmpty) participants.removeLast();
-        participants.add(userC);
+        if (participantIds.isNotEmpty) participantIds.removeLast();
+        participantIds.add(userCountryId);
       }
     }
 
@@ -857,11 +907,10 @@ class InternationalTournamentService {
       start.add(const Duration(days: 10)).toIso8601String().substring(0, 10),
     ];
 
-    final List<int> pIds = participants.map((Country c) => c.countryId).toList();
     return scheduleGroupStage(
       tournamentId: t.tournamentWorldCup,
       seasonId: seasonId,
-      participatingCountryIds: pIds,
+      participatingCountryIds: participantIds,
       matchDates: groupDates,
       groupSize: 4,
       groupCount: 12, // 12 groups (A - L)
@@ -878,20 +927,37 @@ class InternationalTournamentService {
     required InternationalWindow summerWindow,
     required int confederation,
     int? userCountryId,
+    int? qualifierSeasonId,
+    int? qualifierTournamentId,
   }) async {
+    List<int> participantIds = <int>[];
+    if (qualifierSeasonId != null && qualifierTournamentId != null) {
+      participantIds = await getQualifiedCountriesFromTournament(
+        qualifierTournamentId: qualifierTournamentId,
+        qualifierSeasonId: qualifierSeasonId,
+        advancePerGroup: 3,
+        maxTotal: 24,
+      );
+    }
+
     final List<Country> confNations = await _nationalService.getNationalTeams(confederation: confederation);
     confNations.sort((Country a, Country b) => b.power.compareTo(a.power));
 
-    final List<Country> participants = confNations.take(24).toList();
-    if (userCountryId != null && confNations.any((Country c) => c.countryId == userCountryId)) {
-      if (!participants.any((Country c) => c.countryId == userCountryId)) {
-        final Country userC = confNations.firstWhere((Country c) => c.countryId == userCountryId);
-        if (participants.isNotEmpty) participants.removeLast();
-        participants.add(userC);
+    for (final Country c in confNations) {
+      if (participantIds.length >= 24) break;
+      if (!participantIds.contains(c.countryId)) {
+        participantIds.add(c.countryId);
       }
     }
 
-    if (participants.length < 8) return <CountryMatch>[];
+    if (userCountryId != null && confNations.any((Country c) => c.countryId == userCountryId)) {
+      if (!participantIds.contains(userCountryId)) {
+        if (participantIds.isNotEmpty) participantIds.removeLast();
+        participantIds.add(userCountryId);
+      }
+    }
+
+    if (participantIds.length < 8) return <CountryMatch>[];
 
     final DateTime start = DateTime.tryParse(summerWindow.startDate) ?? DateTime(2027, 6, 11);
     final List<String> groupDates = <String>[
@@ -900,13 +966,12 @@ class InternationalTournamentService {
       start.add(const Duration(days: 10)).toIso8601String().substring(0, 10),
     ];
 
-    final List<int> pIds = participants.map((Country c) => c.countryId).toList();
-    final int groupCount = (pIds.length / 4).floor();
+    final int groupCount = (participantIds.length / 4).floor();
 
     return scheduleGroupStage(
       tournamentId: tournamentId,
       seasonId: seasonId,
-      participatingCountryIds: pIds,
+      participatingCountryIds: participantIds,
       matchDates: groupDates,
       groupSize: 4,
       groupCount: groupCount,

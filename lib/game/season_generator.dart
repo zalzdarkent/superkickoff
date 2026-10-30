@@ -74,8 +74,10 @@ class SeasonGenerator {
     );
 
     final int cycleYear = (startYear + 1) % 4; // Final tournament year (e.g. 2026 % 4 == 2)
-    if (cycleYear == 2) {
-      // 2026, 2030, etc. -> FIFA World Cup year!
+    final int? prevSeasonId = season.seasonId > 1 ? season.seasonId - 1 : null;
+
+    if (cycleYear == 1) {
+      // 2025, 2029, etc. -> Year of World Cup Qualifiers!
       // In October & March: World Cup Qualifiers across all continents
       await intlTournaments.scheduleQualifiers(
         seasonId: season.seasonId,
@@ -84,14 +86,34 @@ class SeasonGenerator {
         window2: winMar,
         userCountryId: countryId,
       );
-      // In Summer: FIFA World Cup Finals (48 nations)
+      // Summer Window: Friendly matches / Preparatory matches
+      await intlTournaments.scheduleFriendliesForWindow(
+        seasonId: season.seasonId,
+        window: winSummer,
+        userCountryId: countryId,
+      );
+    } else if (cycleYear == 2) {
+      // 2026, 2030, etc. -> FIFA World Cup Final Tournament Year!
+      // In October & March: International Friendlies
+      await intlTournaments.scheduleFriendliesForWindow(
+        seasonId: season.seasonId,
+        window: winOct,
+        userCountryId: countryId,
+      );
+      await intlTournaments.scheduleFriendliesForWindow(
+        seasonId: season.seasonId,
+        window: winMar,
+        userCountryId: countryId,
+      );
+      // In Summer: FIFA World Cup Finals (48 nations, seeded from Qualifiers of previous season)
       await intlTournaments.scheduleWorldCupTournament(
         seasonId: season.seasonId,
         summerWindow: winSummer,
         userCountryId: countryId,
+        qualifierSeasonId: prevSeasonId,
       );
     } else if (cycleYear == 3) {
-      // 2027, 2031, etc. -> AFC Asian Cup & UEFA EURO year!
+      // 2027, 2031, etc. -> Year of AFC Asian Cup & UEFA EURO Qualifiers!
       // Asian Cup Qualifiers
       await intlTournaments.scheduleQualifiers(
         seasonId: season.seasonId,
@@ -108,23 +130,18 @@ class SeasonGenerator {
         window2: winMar,
         userCountryId: countryId,
       );
-      // Summer: AFC Asian Cup (24 teams) & UEFA EURO (24 teams)
-      await intlTournaments.scheduleContinentalChampionship(
-        tournamentId: t.tournamentAsianCup,
+      // Summer Window: ASEAN Championship / FIFA ASEAN Cup
+      await intlTournaments.scheduleAseanChampionship(
         seasonId: season.seasonId,
-        summerWindow: winSummer,
-        confederation: 5, // AFC
-        userCountryId: countryId,
+        window: winSummer,
       );
-      await intlTournaments.scheduleContinentalChampionship(
-        tournamentId: t.tournamentEuro,
+      await intlTournaments.scheduleFifaAseanCup(
         seasonId: season.seasonId,
-        summerWindow: winSummer,
-        confederation: 3, // UEFA
-        userCountryId: countryId,
+        window: winSummer,
       );
-    } else if (cycleYear == 0) {
-      // 2028, 2032, etc. -> ASEAN Championship / FIFA ASEAN Cup
+    } else {
+      // 2028, 2032, etc. (cycleYear == 0) -> Continental Championships Final Year!
+      // In October & March: International Friendlies
       await intlTournaments.scheduleFriendliesForWindow(
         seasonId: season.seasonId,
         window: winOct,
@@ -135,25 +152,25 @@ class SeasonGenerator {
         window: winMar,
         userCountryId: countryId,
       );
-      await intlTournaments.scheduleAseanChampionship(
+      // Summer: AFC Asian Cup (24 teams) & UEFA EURO (24 teams)
+      await intlTournaments.scheduleContinentalChampionship(
+        tournamentId: t.tournamentAsianCup,
         seasonId: season.seasonId,
-        window: winSummer,
+        summerWindow: winSummer,
+        confederation: 5, // AFC
+        userCountryId: countryId,
+        qualifierSeasonId: prevSeasonId,
+        qualifierTournamentId: t.tournamentAsianCupQualifiers,
       );
-      await intlTournaments.scheduleFifaAseanCup(
+      await intlTournaments.scheduleContinentalChampionship(
+        tournamentId: t.tournamentEuro,
         seasonId: season.seasonId,
-        window: winSummer,
+        summerWindow: winSummer,
+        confederation: 3, // UEFA
+        userCountryId: countryId,
+        qualifierSeasonId: prevSeasonId,
+        qualifierTournamentId: t.tournamentEuroQualifiers,
       );
-    } else {
-      // 2025, 2029 -> International Friendlies & Preparatory Tournaments
-      for (final InternationalWindow win in windows) {
-        if (win.windowType == InternationalWindowType.fifaWindow) {
-          await intlTournaments.scheduleFriendliesForWindow(
-            seasonId: season.seasonId,
-            window: win,
-            userCountryId: countryId,
-          );
-        }
-      }
     }
     await Future<void>.delayed(Duration.zero);
 
