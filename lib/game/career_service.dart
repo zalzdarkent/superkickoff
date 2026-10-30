@@ -908,6 +908,12 @@ class CareerService {
       date,
     );
 
+    // Check and automatically advance international knockout rounds (World Cup, Asian Cup, Euro, etc.)
+    await internationalTournaments.checkAndAdvanceInternationalKnockouts(
+      seasonId: seasonId,
+      currentDate: date,
+    );
+
     return results;
   }
 

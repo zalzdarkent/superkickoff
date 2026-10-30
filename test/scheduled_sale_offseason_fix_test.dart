@@ -172,3 +172,4 @@ void main() {
     expect(buyerAfter!.budget, buyerInitialBudget - transferFee);
   });
 }
+

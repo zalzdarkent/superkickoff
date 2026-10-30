@@ -82,6 +82,8 @@ const int tournamentNationsLeague = 901;
 const int tournamentAseanChampionship = 902;
 const int tournamentFifaAseanCup = 903;
 const int tournamentWorldCupQualifiers = 904;
+const int tournamentAsianCupQualifiers = 905;
+const int tournamentEuroQualifiers = 906;
 
 // ------------------------------------------------------- match statuses
 const int matchScheduled = 1;

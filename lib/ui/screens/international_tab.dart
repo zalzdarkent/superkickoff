@@ -392,8 +392,11 @@ class _InternationalTabState extends State<InternationalTab> {
   // ---------------------------------------------------------------------------
   static const List<Map<String, dynamic>> _tournaments = <Map<String, dynamic>>[
     <String, dynamic>{'id': t.tournamentWorldCup, 'name': 'FIFA World Cup', 'badge': '48 Tim (12 Grup)'},
+    <String, dynamic>{'id': t.tournamentWorldCupQualifiers, 'name': 'Kualifikasi World Cup', 'badge': 'Kualifikasi Benua'},
     <String, dynamic>{'id': t.tournamentEuro, 'name': 'UEFA EURO', 'badge': '24 Tim (6 Grup)'},
+    <String, dynamic>{'id': t.tournamentEuroQualifiers, 'name': 'Kualifikasi EURO', 'badge': 'Kualifikasi Eropa'},
     <String, dynamic>{'id': t.tournamentAsianCup, 'name': 'AFC Asian Cup', 'badge': '24 Tim (6 Grup)'},
+    <String, dynamic>{'id': t.tournamentAsianCupQualifiers, 'name': 'Kualifikasi Asian Cup', 'badge': 'Kualifikasi Asia'},
     <String, dynamic>{'id': t.tournamentNationsLeague, 'name': 'UEFA Nations League', 'badge': 'Divisi & Promosi'},
     <String, dynamic>{'id': t.tournamentAseanChampionship, 'name': 'ASEAN Championship', 'badge': '10 Tim (2 Grup)'},
     <String, dynamic>{'id': t.tournamentFifaAseanCup, 'name': 'FIFA ASEAN Cup', 'badge': '14 Tim (2 Grup)'},

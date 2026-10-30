@@ -228,6 +228,7 @@ class InternationalTournamentService {
     int? groupCount,
     bool doubleRoundRobin = false,
     String? windowId,
+    int startGroupId = 1,
   }) async {
     final List<CountryMatch> fixtures = <CountryMatch>[];
     final int count = groupCount ?? (participatingCountryIds.length / groupSize).ceil();
@@ -240,6 +241,7 @@ class InternationalTournamentService {
 
     int dateIdx = 0;
     for (int g = 1; g <= count; g++) {
+      final int actualGroupId = startGroupId + g - 1;
       final int startIdx = (g - 1) * groupSize;
       final List<int> groupTeams = participatingCountryIds
           .skip(startIdx)
@@ -275,7 +277,7 @@ class InternationalTournamentService {
           'leg': 1,
           'status': t.matchScheduled,
           'date': matchDate,
-          'group_id': g,
+          'group_id': actualGroupId,
           'window_id': windowId,
         };
 
@@ -750,6 +752,266 @@ class InternationalTournamentService {
       orderBy: 'date ASC, match_id ASC',
     );
     return rows.map(CountryMatch.fromMap).toList();
+  }
+
+  // ------------------------------------------------ Major Tournaments & Qualifiers
+
+  /// Schedules continental qualifiers (AFC, UEFA, CONMEBOL, CAF, CONCACAF) for World Cup or Continental Cups.
+  Future<List<CountryMatch>> scheduleQualifiers({
+    required int seasonId,
+    required int tournamentId,
+    required InternationalWindow window1,
+    required InternationalWindow window2,
+    int? userCountryId,
+  }) async {
+    final List<CountryMatch> allFixtures = <CountryMatch>[];
+    final List<Country> allNations = await _nationalService.getNationalTeams();
+    if (allNations.isEmpty) return allFixtures;
+
+    // Dates from window 1 (e.g. October) and window 2 (e.g. March)
+    final DateTime? w1Start = DateTime.tryParse(window1.startDate);
+    final DateTime? w1End = DateTime.tryParse(window1.endDate);
+    final DateTime? w2Start = DateTime.tryParse(window2.startDate);
+    final DateTime? w2End = DateTime.tryParse(window2.endDate);
+
+    final String d1 = w1Start != null ? w1Start.add(const Duration(days: 2)).toIso8601String().substring(0, 10) : window1.startDate;
+    final String d2 = w1End != null ? w1End.subtract(const Duration(days: 1)).toIso8601String().substring(0, 10) : window1.endDate;
+    final String d3 = w2Start != null ? w2Start.add(const Duration(days: 2)).toIso8601String().substring(0, 10) : window2.startDate;
+    final String d4 = w2End != null ? w2End.subtract(const Duration(days: 1)).toIso8601String().substring(0, 10) : window2.endDate;
+    final List<String> qualDates = <String>[d1, d2, d3, d4];
+
+    // Partition countries by confederation:
+    // 5: AFC (Asia), 3: UEFA (Europe), 2: CONMEBOL, 4: CAF (Africa), 1: CONCACAF
+    final Map<int, List<Country>> confMap = <int, List<Country>>{};
+    for (final Country c in allNations) {
+      confMap.putIfAbsent(c.confederation, () => <Country>[]).add(c);
+    }
+
+    int currentGroupId = 1;
+    for (final int conf in const <int>[5, 3, 2, 4, 1]) {
+      final List<Country> confCountries = confMap[conf] ?? <Country>[];
+      if (confCountries.length < 4) continue;
+
+      // Take top 16 nations per conf (and ensure user country is included if in this conf)
+      confCountries.sort((Country a, Country b) => b.power.compareTo(a.power));
+      final List<Country> pool = confCountries.take(16).toList();
+      if (userCountryId != null && confCountries.any((Country c) => c.countryId == userCountryId)) {
+        if (!pool.any((Country c) => c.countryId == userCountryId)) {
+          final Country userC = confCountries.firstWhere((Country c) => c.countryId == userCountryId);
+          if (pool.isNotEmpty) pool.removeLast();
+          pool.add(userC);
+        }
+      }
+
+      // Schedule into groups of 4 (4 matchdays)
+      final List<int> pIds = pool.map((Country c) => c.countryId).toList();
+      final List<CountryMatch> fixtures = await scheduleGroupStage(
+        tournamentId: tournamentId,
+        seasonId: seasonId,
+        participatingCountryIds: pIds,
+        matchDates: qualDates,
+        groupSize: 4,
+        groupCount: (pIds.length / 4).floor(),
+        doubleRoundRobin: false,
+        windowId: window1.windowId,
+        startGroupId: currentGroupId,
+      );
+      allFixtures.addAll(fixtures);
+      currentGroupId += (pIds.length / 4).floor();
+    }
+
+    return allFixtures;
+  }
+
+  /// Schedules FIFA World Cup Final Tournament (48 teams in 12 groups of 4, followed by Round of 32 -> Final).
+  Future<List<CountryMatch>> scheduleWorldCupTournament({
+    required int seasonId,
+    required InternationalWindow summerWindow,
+    int? userCountryId,
+  }) async {
+    final List<Country> allNations = await _nationalService.getNationalTeams();
+    allNations.sort((Country a, Country b) => b.power.compareTo(a.power));
+
+    // Top 48 nations worldwide
+    final List<Country> participants = allNations.take(48).toList();
+    if (userCountryId != null && !participants.any((Country c) => c.countryId == userCountryId)) {
+      final Country? userC = await _nationalService.getNationalTeam(userCountryId);
+      if (userC != null) {
+        if (participants.isNotEmpty) participants.removeLast();
+        participants.add(userC);
+      }
+    }
+
+    // Dates during Summer Window (June 11 - July 19)
+    final DateTime start = DateTime.tryParse(summerWindow.startDate) ?? DateTime(2026, 6, 11);
+    final List<String> groupDates = <String>[
+      start.add(const Duration(days: 2)).toIso8601String().substring(0, 10),
+      start.add(const Duration(days: 6)).toIso8601String().substring(0, 10),
+      start.add(const Duration(days: 10)).toIso8601String().substring(0, 10),
+    ];
+
+    final List<int> pIds = participants.map((Country c) => c.countryId).toList();
+    return scheduleGroupStage(
+      tournamentId: t.tournamentWorldCup,
+      seasonId: seasonId,
+      participatingCountryIds: pIds,
+      matchDates: groupDates,
+      groupSize: 4,
+      groupCount: 12, // 12 groups (A - L)
+      doubleRoundRobin: false,
+      windowId: summerWindow.windowId,
+      startGroupId: 1,
+    );
+  }
+
+  /// Schedules Continental Championship (e.g. AFC Asian Cup or UEFA EURO - 24 teams in 6 groups of 4).
+  Future<List<CountryMatch>> scheduleContinentalChampionship({
+    required int tournamentId,
+    required int seasonId,
+    required InternationalWindow summerWindow,
+    required int confederation,
+    int? userCountryId,
+  }) async {
+    final List<Country> confNations = await _nationalService.getNationalTeams(confederation: confederation);
+    confNations.sort((Country a, Country b) => b.power.compareTo(a.power));
+
+    final List<Country> participants = confNations.take(24).toList();
+    if (userCountryId != null && confNations.any((Country c) => c.countryId == userCountryId)) {
+      if (!participants.any((Country c) => c.countryId == userCountryId)) {
+        final Country userC = confNations.firstWhere((Country c) => c.countryId == userCountryId);
+        if (participants.isNotEmpty) participants.removeLast();
+        participants.add(userC);
+      }
+    }
+
+    if (participants.length < 8) return <CountryMatch>[];
+
+    final DateTime start = DateTime.tryParse(summerWindow.startDate) ?? DateTime(2027, 6, 11);
+    final List<String> groupDates = <String>[
+      start.add(const Duration(days: 2)).toIso8601String().substring(0, 10),
+      start.add(const Duration(days: 6)).toIso8601String().substring(0, 10),
+      start.add(const Duration(days: 10)).toIso8601String().substring(0, 10),
+    ];
+
+    final List<int> pIds = participants.map((Country c) => c.countryId).toList();
+    final int groupCount = (pIds.length / 4).floor();
+
+    return scheduleGroupStage(
+      tournamentId: tournamentId,
+      seasonId: seasonId,
+      participatingCountryIds: pIds,
+      matchDates: groupDates,
+      groupSize: 4,
+      groupCount: groupCount,
+      doubleRoundRobin: false,
+      windowId: summerWindow.windowId,
+      startGroupId: 1,
+    );
+  }
+
+  /// Automatically progresses completed group stage to knockout stage,
+  /// or progresses completed knockout rounds to the next round (R32 -> R16 -> QF -> SF -> Final).
+  Future<void> checkAndAdvanceInternationalKnockouts({
+    required int seasonId,
+    required String currentDate,
+  }) async {
+    // Check all active international tournaments in this season
+    const List<int> majorTournaments = <int>[
+      t.tournamentWorldCup,
+      t.tournamentAsianCup,
+      t.tournamentEuro,
+      t.tournamentAseanChampionship,
+      t.tournamentFifaAseanCup,
+    ];
+
+    for (final int tId in majorTournaments) {
+      final List<CountryMatch> allMatches = await matchesForTournament(
+        seasonId: seasonId,
+        tournamentId: tId,
+      );
+      if (allMatches.isEmpty) continue;
+
+      // 1. Check if group stage (phase 0) is fully completed
+      final List<CountryMatch> groupMatches = allMatches.where((CountryMatch m) => m.phase == 0).toList();
+      final bool groupComplete = groupMatches.isNotEmpty && groupMatches.every((CountryMatch m) => m.status == t.matchFinished);
+
+      // Check if knockout phase 1 (Round 1) exists
+      final bool hasPhase1 = allMatches.any((CountryMatch m) => m.phase == 1);
+
+      if (groupComplete && !hasPhase1) {
+        // Advance from group stage to Phase 1 knockout!
+        final Set<int> groupIds = groupMatches.map((CountryMatch m) => m.groupId ?? 1).toSet();
+        final List<int> qualified = <int>[];
+
+        for (final int gid in groupIds.toList()..sort()) {
+          final List<InternationalStandingRow> standings = await getStandings(
+            tournamentId: tId,
+            seasonId: seasonId,
+            groupId: gid,
+          );
+          if (standings.isNotEmpty) qualified.add(standings.first.countryId);
+          if (standings.length >= 2) qualified.add(standings[1].countryId);
+        }
+
+        // For World Cup (12 groups), top 2 (24) + top 8 best thirds = 32 teams
+        if (tId == t.tournamentWorldCup && groupIds.length == 12) {
+          final List<InternationalStandingRow> bestThirds = await getBestThirdPlacedTeams(
+            tournamentId: tId,
+            seasonId: seasonId,
+            groupCount: 12,
+            advanceCount: 8,
+          );
+          for (final InternationalStandingRow row in bestThirds) {
+            if (!qualified.contains(row.countryId)) {
+              qualified.add(row.countryId);
+            }
+          }
+        } else if ((tId == t.tournamentAsianCup || tId == t.tournamentEuro) && groupIds.length == 6) {
+          // 6 groups, top 2 (12) + top 4 best thirds = 16 teams
+          final List<InternationalStandingRow> bestThirds = await getBestThirdPlacedTeams(
+            tournamentId: tId,
+            seasonId: seasonId,
+            groupCount: 6,
+            advanceCount: 4,
+          );
+          for (final InternationalStandingRow row in bestThirds) {
+            if (!qualified.contains(row.countryId)) {
+              qualified.add(row.countryId);
+            }
+          }
+        }
+
+        if (qualified.length >= 2) {
+          // Schedule Round 1 of knockouts 4 days after group stage finishes
+          final DateTime cur = DateTime.tryParse(currentDate) ?? DateTime.now();
+          final String nextRoundDate = cur.add(const Duration(days: 3)).toIso8601String().substring(0, 10);
+          await scheduleKnockoutRound(
+            tournamentId: tId,
+            seasonId: seasonId,
+            phase: 1,
+            qualifiedCountryIds: qualified,
+            matchDate: nextRoundDate,
+          );
+        }
+      } else if (hasPhase1) {
+        // 2. Check if latest knockout phase is complete, then advance to next phase
+        final int maxPhase = allMatches.map((CountryMatch m) => m.phase).reduce(max);
+        final List<CountryMatch> latestPhaseMatches = allMatches.where((CountryMatch m) => m.phase == maxPhase).toList();
+        final bool latestDone = latestPhaseMatches.isNotEmpty &&
+            latestPhaseMatches.every((CountryMatch m) => m.status == t.matchFinished);
+
+        if (latestDone && latestPhaseMatches.length > 1) {
+          final DateTime cur = DateTime.tryParse(currentDate) ?? DateTime.now();
+          final String nextRoundDate = cur.add(const Duration(days: 4)).toIso8601String().substring(0, 10);
+          await advanceKnockoutProgression(
+            tournamentId: tId,
+            seasonId: seasonId,
+            currentPhase: maxPhase,
+            nextRoundDate: nextRoundDate,
+          );
+        }
+      }
+    }
   }
 
   /// Fetches player statistics for a specific international match from `match_players_countries`.

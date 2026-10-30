@@ -58,13 +58,101 @@ class SeasonGenerator {
         .generateWindowsForSeason(season.seasonId, startYear);
     final InternationalTournamentService intlTournaments =
         InternationalTournamentService(db);
-    for (final InternationalWindow win in windows) {
-      if (win.windowType == InternationalWindowType.fifaWindow) {
-        await intlTournaments.scheduleFriendliesForWindow(
-          seasonId: season.seasonId,
-          window: win,
-          userCountryId: countryId,
-        );
+
+    // Schedule 4-year cycle international tournaments & qualifiers
+    final InternationalWindow winOct = windows.firstWhere(
+      (InternationalWindow w) => w.windowId.endsWith('_oct'),
+      orElse: () => windows.first,
+    );
+    final InternationalWindow winMar = windows.firstWhere(
+      (InternationalWindow w) => w.windowId.endsWith('_mar'),
+      orElse: () => windows[min(1, windows.length - 1)],
+    );
+    final InternationalWindow winSummer = windows.firstWhere(
+      (InternationalWindow w) => w.windowId.endsWith('_summer'),
+      orElse: () => windows.last,
+    );
+
+    final int cycleYear = (startYear + 1) % 4; // Final tournament year (e.g. 2026 % 4 == 2)
+    if (cycleYear == 2) {
+      // 2026, 2030, etc. -> FIFA World Cup year!
+      // In October & March: World Cup Qualifiers across all continents
+      await intlTournaments.scheduleQualifiers(
+        seasonId: season.seasonId,
+        tournamentId: t.tournamentWorldCupQualifiers,
+        window1: winOct,
+        window2: winMar,
+        userCountryId: countryId,
+      );
+      // In Summer: FIFA World Cup Finals (48 nations)
+      await intlTournaments.scheduleWorldCupTournament(
+        seasonId: season.seasonId,
+        summerWindow: winSummer,
+        userCountryId: countryId,
+      );
+    } else if (cycleYear == 3) {
+      // 2027, 2031, etc. -> AFC Asian Cup & UEFA EURO year!
+      // Asian Cup Qualifiers
+      await intlTournaments.scheduleQualifiers(
+        seasonId: season.seasonId,
+        tournamentId: t.tournamentAsianCupQualifiers,
+        window1: winOct,
+        window2: winMar,
+        userCountryId: countryId,
+      );
+      // Euro Qualifiers
+      await intlTournaments.scheduleQualifiers(
+        seasonId: season.seasonId,
+        tournamentId: t.tournamentEuroQualifiers,
+        window1: winOct,
+        window2: winMar,
+        userCountryId: countryId,
+      );
+      // Summer: AFC Asian Cup (24 teams) & UEFA EURO (24 teams)
+      await intlTournaments.scheduleContinentalChampionship(
+        tournamentId: t.tournamentAsianCup,
+        seasonId: season.seasonId,
+        summerWindow: winSummer,
+        confederation: 5, // AFC
+        userCountryId: countryId,
+      );
+      await intlTournaments.scheduleContinentalChampionship(
+        tournamentId: t.tournamentEuro,
+        seasonId: season.seasonId,
+        summerWindow: winSummer,
+        confederation: 3, // UEFA
+        userCountryId: countryId,
+      );
+    } else if (cycleYear == 0) {
+      // 2028, 2032, etc. -> ASEAN Championship / FIFA ASEAN Cup
+      await intlTournaments.scheduleFriendliesForWindow(
+        seasonId: season.seasonId,
+        window: winOct,
+        userCountryId: countryId,
+      );
+      await intlTournaments.scheduleFriendliesForWindow(
+        seasonId: season.seasonId,
+        window: winMar,
+        userCountryId: countryId,
+      );
+      await intlTournaments.scheduleAseanChampionship(
+        seasonId: season.seasonId,
+        window: winSummer,
+      );
+      await intlTournaments.scheduleFifaAseanCup(
+        seasonId: season.seasonId,
+        window: winSummer,
+      );
+    } else {
+      // 2025, 2029 -> International Friendlies & Preparatory Tournaments
+      for (final InternationalWindow win in windows) {
+        if (win.windowType == InternationalWindowType.fifaWindow) {
+          await intlTournaments.scheduleFriendliesForWindow(
+            seasonId: season.seasonId,
+            window: win,
+            userCountryId: countryId,
+          );
+        }
       }
     }
     await Future<void>.delayed(Duration.zero);
