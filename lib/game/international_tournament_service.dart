@@ -59,6 +59,31 @@ class InternationalStandingRow {
 
 typedef InternationalStanding = InternationalStandingRow;
 
+/// Holds the podium results (Champion and Runner-up) of a completed tournament.
+class InternationalTournamentPodium {
+  const InternationalTournamentPodium({
+    required this.tournamentId,
+    required this.seasonId,
+    required this.championCountryId,
+    required this.runnerUpCountryId,
+    this.championScore,
+    this.runnerUpScore,
+    this.penaltyChampionScore,
+    this.penaltyRunnerUpScore,
+    this.finalDate,
+  });
+
+  final int tournamentId;
+  final int seasonId;
+  final int championCountryId;
+  final int runnerUpCountryId;
+  final int? championScore;
+  final int? runnerUpScore;
+  final int? penaltyChampionScore;
+  final int? penaltyRunnerUpScore;
+  final String? finalDate;
+}
+
 /// Service that handles international competition generation, formats,
 /// standings calculation, and tournament progression.
 class InternationalTournamentService {
@@ -747,6 +772,127 @@ class InternationalTournamentService {
     );
   }
 
+  /// Resolves the effective season ID for viewing [tournamentId].
+  /// If the current [currentSeasonId] has matches for this tournament, it returns [currentSeasonId].
+  /// Otherwise, it returns the most recent season ID that has matches for this tournament.
+  Future<int?> resolveEffectiveSeasonId({
+    required int tournamentId,
+    required int currentSeasonId,
+  }) async {
+    final List<Map<String, Object?>> curRows = await db.rawQuery(
+      'SELECT 1 FROM ${t.countryMatches} WHERE tournament_id = ? AND season_id = ? LIMIT 1',
+      <Object?>[tournamentId, currentSeasonId],
+    );
+    if (curRows.isNotEmpty) {
+      return currentSeasonId;
+    }
+
+    final List<Map<String, Object?>> pastRows = await db.rawQuery(
+      'SELECT season_id FROM ${t.countryMatches} WHERE tournament_id = ? ORDER BY season_id DESC LIMIT 1',
+      <Object?>[tournamentId],
+    );
+    if (pastRows.isNotEmpty) {
+      return pastRows.first['season_id'] as int?;
+    }
+    return currentSeasonId;
+  }
+
+  /// Determines champion and runner-up for [tournamentId] in [seasonId] if the tournament is completed.
+  Future<InternationalTournamentPodium?> getTournamentPodium({
+    required int tournamentId,
+    required int seasonId,
+  }) async {
+    // 1. Check if knockout matches exist
+    final List<Map<String, Object?>> koMatches = await db.query(
+      t.countryMatches,
+      where: 'tournament_id = ? AND season_id = ? AND phase > 0',
+      whereArgs: <Object?>[tournamentId, seasonId],
+      orderBy: 'phase DESC, round ASC, leg DESC',
+    );
+
+    if (koMatches.isNotEmpty) {
+      final int maxPhase = koMatches.first['phase'] as int;
+      final List<Map<String, Object?>> finalMatches =
+          koMatches.where((m) => (m['phase'] as int) == maxPhase).toList();
+
+      // For tournaments with a final (1 round, 1 or 2 legs)
+      if (finalMatches.isNotEmpty) {
+        final bool allFinished =
+            finalMatches.every((m) => (m['status'] as int?) == t.matchFinished);
+        if (allFinished) {
+          if (finalMatches.length == 1) {
+            final Map<String, Object?> m = finalMatches.first;
+            final int home = m['home_country_id'] as int;
+            final int away = m['away_country_id'] as int;
+            final int hg = (m['home_goals'] as int?) ?? 0;
+            final int ag = (m['away_goals'] as int?) ?? 0;
+            final int penH = (m['penalty_home_goals'] as int?) ?? 0;
+            final int penA = (m['penalty_away_goals'] as int?) ?? 0;
+            final int winnerId = (m['winner_id'] as int?) ?? 0;
+
+            final int champ;
+            final int runner;
+            final int cScore;
+            final int rScore;
+            final int? penC;
+            final int? penR;
+
+            if (winnerId == home || (winnerId == 0 && (hg > ag || (hg == ag && penH > penA)))) {
+              champ = home;
+              runner = away;
+              cScore = hg;
+              rScore = ag;
+              penC = (penH > 0 || penA > 0) ? penH : null;
+              penR = (penH > 0 || penA > 0) ? penA : null;
+            } else {
+              champ = away;
+              runner = home;
+              cScore = ag;
+              rScore = hg;
+              penC = (penH > 0 || penA > 0) ? penA : null;
+              penR = (penH > 0 || penA > 0) ? penH : null;
+            }
+
+            return InternationalTournamentPodium(
+              tournamentId: tournamentId,
+              seasonId: seasonId,
+              championCountryId: champ,
+              runnerUpCountryId: runner,
+              championScore: cScore,
+              runnerUpScore: rScore,
+              penaltyChampionScore: penC,
+              penaltyRunnerUpScore: penR,
+              finalDate: m['date'] as String?,
+            );
+          }
+        }
+      }
+    }
+
+    // 2. If it's a pure round-robin/league without knockout phase (e.g. some qualifiers or mini leagues)
+    final List<Map<String, Object?>> allM = await db.query(
+      t.countryMatches,
+      where: 'tournament_id = ? AND season_id = ?',
+      whereArgs: <Object?>[tournamentId, seasonId],
+    );
+    if (allM.isNotEmpty && allM.every((m) => (m['status'] as int?) == t.matchFinished)) {
+      final List<InternationalStandingRow> standings = await getStandings(
+        tournamentId: tournamentId,
+        seasonId: seasonId,
+      );
+      if (standings.length >= 2) {
+        return InternationalTournamentPodium(
+          tournamentId: tournamentId,
+          seasonId: seasonId,
+          championCountryId: standings[0].countryId,
+          runnerUpCountryId: standings[1].countryId,
+        );
+      }
+    }
+
+    return null;
+  }
+
   /// Returns all country matches for [tournamentId] in [seasonId].
   Future<List<CountryMatch>> matchesForTournament({
     required int seasonId,
@@ -770,6 +916,7 @@ class InternationalTournamentService {
     required InternationalWindow window1,
     required InternationalWindow window2,
     int? userCountryId,
+    int? targetConfederation,
   }) async {
     final List<CountryMatch> allFixtures = <CountryMatch>[];
     final List<Country> allNations = await _nationalService.getNationalTeams();
@@ -787,15 +934,26 @@ class InternationalTournamentService {
     final String d4 = w2End != null ? w2End.subtract(const Duration(days: 1)).toIso8601String().substring(0, 10) : window2.endDate;
     final List<String> qualDates = <String>[d1, d2, d3, d4];
 
-    // Partition countries by confederation:
+    // Determine target confederations:
     // 5: AFC (Asia), 3: UEFA (Europe), 2: CONMEBOL, 4: CAF (Africa), 1: CONCACAF
+    final List<int> targetConfs;
+    if (targetConfederation != null) {
+      targetConfs = <int>[targetConfederation];
+    } else if (tournamentId == t.tournamentAsianCupQualifiers) {
+      targetConfs = const <int>[5]; // Only AFC (Asia)
+    } else if (tournamentId == t.tournamentEuroQualifiers) {
+      targetConfs = const <int>[3]; // Only UEFA (Europe)
+    } else {
+      targetConfs = const <int>[5, 3, 2, 4, 1]; // World Cup qualifiers across confederations
+    }
+
     final Map<int, List<Country>> confMap = <int, List<Country>>{};
     for (final Country c in allNations) {
       confMap.putIfAbsent(c.confederation, () => <Country>[]).add(c);
     }
 
     int currentGroupId = 1;
-    for (final int conf in const <int>[5, 3, 2, 4, 1]) {
+    for (final int conf in targetConfs) {
       final List<Country> confCountries = confMap[conf] ?? <Country>[];
       if (confCountries.length < 4) continue;
 

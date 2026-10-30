@@ -114,21 +114,23 @@ class SeasonGenerator {
       );
     } else if (cycleYear == 3) {
       // 2027, 2031, etc. -> Year of AFC Asian Cup & UEFA EURO Qualifiers!
-      // Asian Cup Qualifiers
+      // Asian Cup Qualifiers (AFC only, confederation 5)
       await intlTournaments.scheduleQualifiers(
         seasonId: season.seasonId,
         tournamentId: t.tournamentAsianCupQualifiers,
         window1: winOct,
         window2: winMar,
         userCountryId: countryId,
+        targetConfederation: 5,
       );
-      // Euro Qualifiers
+      // Euro Qualifiers (UEFA only, confederation 3)
       await intlTournaments.scheduleQualifiers(
         seasonId: season.seasonId,
         tournamentId: t.tournamentEuroQualifiers,
         window1: winOct,
         window2: winMar,
         userCountryId: countryId,
+        targetConfederation: 3,
       );
       // Summer Window: ASEAN Championship / FIFA ASEAN Cup
       await intlTournaments.scheduleAseanChampionship(

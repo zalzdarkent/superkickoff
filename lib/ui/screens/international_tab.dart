@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -441,29 +442,48 @@ class _InternationalTabState extends State<InternationalTab> {
           ),
         ),
 
-        // Standings & Matches
+        // Standings & Matches & History
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: <Widget>[
-              // Tournament info banner
-              _tournamentInfoBanner(_selectedTournamentId),
-              const SizedBox(height: 16),
+          child: FutureBuilder<int>(
+            future: game.resolveEffectiveInternationalSeasonId(_selectedTournamentId),
+            builder: (BuildContext context, AsyncSnapshot<int> seasonSnap) {
+              if (seasonSnap.connectionState != ConnectionState.done) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final int effectiveSeasonId = seasonSnap.data ?? (game.season?.seasonId ?? 1);
+              final bool isHistorical = game.season != null && effectiveSeasonId != game.season!.seasonId;
 
-              // Standings
-              _standingsSection(game, _selectedTournamentId),
-              const SizedBox(height: 20),
+              return ListView(
+                padding: const EdgeInsets.all(16),
+                children: <Widget>[
+                  // Tournament info banner with historical note
+                  _tournamentInfoBanner(_selectedTournamentId, isHistorical: isHistorical, seasonId: effectiveSeasonId),
+                  const SizedBox(height: 14),
 
-              // Matches
-              _matchesSection(game, _selectedTournamentId),
-            ],
+                  // Podium (Juara & Runner-up) if tournament is finished
+                  _podiumSection(game, _selectedTournamentId, effectiveSeasonId),
+                  const SizedBox(height: 16),
+
+                  // Knockout Bracket (Bagan Knockout) if knockout matches exist
+                  _knockoutBracketSection(game, _selectedTournamentId, effectiveSeasonId),
+                  const SizedBox(height: 20),
+
+                  // Standings
+                  _standingsSection(game, _selectedTournamentId, effectiveSeasonId),
+                  const SizedBox(height: 20),
+
+                  // Matches
+                  _matchesSection(game, _selectedTournamentId, effectiveSeasonId),
+                ],
+              );
+            },
           ),
         ),
       ],
     );
   }
 
-  Widget _tournamentInfoBanner(int tournamentId) {
+  Widget _tournamentInfoBanner(int tournamentId, {bool isHistorical = false, int? seasonId}) {
     final Map<String, dynamic> item = _tournaments.firstWhere(
       (Map<String, dynamic> m) => m['id'] == tournamentId,
       orElse: () => _tournaments.first,
@@ -473,24 +493,56 @@ class _InternationalTabState extends State<InternationalTab> {
       decoration: BoxDecoration(
         color: AppTheme.surfaceCard,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3)),
+        border: Border.all(
+          color: isHistorical ? Colors.amber.withValues(alpha: 0.5) : AppTheme.accent.withValues(alpha: 0.3),
+        ),
       ),
       child: Row(
         children: <Widget>[
-          const Icon(Icons.emoji_events, size: 28, color: AppTheme.accent),
+          Icon(
+            isHistorical ? Icons.history_edu : Icons.emoji_events,
+            size: 28,
+            color: isHistorical ? Colors.amber : AppTheme.accent,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Text(
-                  item['name'] as String,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                Row(
+                  children: <Widget>[
+                    Flexible(
+                      child: Text(
+                        item['name'] as String,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    if (isHistorical) ...<Widget>[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.amber.withValues(alpha: 0.6), width: 0.7),
+                        ),
+                        child: Text(
+                          'Edisi Terakhir (Season $seasonId)',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.amber,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
+                const SizedBox(height: 3),
                 Text(
                   'Format: ${item['badge']}',
                   style: const TextStyle(fontSize: 12, color: AppTheme.textDim),
@@ -503,13 +555,365 @@ class _InternationalTabState extends State<InternationalTab> {
     );
   }
 
-  Widget _standingsSection(CareerProvider game, int tournamentId) {
+  Widget _podiumSection(CareerProvider game, int tournamentId, int seasonId) {
+    return FutureBuilder<InternationalTournamentPodium?>(
+      future: game.getInternationalPodium(tournamentId, seasonId: seasonId),
+      builder: (BuildContext context, AsyncSnapshot<InternationalTournamentPodium?> snap) {
+        if (!snap.hasData || snap.data == null) {
+          return const SizedBox.shrink();
+        }
+        final InternationalTournamentPodium podium = snap.data!;
+        final Country? champC = _countryById(podium.championCountryId);
+        final Country? runnerC = _countryById(podium.runnerUpCountryId);
+        final String champName = _countryName(podium.championCountryId);
+        final String runnerName = _countryName(podium.runnerUpCountryId);
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: <Color>[
+                const Color(0xFF2E2405),
+                AppTheme.surfaceCard,
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.amber.withValues(alpha: 0.6)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Row(
+                children: <Widget>[
+                  Icon(Icons.military_tech, color: Colors.amber, size: 20),
+                  SizedBox(width: 6),
+                  Text(
+                    'HASIL AKHIR TURNAMEN',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.amber,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: <Widget>[
+                  // Champion
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                      ),
+                      child: Column(
+                        children: <Widget>[
+                          const Text(
+                            '🏆 JUARA 1',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.amber,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          CountryFlagAvatar(
+                            iso2: champC?.iso2,
+                            countryId: podium.championCountryId,
+                            name: champName,
+                            width: 38,
+                            height: 26,
+                            borderRadius: 4,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            champName,
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Runner-up
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: Column(
+                        children: <Widget>[
+                          const Text(
+                            '🥈 RUNNER-UP',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white70,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          CountryFlagAvatar(
+                            iso2: runnerC?.iso2,
+                            countryId: podium.runnerUpCountryId,
+                            name: runnerName,
+                            width: 38,
+                            height: 26,
+                            borderRadius: 4,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            runnerName,
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white70,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (podium.championScore != null && podium.runnerUpScore != null) ...<Widget>[
+                const SizedBox(height: 10),
+                Center(
+                  child: Text(
+                    'Skor Final: ${podium.championScore} - ${podium.runnerUpScore}'
+                    '${podium.penaltyChampionScore != null ? ' (Pen ${podium.penaltyChampionScore}-${podium.penaltyRunnerUpScore})' : ''}',
+                    style: const TextStyle(fontSize: 11, color: Colors.white70),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _knockoutBracketSection(CareerProvider game, int tournamentId, int seasonId) {
+    return FutureBuilder<List<CountryMatch>>(
+      future: game.getInternationalTournamentMatches(tournamentId, seasonId: seasonId),
+      builder: (BuildContext context, AsyncSnapshot<List<CountryMatch>> snap) {
+        if (!snap.hasData) return const SizedBox.shrink();
+        final List<CountryMatch> all = snap.data ?? <CountryMatch>[];
+        final List<CountryMatch> koMatches = all.where((CountryMatch m) => m.phase > 0).toList();
+        if (koMatches.isEmpty) return const SizedBox.shrink();
+
+        final int maxPhase = koMatches.map((CountryMatch m) => m.phase).reduce(max);
+        final Map<int, List<CountryMatch>> byPhase = <int, List<CountryMatch>>{};
+        for (final CountryMatch m in koMatches) {
+          byPhase.putIfAbsent(m.phase, () => <CountryMatch>[]).add(m);
+        }
+
+        String phaseLabel(int p, int total) {
+          final int left = 1 << (total - p + 1);
+          if (left <= 2 || p >= total) return 'Final';
+          if (left == 4 || p == total - 1) return 'Semi-Final';
+          if (left == 8 || p == total - 2) return 'Perempat Final';
+          if (left == 16 || p == total - 3) return 'Babak 16 Besar';
+          return 'Babak 32 Besar';
+        }
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 6),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppTheme.surfaceCard,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Row(
+                children: <Widget>[
+                  Icon(Icons.account_tree_outlined, color: AppTheme.accent, size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'Bagan Babak Gugur (Knockout Bracket)',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    for (int p = 1; p <= maxPhase; p++) ...<Widget>[
+                      SizedBox(
+                        width: 190,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            Container(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppTheme.accent.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                phaseLabel(p, maxPhase),
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.accent,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            for (final CountryMatch m in byPhase[p] ?? const <CountryMatch>[]) ...<Widget>[
+                              _knockoutCard(m),
+                              const SizedBox(height: 6),
+                            ],
+                          ],
+                        ),
+                      ),
+                      if (p < maxPhase) const SizedBox(width: 12),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _knockoutCard(CountryMatch m) {
+    final bool finished = m.status == t.matchFinished;
+    final Country? homeC = _countryById(m.homeCountryId);
+    final Country? awayC = _countryById(m.awayCountryId);
+    final String homeName = _countryName(m.homeCountryId);
+    final String awayName = _countryName(m.awayCountryId);
+    final int? winnerId = m.winnerId ??
+        (finished
+            ? (((m.homeGoals ?? 0) >= (m.awayGoals ?? 0)) ? m.homeCountryId : m.awayCountryId)
+            : null);
+
+    return InkWell(
+      onTap: () => _openCountryMatchDetail(m),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Column(
+          children: <Widget>[
+            // Home Row
+            Row(
+              children: <Widget>[
+                CountryFlagAvatar(
+                  iso2: homeC?.iso2,
+                  countryId: m.homeCountryId,
+                  name: homeName,
+                  width: 18,
+                  height: 12,
+                  borderRadius: 2,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    homeName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: winnerId == m.homeCountryId ? FontWeight.bold : FontWeight.normal,
+                      color: winnerId == m.homeCountryId ? AppTheme.accent : Colors.white70,
+                    ),
+                  ),
+                ),
+                Text(
+                  finished ? '${m.homeGoals ?? 0}' : '-',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: winnerId == m.homeCountryId ? FontWeight.bold : FontWeight.normal,
+                    color: winnerId == m.homeCountryId ? AppTheme.accent : Colors.white70,
+                  ),
+                ),
+              ],
+            ),
+            const Divider(color: Colors.white10, height: 8),
+            // Away Row
+            Row(
+              children: <Widget>[
+                CountryFlagAvatar(
+                  iso2: awayC?.iso2,
+                  countryId: m.awayCountryId,
+                  name: awayName,
+                  width: 18,
+                  height: 12,
+                  borderRadius: 2,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    awayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: winnerId == m.awayCountryId ? FontWeight.bold : FontWeight.normal,
+                      color: winnerId == m.awayCountryId ? AppTheme.accent : Colors.white70,
+                    ),
+                  ),
+                ),
+                Text(
+                  finished ? '${m.awayGoals ?? 0}' : '-',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: winnerId == m.awayCountryId ? FontWeight.bold : FontWeight.normal,
+                    color: winnerId == m.awayCountryId ? AppTheme.accent : Colors.white70,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _standingsSection(CareerProvider game, int tournamentId, int seasonId) {
     if (tournamentId == t.tournamentFriendlies) {
       return const SizedBox.shrink();
     }
 
     return FutureBuilder<List<InternationalStanding>>(
-      future: game.getInternationalStandings(tournamentId),
+      future: game.getInternationalStandings(tournamentId, seasonId: seasonId),
       builder: (BuildContext context, AsyncSnapshot<List<InternationalStanding>> snap) {
         if (snap.connectionState != ConnectionState.done) {
           return const Center(
@@ -657,9 +1061,9 @@ class _InternationalTabState extends State<InternationalTab> {
     );
   }
 
-  Widget _matchesSection(CareerProvider game, int tournamentId) {
+  Widget _matchesSection(CareerProvider game, int tournamentId, int seasonId) {
     return FutureBuilder<List<CountryMatch>>(
-      future: game.getInternationalTournamentMatches(tournamentId),
+      future: game.getInternationalTournamentMatches(tournamentId, seasonId: seasonId),
       builder: (BuildContext context, AsyncSnapshot<List<CountryMatch>> snap) {
         if (snap.connectionState != ConnectionState.done) {
           return const SizedBox.shrink();

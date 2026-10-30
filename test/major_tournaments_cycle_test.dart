@@ -174,6 +174,22 @@ void main() {
     expect(asianFinalsInQual, isEmpty, reason: 'Putaran final Asian Cup TIDAK BOLEH ada di musim kualifikasi');
     expect(euroFinalsInQual, isEmpty, reason: 'Putaran final Euro TIDAK BOLEH ada di musim kualifikasi');
 
+    // Verify confederations:
+    // AFC (confederation 5) only in Asian Cup Qualifiers
+    for (final CountryMatch m in asianQuals) {
+      final Country? homeC = await career.nationalTeams.getNationalTeam(m.homeCountryId);
+      final Country? awayC = await career.nationalTeams.getNationalTeam(m.awayCountryId);
+      expect(homeC?.confederation, 5, reason: 'Kualifikasi Asian Cup hanya boleh berisi negara Asia (AFC)');
+      expect(awayC?.confederation, 5, reason: 'Kualifikasi Asian Cup hanya boleh berisi negara Asia (AFC)');
+    }
+    // UEFA (confederation 3) only in Euro Qualifiers
+    for (final CountryMatch m in euroQuals) {
+      final Country? homeC = await career.nationalTeams.getNationalTeam(m.homeCountryId);
+      final Country? awayC = await career.nationalTeams.getNationalTeam(m.awayCountryId);
+      expect(homeC?.confederation, 3, reason: 'Kualifikasi Euro hanya boleh berisi negara Eropa (UEFA)');
+      expect(awayC?.confederation, 3, reason: 'Kualifikasi Euro hanya boleh berisi negara Eropa (UEFA)');
+    }
+
     // 5. Test Season 4 (2027/2028): Asian Cup & Euro Finals
     final plan2027 = await gen.generateCareer(
       countryId: countryId,
@@ -215,6 +231,38 @@ void main() {
 
     expect(wcKnockout, isNotEmpty, reason: 'Babak gugur (Knockout) World Cup harus otomatis terbentuk setelah fase grup selesai');
     print('World Cup Knockout round 1 matches scheduled: ${wcKnockout.length}');
+
+    // Simulate all knockout stages (R32, R16, QF, SF, Final)
+    String simDate = '2026-06-28';
+    for (int step = 0; step < 6; step++) {
+      await career.internationalSimulation.simulatePendingMatchesThroughDate(
+        season2025.seasonId,
+        simDate,
+      );
+      await career.internationalTournaments.checkAndAdvanceInternationalKnockouts(
+        seasonId: season2025.seasonId,
+        currentDate: simDate,
+      );
+      final DateTime curD = DateTime.parse(simDate);
+      simDate = curD.add(const Duration(days: 4)).toIso8601String().substring(0, 10);
+    }
+
+    final podium = await career.internationalTournaments.getTournamentPodium(
+      tournamentId: t.tournamentWorldCup,
+      seasonId: season2025.seasonId,
+    );
+    expect(podium, isNotNull, reason: 'Turnamen World Cup yang selesai harus menghasilkan podium juara dan runner-up');
+    final champ = await career.nationalTeams.getNationalTeam(podium!.championCountryId);
+    final runner = await career.nationalTeams.getNationalTeam(podium.runnerUpCountryId);
+    print('World Cup 2026 Champion: ${champ?.name}, Runner-Up: ${runner?.name}');
+
+    // Test resolving effective season history when current season is 2026 (season2026.seasonId):
+    // In Season 2026/2027, World Cup is not scheduled, so it must resolve to previous season (season2025.seasonId)
+    final resolvedSeason = await career.internationalTournaments.resolveEffectiveSeasonId(
+      tournamentId: t.tournamentWorldCup,
+      currentSeasonId: season2026.seasonId,
+    );
+    expect(resolvedSeason, season2025.seasonId, reason: 'Di musim baru saat turnamen belum ada jadwal, histori harus menunjuk ke edisi terakhir');
   });
 }
 
