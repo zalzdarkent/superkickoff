@@ -5,6 +5,7 @@ import 'package:sqflite/sqflite.dart';
 import '../data/db/schema.dart' as t;
 import '../data/models/models.dart';
 import 'formation.dart';
+import 'international_calendar.dart';
 import 'match_engine.dart';
 import 'national_team_selection_service.dart';
 import 'national_team_service.dart';
@@ -18,13 +19,15 @@ class InternationalSimulationService {
   })  : _rng = random ?? Random(),
         _engine = engine ?? MatchEngine(random: random),
         _selectionService = NationalTeamSelectionService(db, random: random),
-        _nationalService = NationalTeamService(db);
+        _nationalService = NationalTeamService(db),
+        _calendarService = InternationalCalendarService(db);
 
   final Database db;
   final Random _rng;
   final MatchEngine _engine;
   final NationalTeamSelectionService _selectionService;
   final NationalTeamService _nationalService;
+  final InternationalCalendarService _calendarService;
 
   /// Simulates a single national-team match.
   ///
@@ -291,6 +294,36 @@ class InternationalSimulationService {
       }
     }
     return results;
+  }
+
+  /// Simulates all scheduled international country matches on or before [upToDate].
+  /// This ensures that international fixtures on dates without club matches
+  /// (e.g. during international breaks) are simulated and results recorded.
+  Future<int> simulatePendingMatchesThroughDate(
+    int seasonId,
+    String upToDate,
+  ) async {
+    final String clean = upToDate.length >= 10 ? upToDate.substring(0, 10) : upToDate;
+    final List<Map<String, Object?>> rows = await db.query(
+      t.countryMatches,
+      where: 'season_id = ? AND date <= ? AND status = ?',
+      whereArgs: <Object?>[seasonId, clean, t.matchScheduled],
+      orderBy: 'date ASC, match_id ASC',
+    );
+    if (rows.isEmpty) return 0;
+
+    int simulatedCount = 0;
+    for (final Map<String, Object?> r in rows) {
+      final CountryMatch match = CountryMatch.fromMap(r);
+      final InternationalWindow? win = match.date != null
+          ? await _calendarService.windowForDate(seasonId, match.date!)
+          : null;
+      final MatchResult? res = await simulateCountryMatch(match: match, window: win);
+      if (res != null) {
+        simulatedCount++;
+      }
+    }
+    return simulatedCount;
   }
 
   /// Retrieves the selected squad for [countryId] from [country_callups], or invokes selection if not yet made.

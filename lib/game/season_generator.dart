@@ -63,6 +63,7 @@ class SeasonGenerator {
         await intlTournaments.scheduleFriendliesForWindow(
           seasonId: season.seasonId,
           window: win,
+          userCountryId: countryId,
         );
       }
     }

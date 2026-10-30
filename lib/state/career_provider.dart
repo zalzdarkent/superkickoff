@@ -647,6 +647,13 @@ class CareerProvider extends ChangeNotifier {
       preSeasonDate = null;
     }
 
+    if (userTeamId > 0) {
+      await _service.rescheduleClashingDutyFixtures(
+        season!.seasonId,
+        userTeamId: userTeamId,
+      );
+    }
+
     upcoming = await _service.upcomingMatches(season!.seasonId);
     if (isPreSeasonOrientation && preSeasonDate != null) {
       nextDate = preSeasonDate;
@@ -742,10 +749,15 @@ class CareerProvider extends ChangeNotifier {
         season!.seasonId,
         season!.startYear,
       );
+      // Simulate any international matches scheduled on or before today
+      final String today = nextDate ?? _todayIso();
+      await _service.internationalSimulation.simulatePendingMatchesThroughDate(
+        season!.seasonId,
+        today,
+      );
       internationalWindows = await _service.internationalCalendar.windowsForSeason(season!.seasonId);
       internationalMatches = await _service.countryMatchesForSeason(season!.seasonId);
       if (userTeamId > 0) {
-        final String today = nextDate ?? _todayIso();
         await _service.ensureInternationalCallups(
           seasonId: season!.seasonId,
           date: today,
@@ -765,17 +777,29 @@ class CareerProvider extends ChangeNotifier {
     }
   }
 
-  Future<List<InternationalStanding>> getInternationalStandings(int tournamentId, {int? groupId}) {
+  Future<List<InternationalStanding>> getInternationalStandings(int tournamentId, {int? groupId}) async {
+    final int sId = season?.seasonId ?? 1;
+    final String today = nextDate ?? _todayIso();
+    await _service.internationalSimulation.simulatePendingMatchesThroughDate(
+      sId,
+      today,
+    );
     return _service.internationalTournaments.getStandings(
-      seasonId: season?.seasonId ?? 1,
+      seasonId: sId,
       tournamentId: tournamentId,
       groupId: groupId,
     );
   }
 
-  Future<List<CountryMatch>> getInternationalTournamentMatches(int tournamentId) {
+  Future<List<CountryMatch>> getInternationalTournamentMatches(int tournamentId) async {
+    final int sId = season?.seasonId ?? 1;
+    final String today = nextDate ?? _todayIso();
+    await _service.internationalSimulation.simulatePendingMatchesThroughDate(
+      sId,
+      today,
+    );
     return _service.internationalTournaments.matchesForTournament(
-      seasonId: season?.seasonId ?? 1,
+      seasonId: sId,
       tournamentId: tournamentId,
     );
   }
@@ -785,6 +809,10 @@ class CareerProvider extends ChangeNotifier {
       countryId,
       seasonId: season?.seasonId,
     );
+  }
+
+  Future<List<Country>> getFifaRankings({int? confederation}) {
+    return _service.nationalTeams.getFifaRankings(confederation: confederation);
   }
 
   Future<PlayerNationalStats?> getPlayerNationalStats(int playerId) {

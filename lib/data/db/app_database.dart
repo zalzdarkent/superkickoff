@@ -695,6 +695,16 @@ class AppDatabase {
       );
     }
 
+    final List<Map<String, Object?>> countryColumns = await db.rawQuery(
+      'PRAGMA table_info(${t.countries})',
+    );
+    final bool hasPrevRank = countryColumns.any((Map<String, Object?> c) => c['name'] == 'previous_rank');
+    if (!hasPrevRank) {
+      await db.execute(
+        'ALTER TABLE ${t.countries} ADD COLUMN previous_rank INTEGER',
+      );
+    }
+
     await db.execute('''
       INSERT OR IGNORE INTO ${t.tournaments} (
         tournament_id, name, division_id, status, organization, rounds,

@@ -22,6 +22,7 @@ import 'offseason.dart';
 import 'player_valuation_service.dart';
 import 'prize_engine.dart';
 import 'competition_config.dart';
+import 'fixture_calendar.dart';
 import 'fixture_scheduler.dart';
 import 'international_calendar.dart';
 import 'international_simulation_service.dart';
@@ -900,13 +901,11 @@ class CareerService {
       );
     }
 
-    // Simulate scheduled international country matches on this date
-    final InternationalWindow? win =
-        await internationalCalendar.windowForDate(seasonId, date);
-    await internationalSimulation.simulateMatchesOnDate(
+    // Simulate scheduled international country matches on or before this date
+    // to catch any international matches that occurred during international breaks
+    await internationalSimulation.simulatePendingMatchesThroughDate(
       seasonId,
       date,
-      window: win,
     );
 
     return results;
@@ -3651,5 +3650,43 @@ class CareerService {
       <Object?>[teamId, clean],
     );
     return rows.map(InternationalDuty.fromMap).toList();
+  }
+
+  /// Automatically postpones any club fixture scheduled during international windows
+  /// or when a club has players on international duty.
+  Future<int> rescheduleClashingDutyFixtures(int seasonId, {int? userTeamId}) async {
+    // 1. First, run standard fixture clash resolution with the international window dates
+    int resolved = await _gen.resolveFixtureClashes(seasonId);
+
+    // 2. Next, check if any scheduled match still falls directly during active international duty
+    // for participating clubs (especially user club).
+    final List<Map<String, Object?>> clashingMatches = await db.rawQuery(
+      '''
+      SELECT DISTINCT m.match_id, m.date, m.home_team_id, m.away_team_id
+      FROM matches m
+      JOIN international_duty d ON (d.season_id = m.season_id AND d.status = 'active')
+      JOIN team_players tp ON (tp.player_id = d.player_id AND (tp.team_id = m.home_team_id OR tp.team_id = m.away_team_id))
+      WHERE m.season_id = ? AND m.status = ? AND m.date IS NOT NULL
+        AND m.date >= d.release_date AND m.date <= d.return_date
+      ORDER BY m.date ASC, m.match_id ASC
+      ''',
+      <Object?>[seasonId, t.matchScheduled],
+    );
+
+    if (clashingMatches.isNotEmpty) {
+      final FixtureSchedulingService scheduler = FixtureSchedulingService(db);
+      for (final Map<String, Object?> m in clashingMatches) {
+        final int mId = m['match_id'] as int;
+        final res = await scheduler.postponeMatch(
+          mId,
+          reason: 'International break / Player on duty',
+        );
+        if (res.success) {
+          resolved++;
+        }
+      }
+    }
+
+    return resolved;
   }
 }

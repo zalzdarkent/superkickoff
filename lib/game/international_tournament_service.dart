@@ -463,6 +463,7 @@ class InternationalTournamentService {
     required int seasonId,
     required InternationalWindow window,
     List<int>? participatingCountryIds,
+    int? userCountryId,
     int matchesPerTeam = 2,
   }) async {
     final List<CountryMatch> friendlies = <CountryMatch>[];
@@ -477,7 +478,15 @@ class InternationalTournamentService {
     } else {
       countries = await _nationalService.getNationalTeams();
       // Select active top countries across confederations
-      countries = countries.take(32).toList();
+      final List<Country> topList = countries.take(32).toList();
+      if (userCountryId != null && !topList.any((c) => c.countryId == userCountryId)) {
+        final Country? userC = await _nationalService.getNationalTeam(userCountryId);
+        if (userC != null) {
+          if (topList.length >= 32) topList.removeLast();
+          topList.add(userC);
+        }
+      }
+      countries = topList;
     }
 
     if (countries.length < 2) return friendlies;

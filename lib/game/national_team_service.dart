@@ -16,9 +16,38 @@ class NationalTeamService {
       t.countries,
       where: confederation != null ? 'confederation = ?' : null,
       whereArgs: confederation != null ? <Object?>[confederation] : null,
-      orderBy: 'power DESC, name ASC',
+      orderBy: 'power DESC, points DESC, name ASC',
     );
     return rows.map(Country.fromMap).toList();
+  }
+
+  /// Fetches FIFA World Rankings sorted by power DESC, points DESC, name ASC.
+  /// If previous_rank has not been initialized for countries, it initializes it.
+  Future<List<Country>> getFifaRankings({int? confederation}) async {
+    final List<Country> list = await getNationalTeams(confederation: confederation);
+    return list;
+  }
+
+  /// Snapshots the current world rankings into `previous_rank`.
+  /// Call this when international windows finish, at end-of-season, or during ranking updates.
+  Future<void> snapshotWorldRankings([DatabaseExecutor? executor]) async {
+    final DatabaseExecutor exec = executor ?? db;
+    final List<Map<String, Object?>> rows = await exec.query(
+      t.countries,
+      columns: <String>['country_id'],
+      orderBy: 'power DESC, points DESC, name ASC',
+    );
+    final Batch batch = exec.batch();
+    for (int i = 0; i < rows.length; i++) {
+      final int cId = rows[i]['country_id'] as int;
+      batch.update(
+        t.countries,
+        <String, Object?>{'previous_rank': i + 1},
+        where: 'country_id = ?',
+        whereArgs: <Object?>[cId],
+      );
+    }
+    await batch.commit(noResult: true);
   }
 
   /// Fetches a specific national team by [countryId].
@@ -413,6 +442,17 @@ class NationalTeamService {
   /// and matchmaking ladders.
   Future<void> refreshAllCountryPowers([Transaction? txn]) async {
     final DatabaseExecutor executor = txn ?? db;
+    // 1. Snapshot previous rank before updating powers if previous_rank is unset or needs tracking
+    final List<Map<String, Object?>> unranked = await executor.query(
+      t.countries,
+      columns: <String>['country_id'],
+      where: 'previous_rank IS NULL',
+      limit: 1,
+    );
+    if (unranked.isNotEmpty) {
+      await snapshotWorldRankings(executor);
+    }
+
     await executor.rawUpdate(
       '''
       UPDATE ${t.countries}

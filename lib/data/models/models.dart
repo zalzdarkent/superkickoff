@@ -13,6 +13,7 @@ class Country {
     required this.iso2,
     required this.power,
     required this.confederation,
+    this.previousRank,
   });
 
   final int countryId;
@@ -20,6 +21,16 @@ class Country {
   final String iso2;
   final int power;
   final int confederation;
+  final int? previousRank;
+
+  /// Movement compared to previous ranking:
+  /// > 0: climbed up
+  /// < 0: dropped down
+  /// == 0 or null: unchanged
+  int? rankMovement(int currentRank) {
+    if (previousRank == null) return null;
+    return previousRank! - currentRank;
+  }
 
   factory Country.fromMap(Map<String, Object?> m) => Country(
     countryId: m['country_id'] as int,
@@ -31,6 +42,7 @@ class Country {
     iso2: m['iso2'] as String? ?? '',
     power: (m['power'] as int?) ?? 0,
     confederation: (m['confederation'] as int?) ?? 0,
+    previousRank: m['previous_rank'] as int?,
   );
 
   Map<String, Object?> toMap() => <String, Object?>{
@@ -39,6 +51,7 @@ class Country {
     'iso2': iso2,
     'power': power,
     'confederation': confederation,
+    'previous_rank': previousRank,
   };
 }
 

@@ -25,6 +25,10 @@ class _InternationalTabState extends State<InternationalTab> {
   // Selected tournament for standings/fixtures
   int _selectedTournamentId = t.tournamentWorldCup;
 
+  // Selected confederation for FIFA Ranking tab (null = All)
+  int? _rankingConfederation;
+  String _rankingSearch = '';
+
   // Selected country for squad viewer
   int _selectedCountryId = 0;
   List<Country> _allCountries = <Country>[];
@@ -75,14 +79,19 @@ class _InternationalTabState extends State<InternationalTab> {
         Container(
           color: AppTheme.surfaceCard,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            children: <Widget>[
-              _subTabChip(0, 'Jadwal & Tugas', Icons.event_available_outlined),
-              const SizedBox(width: 8),
-              _subTabChip(1, 'Turnamen', Icons.emoji_events_outlined),
-              const SizedBox(width: 8),
-              _subTabChip(2, 'Skuad Timnas', Icons.groups_outlined),
-            ],
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: <Widget>[
+                _subTabChip(0, 'Jadwal & Tugas', Icons.event_available_outlined),
+                const SizedBox(width: 8),
+                _subTabChip(1, 'Turnamen', Icons.emoji_events_outlined),
+                const SizedBox(width: 8),
+                _subTabChip(2, 'Ranking FIFA', Icons.format_list_numbered),
+                const SizedBox(width: 8),
+                _subTabChip(3, 'Skuad Timnas', Icons.groups_outlined),
+              ],
+            ),
           ),
         ),
         Expanded(
@@ -133,6 +142,8 @@ class _InternationalTabState extends State<InternationalTab> {
       case 1:
         return _buildTournamentsTab(game);
       case 2:
+        return _buildFifaRankingTab(game);
+      case 3:
         return _buildSquadViewerTab(game);
       default:
         return const SizedBox.shrink();
@@ -766,7 +777,261 @@ class _InternationalTabState extends State<InternationalTab> {
   }
 
   // ---------------------------------------------------------------------------
-  // Sub-tab 2: National Team Squads
+  // Sub-tab 2: FIFA World Rankings
+  // ---------------------------------------------------------------------------
+  Widget _buildFifaRankingTab(CareerProvider game) {
+    if (_loadingCountries) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    // Filter by confederation and search query
+    List<Country> list = List<Country>.of(_allCountries);
+    if (_rankingConfederation != null) {
+      list = list.where((Country c) => c.confederation == _rankingConfederation).toList();
+    }
+    if (_rankingSearch.trim().isNotEmpty) {
+      final String q = _rankingSearch.toLowerCase().trim();
+      list = list.where((Country c) {
+        return c.name.toLowerCase().contains(q) ||
+            c.iso2.toLowerCase().contains(q) ||
+            confederationLabel(c.confederation).toLowerCase().contains(q);
+      }).toList();
+    }
+
+    final int userCountryId = game.userTeam?.countryId ?? 0;
+
+    return Column(
+      children: <Widget>[
+        // Filter bar: Confederation chips
+        SizedBox(
+          height: 48,
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            scrollDirection: Axis.horizontal,
+            children: <Widget>[
+              ChoiceChip(
+                label: const Text('Semua'),
+                selected: _rankingConfederation == null,
+                selectedColor: AppTheme.accent,
+                labelStyle: TextStyle(
+                  fontSize: 11,
+                  fontWeight: _rankingConfederation == null ? FontWeight.bold : FontWeight.normal,
+                  color: _rankingConfederation == null ? Colors.black : Colors.white70,
+                ),
+                backgroundColor: AppTheme.surfaceCard,
+                side: BorderSide(
+                  color: _rankingConfederation == null ? AppTheme.accent : Colors.white10,
+                ),
+                onSelected: (bool val) {
+                  if (val) setState(() => _rankingConfederation = null);
+                },
+              ),
+              const SizedBox(width: 8),
+              ..._confederations.map(((int, String) item) {
+                final int confId = item.$1;
+                final String label = item.$2;
+                final bool selected = _rankingConfederation == confId;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text(label),
+                    selected: selected,
+                    selectedColor: AppTheme.accent,
+                    labelStyle: TextStyle(
+                      fontSize: 11,
+                      fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                      color: selected ? Colors.black : Colors.white70,
+                    ),
+                    backgroundColor: AppTheme.surfaceCard,
+                    side: BorderSide(
+                      color: selected ? AppTheme.accent : Colors.white10,
+                    ),
+                    onSelected: (bool val) {
+                      if (val) setState(() => _rankingConfederation = confId);
+                    },
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+
+        // Search text box
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: TextField(
+            onChanged: (String val) => setState(() => _rankingSearch = val),
+            style: const TextStyle(fontSize: 13, color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Cari negara...',
+              hintStyle: const TextStyle(fontSize: 12, color: AppTheme.textDim),
+              prefixIcon: const Icon(Icons.search, size: 18, color: AppTheme.textDim),
+              isDense: true,
+              filled: true,
+              fillColor: AppTheme.surfaceCard,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Colors.white10),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Colors.white10),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+
+        // Table Header
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          color: AppTheme.surfaceCard,
+          child: const Row(
+            children: <Widget>[
+              SizedBox(width: 44, child: Text('#', style: TextStyle(fontSize: 11, color: AppTheme.textDim, fontWeight: FontWeight.bold))),
+              Expanded(child: Text('Negara', style: TextStyle(fontSize: 11, color: AppTheme.textDim, fontWeight: FontWeight.bold))),
+              SizedBox(width: 70, child: Text('Konfederasi', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: AppTheme.textDim, fontWeight: FontWeight.bold))),
+              SizedBox(width: 50, child: Text('Power', textAlign: TextAlign.right, style: TextStyle(fontSize: 11, color: AppTheme.accent, fontWeight: FontWeight.bold))),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: Colors.white10),
+
+        // List of ranked countries
+        Expanded(
+          child: list.isEmpty
+              ? const Center(
+                  child: Text(
+                    'Tidak ada negara yang cocok.',
+                    style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+                  ),
+                )
+              : ListView.separated(
+                  itemCount: list.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1, color: Colors.white10),
+                  itemBuilder: (BuildContext context, int index) {
+                    final Country c = list[index];
+                    final int rank = index + 1;
+                    final int? movement = c.rankMovement(rank);
+                    final bool isUserCountry = c.countryId == userCountryId;
+
+                    return Container(
+                      color: isUserCountry ? AppTheme.accent.withValues(alpha: 0.1) : Colors.transparent,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      child: Row(
+                        children: <Widget>[
+                          // Rank & Movement
+                          SizedBox(
+                            width: 44,
+                            child: Row(
+                              children: <Widget>[
+                                Text(
+                                  '$rank',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: rank <= 10 || isUserCountry ? FontWeight.bold : FontWeight.normal,
+                                    color: isUserCountry ? AppTheme.accent : Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(width: 3),
+                                _movementIndicator(movement),
+                              ],
+                            ),
+                          ),
+                          // Flag & Name
+                          CountryFlagAvatar(
+                            iso2: c.iso2,
+                            countryId: c.countryId,
+                            name: c.name,
+                            width: 22,
+                            height: 15,
+                            borderRadius: 3,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              c.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: isUserCountry ? FontWeight.bold : FontWeight.w500,
+                                color: isUserCountry ? AppTheme.accent : Colors.white,
+                              ),
+                            ),
+                          ),
+                          // Confederation
+                          SizedBox(
+                            width: 70,
+                            child: Text(
+                              confederationLabel(c.confederation),
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 11, color: AppTheme.textDim),
+                            ),
+                          ),
+                          // Power Rating
+                          SizedBox(
+                            width: 50,
+                            child: Text(
+                              '${c.power}',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: rank <= 5 ? AppTheme.accent : Colors.white70,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _movementIndicator(int? delta) {
+    if (delta == null || delta == 0) {
+      return const Text(
+        '-',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: AppTheme.textDim,
+        ),
+      );
+    }
+    final bool isUp = delta > 0;
+    final Color color = isUp ? AppTheme.accent : AppTheme.danger;
+    final int change = delta.abs();
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: <Widget>[
+        Icon(
+          isUp ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+          size: 13,
+          color: color,
+        ),
+        Text(
+          '$change',
+          style: TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+            color: color,
+            height: 1.0,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sub-tab 3: National Team Squads
   // ---------------------------------------------------------------------------
   Widget _buildSquadViewerTab(CareerProvider game) {
     if (_loadingCountries) {
