@@ -84,31 +84,38 @@ class InternationalTournamentService {
       whereArgs: <Object?>[tournamentId, seasonId, t.matchFinished],
     );
 
-    final Set<int> countryIds = <int>{};
+    // Map each country to its respective group_id in this tournament
+    final Map<int, int?> countryGroupMap = <int, int?>{};
     for (final Map<String, Object?> m in matches) {
-      countryIds.add((m['home_country_id'] as int?) ?? 0);
-      countryIds.add((m['away_country_id'] as int?) ?? 0);
+      final int home = (m['home_country_id'] as int?) ?? 0;
+      final int away = (m['away_country_id'] as int?) ?? 0;
+      final int? gid = (m['group_id'] as int?) ?? groupId;
+      if (home > 0) countryGroupMap[home] = gid;
+      if (away > 0) countryGroupMap[away] = gid;
     }
 
-    // Also include countries that have scheduled matches in this group
+    // Also include countries that have scheduled matches in this tournament/group
     final List<Map<String, Object?>> scheduled = await db.query(
       t.countryMatches,
       where: 'tournament_id = ? AND season_id = ? ${groupId != null ? 'AND group_id = $groupId' : ''}',
       whereArgs: <Object?>[tournamentId, seasonId],
     );
     for (final Map<String, Object?> m in scheduled) {
-      countryIds.add((m['home_country_id'] as int?) ?? 0);
-      countryIds.add((m['away_country_id'] as int?) ?? 0);
+      final int home = (m['home_country_id'] as int?) ?? 0;
+      final int away = (m['away_country_id'] as int?) ?? 0;
+      final int? gid = (m['group_id'] as int?) ?? groupId;
+      if (home > 0) countryGroupMap[home] = gid;
+      if (away > 0) countryGroupMap[away] = gid;
     }
-    countryIds.remove(0);
 
     final Map<int, InternationalStandingRow> rows = <int, InternationalStandingRow>{};
-    for (final int cId in countryIds) {
+    for (final MapEntry<int, int?> entry in countryGroupMap.entries) {
+      final int cId = entry.key;
       final Country? c = await _nationalService.getNationalTeam(cId);
       rows[cId] = InternationalStandingRow(
         countryId: cId,
         countryName: c?.name ?? 'Country $cId',
-        groupId: groupId,
+        groupId: entry.value ?? groupId,
       );
     }
 

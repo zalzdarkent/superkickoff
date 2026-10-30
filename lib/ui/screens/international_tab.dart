@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -533,8 +535,9 @@ class _InternationalTabState extends State<InternationalTab> {
           );
         }
 
-        // Group standings by group_id
-        final Map<int, List<InternationalStanding>> byGroup = <int, List<InternationalStanding>>{};
+        // Group standings by group_id in ascending order
+        final SplayTreeMap<int, List<InternationalStanding>> byGroup =
+            SplayTreeMap<int, List<InternationalStanding>>();
         for (final InternationalStanding s in list) {
           final int gid = s.groupId ?? 1;
           byGroup.putIfAbsent(gid, () => <InternationalStanding>[]).add(s);
@@ -553,7 +556,10 @@ class _InternationalTabState extends State<InternationalTab> {
             ),
             const SizedBox(height: 8),
             ...byGroup.entries.map((MapEntry<int, List<InternationalStanding>> entry) {
-              final String groupLetter = String.fromCharCode(65 + (entry.key - 1));
+              final int gIndex = entry.key - 1;
+              final String groupLabel = gIndex >= 0 && gIndex < 26
+                  ? 'Grup ${String.fromCharCode(65 + gIndex)}'
+                  : 'Grup ${entry.key}';
               return Container(
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(12),
@@ -566,7 +572,7 @@ class _InternationalTabState extends State<InternationalTab> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      'Grup $groupLetter',
+                      groupLabel,
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
