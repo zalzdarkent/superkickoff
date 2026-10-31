@@ -94,22 +94,28 @@ void main() {
       seasonId: season2024.seasonId,
       tournamentId: t.tournamentWorldCupQualifiers,
     );
-    expect(wcQualifiers, isNotEmpty, reason: 'Kualifikasi World Cup harus terjadwal di Musim Kualifikasi');
-    print('World Cup Qualifiers fixtures count in 2024/2025: ${wcQualifiers.length}');
+    expect(wcQualifiers, isEmpty, reason: 'Kualifikasi World Cup sudah dihapus');
+
+    final List<CountryMatch> s1Friendlies = await career.internationalTournaments.matchesForTournament(
+      seasonId: season2024.seasonId,
+      tournamentId: t.tournamentFriendlies,
+    );
+    expect(s1Friendlies, isNotEmpty, reason: 'Laga uji coba internasional terjadwal di musim persiapan');
+    print('S1 International Friendlies count in 2024/2025: ${s1Friendlies.length}');
 
     final List<CountryMatch> wcFinalsInQualYear = await career.internationalTournaments.matchesForTournament(
       seasonId: season2024.seasonId,
       tournamentId: t.tournamentWorldCup,
     );
-    expect(wcFinalsInQualYear, isEmpty, reason: 'Putaran final World Cup TIDAK BOLEH ada di musim kualifikasi');
+    expect(wcFinalsInQualYear, isEmpty, reason: 'Putaran final World Cup TIDAK BOLEH ada di musim persiapan');
 
-    // Simulate all qualifiers in season2024
+    // Simulate friendlies in season2024
     await career.internationalSimulation.simulatePendingMatchesThroughDate(
       season2024.seasonId,
       '2025-06-30',
     );
 
-    // 2. Test Season 2 (2025/2026): World Cup Finals ONLY (seeded from Qualifiers)
+    // 2. Test Season 2 (2025/2026): World Cup Finals ONLY (top nations worldwide with balanced pot seeding)
     final plan2025 = await gen.generateCareer(
       countryId: countryId,
       league: league,
@@ -124,7 +130,7 @@ void main() {
       seasonId: season2025.seasonId,
       tournamentId: t.tournamentWorldCupQualifiers,
     );
-    expect(wcQualsInFinalYear, isEmpty, reason: 'Kualifikasi World Cup TIDAK BOLEH ada di tahun final World Cup');
+    expect(wcQualsInFinalYear, isEmpty, reason: 'Kualifikasi World Cup tidak ada');
 
     final List<CountryMatch> wcFinals = await career.internationalTournaments.matchesForTournament(
       seasonId: season2025.seasonId,
@@ -132,6 +138,16 @@ void main() {
     );
     expect(wcFinals, isNotEmpty, reason: 'Putaran Final World Cup harus terjadwal di musim panas tahun final');
     print('World Cup Finals group matches count in 2025/2026: ${wcFinals.length}');
+
+    // Verify group distribution is balanced (pot-based seeding, not all top teams in group 1)
+    final Map<int, List<int>> groupCountryMap = <int, List<int>>{};
+    for (final CountryMatch m in wcFinals) {
+      final int gid = m.groupId ?? 1;
+      groupCountryMap.putIfAbsent(gid, () => <int>[]);
+      if (!groupCountryMap[gid]!.contains(m.homeCountryId)) groupCountryMap[gid]!.add(m.homeCountryId);
+      if (!groupCountryMap[gid]!.contains(m.awayCountryId)) groupCountryMap[gid]!.add(m.awayCountryId);
+    }
+    expect(groupCountryMap.length, 12, reason: 'World Cup harus memiliki 12 grup');
 
     // 3. Verify NO domestic club fixtures are scheduled during Summer Tournament Window
     final clashingClubMatches = await db.rawQuery(
@@ -142,7 +158,7 @@ void main() {
     print('Club matches during World Cup window (2026-06-11 to 2026-07-19): $clubMatchesDuringWorldCup');
     expect(clubMatchesDuringWorldCup, 0, reason: 'Seluruh kompetisi klub harus libur/ditunda selama World Cup');
 
-    // 4. Test Season 3 (2026/2027): Asian Cup & Euro Qualifiers ONLY
+    // 4. Test Season 3 (2026/2027): International Friendlies & ASEAN tournaments (no Asian/Euro qualifiers)
     final plan2026 = await gen.generateCareer(
       countryId: countryId,
       league: league,
@@ -169,28 +185,12 @@ void main() {
       tournamentId: t.tournamentEuro,
     );
 
-    expect(asianQuals, isNotEmpty, reason: 'Kualifikasi Asian Cup harus terjadwal di musim kualifikasi');
-    expect(euroQuals, isNotEmpty, reason: 'Kualifikasi Euro harus terjadwal di musim kualifikasi');
-    expect(asianFinalsInQual, isEmpty, reason: 'Putaran final Asian Cup TIDAK BOLEH ada di musim kualifikasi');
-    expect(euroFinalsInQual, isEmpty, reason: 'Putaran final Euro TIDAK BOLEH ada di musim kualifikasi');
+    expect(asianQuals, isEmpty, reason: 'Kualifikasi Asian Cup sudah dihapus');
+    expect(euroQuals, isEmpty, reason: 'Kualifikasi Euro sudah dihapus');
+    expect(asianFinalsInQual, isEmpty, reason: 'Putaran final Asian Cup TIDAK BOLEH ada di musim persiapan');
+    expect(euroFinalsInQual, isEmpty, reason: 'Putaran final Euro TIDAK BOLEH ada di musim persiapan');
 
-    // Verify confederations:
-    // AFC (confederation 5) only in Asian Cup Qualifiers
-    for (final CountryMatch m in asianQuals) {
-      final Country? homeC = await career.nationalTeams.getNationalTeam(m.homeCountryId);
-      final Country? awayC = await career.nationalTeams.getNationalTeam(m.awayCountryId);
-      expect(homeC?.confederation, 5, reason: 'Kualifikasi Asian Cup hanya boleh berisi negara Asia (AFC)');
-      expect(awayC?.confederation, 5, reason: 'Kualifikasi Asian Cup hanya boleh berisi negara Asia (AFC)');
-    }
-    // UEFA (confederation 3) only in Euro Qualifiers
-    for (final CountryMatch m in euroQuals) {
-      final Country? homeC = await career.nationalTeams.getNationalTeam(m.homeCountryId);
-      final Country? awayC = await career.nationalTeams.getNationalTeam(m.awayCountryId);
-      expect(homeC?.confederation, 3, reason: 'Kualifikasi Euro hanya boleh berisi negara Eropa (UEFA)');
-      expect(awayC?.confederation, 3, reason: 'Kualifikasi Euro hanya boleh berisi negara Eropa (UEFA)');
-    }
-
-    // 5. Test Season 4 (2027/2028): Asian Cup & Euro Finals
+    // 5. Test Season 4 (2027/2028): Asian Cup & Euro Finals directly take top continental nations
     final plan2027 = await gen.generateCareer(
       countryId: countryId,
       league: league,

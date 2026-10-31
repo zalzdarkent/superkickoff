@@ -77,13 +77,16 @@ class SeasonGenerator {
     final int? prevSeasonId = season.seasonId > 1 ? season.seasonId - 1 : null;
 
     if (cycleYear == 1) {
-      // 2025, 2029, etc. -> Year of World Cup Qualifiers!
-      // In October & March: World Cup Qualifiers across all continents
-      await intlTournaments.scheduleQualifiers(
+      // 2025, 2029, etc. -> Preparatory Season for World Cup!
+      // In October & March: International Friendlies
+      await intlTournaments.scheduleFriendliesForWindow(
         seasonId: season.seasonId,
-        tournamentId: t.tournamentWorldCupQualifiers,
-        window1: winOct,
-        window2: winMar,
+        window: winOct,
+        userCountryId: countryId,
+      );
+      await intlTournaments.scheduleFriendliesForWindow(
+        seasonId: season.seasonId,
+        window: winMar,
         userCountryId: countryId,
       );
       // Summer Window: Friendly matches / Preparatory matches
@@ -105,32 +108,24 @@ class SeasonGenerator {
         window: winMar,
         userCountryId: countryId,
       );
-      // In Summer: FIFA World Cup Finals (48 nations, seeded from Qualifiers of previous season)
+      // In Summer: FIFA World Cup Finals (Top 48 nations worldwide by FIFA ranking / power)
       await intlTournaments.scheduleWorldCupTournament(
         seasonId: season.seasonId,
         summerWindow: winSummer,
         userCountryId: countryId,
-        qualifierSeasonId: prevSeasonId,
       );
     } else if (cycleYear == 3) {
-      // 2027, 2031, etc. -> Year of AFC Asian Cup & UEFA EURO Qualifiers!
-      // Asian Cup Qualifiers (AFC only, confederation 5)
-      await intlTournaments.scheduleQualifiers(
+      // 2027, 2031, etc. -> Pre-Continental Season
+      // In October & March: International Friendlies
+      await intlTournaments.scheduleFriendliesForWindow(
         seasonId: season.seasonId,
-        tournamentId: t.tournamentAsianCupQualifiers,
-        window1: winOct,
-        window2: winMar,
+        window: winOct,
         userCountryId: countryId,
-        targetConfederation: 5,
       );
-      // Euro Qualifiers (UEFA only, confederation 3)
-      await intlTournaments.scheduleQualifiers(
+      await intlTournaments.scheduleFriendliesForWindow(
         seasonId: season.seasonId,
-        tournamentId: t.tournamentEuroQualifiers,
-        window1: winOct,
-        window2: winMar,
+        window: winMar,
         userCountryId: countryId,
-        targetConfederation: 3,
       );
       // Summer Window: ASEAN Championship / FIFA ASEAN Cup
       await intlTournaments.scheduleAseanChampionship(
@@ -154,15 +149,13 @@ class SeasonGenerator {
         window: winMar,
         userCountryId: countryId,
       );
-      // Summer: AFC Asian Cup (24 teams) & UEFA EURO (24 teams)
+      // Summer: AFC Asian Cup (Top 24 AFC teams) & UEFA EURO (Top 24 UEFA teams)
       await intlTournaments.scheduleContinentalChampionship(
         tournamentId: t.tournamentAsianCup,
         seasonId: season.seasonId,
         summerWindow: winSummer,
         confederation: 5, // AFC
         userCountryId: countryId,
-        qualifierSeasonId: prevSeasonId,
-        qualifierTournamentId: t.tournamentAsianCupQualifiers,
       );
       await intlTournaments.scheduleContinentalChampionship(
         tournamentId: t.tournamentEuro,
@@ -170,8 +163,6 @@ class SeasonGenerator {
         summerWindow: winSummer,
         confederation: 3, // UEFA
         userCountryId: countryId,
-        qualifierSeasonId: prevSeasonId,
-        qualifierTournamentId: t.tournamentEuroQualifiers,
       );
     }
     await Future<void>.delayed(Duration.zero);

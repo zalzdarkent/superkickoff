@@ -271,14 +271,37 @@ class InternationalTournamentService {
           )
         : <String>['2026-06-01']);
 
+    // Build balanced groups using pot-based seeding:
+    // If teams are sorted by power (or qualification), divide into `groupSize` pots of `count` teams each.
+    // Each group receives 1 team from each pot (with random shuffling within the pot).
+    final List<List<int>> assignedGroups = List<List<int>>.generate(
+      count,
+      (_) => <int>[],
+    );
+
+    final int totalTeams = count * groupSize;
+    final List<int> pool = participatingCountryIds.take(totalTeams).toList();
+    for (int pot = 0; pot < groupSize; pot++) {
+      final int potStart = pot * count;
+      final List<int> potTeams = pool.skip(potStart).take(count).toList();
+      potTeams.shuffle(_rng);
+      for (int g = 0; g < potTeams.length && g < count; g++) {
+        assignedGroups[g].add(potTeams[g]);
+      }
+    }
+
+    // Any remaining surplus teams (if participatingCountryIds not exactly divisible)
+    if (participatingCountryIds.length > totalTeams) {
+      final List<int> extras = participatingCountryIds.skip(totalTeams).toList();
+      for (int i = 0; i < extras.length; i++) {
+        assignedGroups[i % count].add(extras[i]);
+      }
+    }
+
     int dateIdx = 0;
-    for (int g = 1; g <= count; g++) {
-      final int actualGroupId = startGroupId + g - 1;
-      final int startIdx = (g - 1) * groupSize;
-      final List<int> groupTeams = participatingCountryIds
-          .skip(startIdx)
-          .take(groupSize)
-          .toList();
+    for (int g = 0; g < count; g++) {
+      final int actualGroupId = startGroupId + g;
+      final List<int> groupTeams = assignedGroups[g];
 
       if (groupTeams.length < 2) continue;
 
