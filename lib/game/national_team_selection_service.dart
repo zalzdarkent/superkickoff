@@ -65,7 +65,7 @@ class NationalTeamSelectionService {
   static int positionGroup(int positionId) {
     if (positionId == 1) return 1; // GK
     if (positionId <= 4) return 2; // DEF
-    if (positionId <= 8) return 3; // MID
+    if (positionId <= 7) return 3; // MID
     return 4; // ATT
   }
 

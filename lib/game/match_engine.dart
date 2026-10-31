@@ -22,7 +22,7 @@ class Lineup {
   static int groupOf(Player p) {
     if (p.positionId == 1) return 1;
     if (p.positionId <= 4) return 2;
-    if (p.positionId <= 8) return 3;
+    if (p.positionId <= 7) return 3;
     return 4;
   }
 

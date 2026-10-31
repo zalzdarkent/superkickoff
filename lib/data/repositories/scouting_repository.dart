@@ -372,7 +372,7 @@ class ScoutingRepository {
 
   static (int, int) heightRangeForPosition(int positionId) {
     return switch (positionId) {
-      1 => (178, 200),
+      1 => (178, 205),
       2 || 3 => (178, 198),
       4 => (175, 185),
       5 || 6 || 7 => (175, 194),

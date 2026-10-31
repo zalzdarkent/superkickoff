@@ -258,7 +258,7 @@ class PositionBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final int type = positionId == 1
         ? 1
-        : (positionId <= 4 ? 2 : (positionId <= 8 ? 3 : 4));
+        : (positionId <= 4 ? 2 : (positionId <= 7 ? 3 : 4));
     final Color color = switch (type) {
       1 => const Color(0xFFF59E0B),
       2 => const Color(0xFF3B82F6),

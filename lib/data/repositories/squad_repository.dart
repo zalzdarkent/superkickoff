@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../db/schema.dart' as t;
 import '../models/models.dart';
+import 'scouting_repository.dart';
 import '../../core/country_names.dart';
 import '../../game/formation.dart';
 import '../../game/match_engine.dart';
@@ -1229,15 +1230,32 @@ class SquadRepository {
       );
       for (int i = 0; i < prospectCount; i++) {
         final int prospectPower = 42 + academy.level * 2 + random.nextInt(4);
-        final int prospectPotential =
-            (prospectPower + 12 + academy.level + random.nextInt(6)).clamp(
-              prospectPower,
-              95,
-            );
+        final double generationalChance = academy.level >= 10
+            ? 0.08
+            : (academy.level >= 8 ? 0.04 : (academy.level >= 6 ? 0.02 : 0.0));
+        final bool isGenerational = random.nextDouble() < generationalChance;
+
+        final int prospectPotential;
+        if (isGenerational) {
+          final int genMin = academy.level >= 10 ? 95 : 93;
+          final int genMax = academy.level >= 10 ? 98 : 96;
+          prospectPotential = genMin + random.nextInt(genMax - genMin + 1);
+        } else {
+          prospectPotential =
+              (prospectPower + 12 + academy.level + random.nextInt(9)).clamp(
+                prospectPower,
+                94,
+              );
+        }
+
         final int positionId = 1 + random.nextInt(11);
         final String name = _academyName(nameRows, random);
-        final int height = 168 + random.nextInt(23);
-        final int stars = academy.level >= 7 ? 1 : 0;
+        final int height = ScoutingRepository.heightForPosition(
+          positionId,
+          random,
+        );
+        final int stars =
+            prospectPotential >= 88 || academy.level >= 7 ? 1 : 0;
         final String profile = random.nextBool() ? 'D' : 'I';
         final int prospectId = await txn.insert(
           t.academyProspects,

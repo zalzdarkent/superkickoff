@@ -379,7 +379,7 @@ class NationalTeamService {
 
       int posGroupOf(Map<String, Object?> r) {
         final int raw = (r['position_id'] as int?) ?? 1;
-        return raw == 1 ? 1 : (raw <= 4 ? 2 : (raw <= 8 ? 3 : 4));
+        return raw == 1 ? 1 : (raw <= 4 ? 2 : (raw <= 7 ? 3 : 4));
       }
 
       int countGroup(int group) =>
@@ -413,7 +413,7 @@ class NationalTeamService {
         seasonId: seasonId,
       );
       final int rawPos = (r['position_id'] as int?) ?? 1;
-      final int posGroup = rawPos == 1 ? 1 : (rawPos <= 4 ? 2 : (rawPos <= 8 ? 3 : 4));
+      final int posGroup = rawPos == 1 ? 1 : (rawPos <= 4 ? 2 : (rawPos <= 7 ? 3 : 4));
       int shirt = (r['squad_number'] as int?) ?? 0;
       if (shirt <= 0 || usedNumbers.contains(shirt)) {
         while (usedNumbers.contains(nextNumber)) {
@@ -474,7 +474,7 @@ class NationalTeamService {
         seasonId: seasonId,
       );
       final int rawPos = (r['position_id'] as int?) ?? 1;
-      final int posGroup = rawPos == 1 ? 1 : (rawPos <= 4 ? 2 : (rawPos <= 8 ? 3 : 4));
+      final int posGroup = rawPos == 1 ? 1 : (rawPos <= 4 ? 2 : (rawPos <= 7 ? 3 : 4));
       list.add(
         stats.copyWith(
           playerName: (r['name'] as String?) ?? 'Player $pid',
